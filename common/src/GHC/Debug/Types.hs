@@ -10,6 +10,7 @@ import Control.Applicative
 import Control.Exception
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
+import Data.Hashable
 import Data.Monoid
 import Data.Word
 import GHC.Generics
@@ -32,9 +33,12 @@ profiling :: Bool
 profiling = True
 
 newtype InfoTablePtr = InfoTablePtr Word64
+                     deriving (Eq, Ord, Show)
+                     deriving newtype (Binary, Hashable)
+
 newtype ClosurePtr = ClosurePtr Word64
                    deriving (Eq, Ord, Show)
-                   deriving newtype (Binary)
+                   deriving newtype (Binary, Hashable)
 
 newtype RawInfoTable = RawInfoTable BS.ByteString
                      deriving (Eq, Ord, Show)
@@ -57,7 +61,7 @@ data Request a where
     -- | Request a set of closures.
     RequestClosures :: [ClosurePtr] -> Request [RawClosure]
     -- | Request a set of info tables.
-    RequestInfoTables :: [InfoTablePtr] -> Request [StgInfoTable]
+    RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
 
 newtype CommandId = CommandId Word16
                   deriving (Eq, Ord, Show)

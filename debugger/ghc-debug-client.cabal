@@ -1,4 +1,4 @@
-name:                ghc-debug-stub
+name:                ghc-debug-client
 version:             0.1.0.0
 -- synopsis:
 -- description:
@@ -14,8 +14,10 @@ extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     GHC.Debug.Stub
+  exposed-modules:     GHC.Debug.Client
+  build-depends:       base >=4.12 && <4.13,
+                       network >=2.6 && <2.7,
+                       unordered-containers,
+                       ghc-debug-common
   hs-source-dirs:      src
-  build-depends:       base >=4.12 && <4.13
   default-language:    Haskell2010
-  c-sources:           cbits/stub.cpp, cbits/socket.cpp
