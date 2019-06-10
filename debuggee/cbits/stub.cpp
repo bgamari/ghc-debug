@@ -6,7 +6,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <arpa/inet.h>
+
 #include <thread>
+#include <functional>
 
 #include <Rts.h>
 #include "socket.h"
@@ -51,18 +53,34 @@ enum response_code {
     RESP_NOT_PAUSED = 0x102,
 };
 
+// RTS signatures
+// FIXME: These need to be made not private in GHC.
+extern "C" {
+struct Task;
+typedef void (*evac_fn)(void *user, StgClosure **root);
+void threadStableNameTable ( evac_fn evac, void *user );
+void threadStablePtrTable ( evac_fn evac, void *user );
+Task *newBoundTask(void);
+void stopAllCapabilities (Capability **pCap, Task *task);
+void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
+}
+
 static bool paused = false;
+static Task *task = NULL;
 
 static void pause_mutator() {
-    // TODO
+    if (task == NULL) {
+        task = newBoundTask();
+    }
+    stopAllCapabilities(NULL, task);
     paused = true;
 }
 
 static void resume_mutator() {
-    // TODO
+    ASSERT(paused);
+    releaseAllCapabilities(n_capabilities, NULL, task);
     paused = false;
 }
-
 
 class Response {
   private:
@@ -130,6 +148,30 @@ class Response {
     }
 };
 
+void collect_threads(std::function<void(StgTSO*)> f) {
+    for (int g=0; g < RtsFlags.GcFlags.generations; g++) {
+        StgTSO *tso = generations[g].threads;
+        while (tso != END_TSO_QUEUE) {
+            f(tso);
+            tso = tso->global_link;
+        }
+    }
+}
+
+// helper evac_fn
+void evac_fn_helper(void *user, StgClosure **root) {
+    std::function<void(StgClosure*)> *f = static_cast<std::function<void(StgClosure*)>*>(user);
+    (*f)(*root);
+}
+
+void collect_stable_names(std::function<void(StgClosure*)> f) {
+    threadStableNameTable((evac_fn) evac_fn_helper, &f);
+}
+
+void collect_stable_ptrs(std::function<void(StgClosure*)> f) {
+    threadStablePtrTable((evac_fn) evac_fn_helper, &f);
+}
+
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, size_t len) {
     Parser p(buf, len);
@@ -163,13 +205,9 @@ static int handle_command(Socket& sock, const char *buf, size_t len) {
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
-            for (int g=0; g < RtsFlags.GcFlags.generations; g++) {
-                StgTSO *tso = generations[g].threads;
-                while (tso != END_TSO_QUEUE) {
-                    resp.write((uint64_t) tso);
-                    tso = tso->global_link;
-                }
-            }
+            collect_threads([&](StgTSO *tso) { resp.write((uint64_t) tso); });
+            collect_stable_names([&](StgClosure *sn) { resp.write((uint64_t) sn); });
+            collect_stable_ptrs([&](StgClosure *sn) { resp.write((uint64_t) sn); });
             resp.finish(RESP_OKAY);
         }
         break;
