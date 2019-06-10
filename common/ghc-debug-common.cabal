@@ -1,0 +1,24 @@
+name:                ghc-debug-common
+version:             0.1.0.0
+synopsis:            A debugger for GHC
+-- description:
+homepage:            https://github.com/bgamari/ghc-debug
+license:             BSD3
+license-file:        LICENSE
+author:              Ben Gamari
+maintainer:          ben@smart-cactus.org
+copyright:           (c) 2019 Ben Gamari
+category:            Development
+build-type:          Simple
+extra-source-files:  CHANGELOG.md
+cabal-version:       >=1.10
+
+library
+  exposed-modules:     GHC.Debug.Types,
+                       GHC.Debug.Decode
+  build-depends:       base >=4.12 && <4.13,
+                       bytestring >=0.10 && <0.11,
+                       binary >=0.8 && <0.9,
+                       ghc-heap
+  hs-source-dirs:      src
+  default-language:    Haskell2010
