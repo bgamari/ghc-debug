@@ -19,3 +19,10 @@ library
   build-depends:       base >=4.12 && <4.13
   default-language:    Haskell2010
   c-sources:           cbits/stub.cpp, cbits/socket.cpp
+  extra-libraries:     stdc++
+
+executable debug-test
+  main-is:             Test.hs
+  build-depends:       base,
+                       ghc-debug-stub
+  default-language:    Haskell2010

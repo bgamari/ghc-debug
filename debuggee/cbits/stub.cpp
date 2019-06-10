@@ -68,7 +68,8 @@ void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
 static bool paused = false;
 static Task *task = NULL;
 
-static void pause_mutator() {
+extern "C"
+void pause_mutator() {
     if (task == NULL) {
         task = newBoundTask();
     }
@@ -76,7 +77,8 @@ static void pause_mutator() {
     paused = true;
 }
 
-static void resume_mutator() {
+extern "C"
+void resume_mutator() {
     ASSERT(paused);
     releaseAllCapabilities(n_capabilities, NULL, task);
     paused = false;

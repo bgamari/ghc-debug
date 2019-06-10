@@ -1,6 +1,6 @@
 module GHC.Debug.Stub (pause) where
 
 -- | Break program execution for debugging.
-foreign import safe ccall "pause_mutators"
+foreign import ccall safe "pause_mutator"
     pause :: IO ()
 
