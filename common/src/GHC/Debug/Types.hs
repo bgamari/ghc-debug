@@ -6,12 +6,15 @@
 
 module GHC.Debug.Types where
 
-import GHC.Generics
+import Control.Applicative
+import Control.Exception
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import Data.Monoid
 import Data.Word
+import GHC.Generics
 import System.IO
+import System.IO.Unsafe
 
 import Data.Binary
 import Data.Binary.Put
@@ -52,7 +55,7 @@ data Request a where
     -- | Request the debuggee's root pointers.
     RequestRoots :: Request [ClosurePtr]
     -- | Request a set of closures.
-    RequestClosures :: [ClosurePtr] -> Request RawClosure
+    RequestClosures :: [ClosurePtr] -> Request [RawClosure]
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [StgInfoTable]
 
@@ -93,21 +96,67 @@ putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
 putRequest (RequestClosures cs)  = putCommand cmdRequestClosures $ foldMap put cs
 
-data Error = OtherError String
-           deriving stock (Eq, Ord, Show, Generic)
-           deriving anyclass (Binary)
-
-getResponse :: Request a -> Get (Either Error a)
+getResponse :: Request a -> Get a
 getResponse RequestVersion       = get
 getResponse RequestPause         = get
 getResponse RequestResume        = get
-getResponse RequestRoots         = get
-getResponse (RequestClosures _)  = get
+getResponse RequestRoots         = many get
+getResponse (RequestClosures _)  = many get
 
-doRequest :: Handle -> Request a -> IO (Either Error a)
+data Error = BadCommand
+           | AlreadyPaused
+           | NotPaused
+           deriving stock (Eq, Ord, Show)
+
+instance Exception Error
+
+data ResponseCode = Okay 
+                  | OkayContinues
+                  | Error Error
+                  deriving stock (Eq, Ord, Show)
+
+getResponseCode :: Get ResponseCode
+getResponseCode = getWord16be >>= f
+  where
+    f 0x0   = pure $ Okay
+    f 0x1   = pure $ OkayContinues
+    f 0x100 = pure $ Error BadCommand
+    f 0x101 = pure $ Error AlreadyPaused
+    f 0x102 = pure $ Error NotPaused
+    f _     = fail "Unknown response code"
+
+data Stream a r = Next !a (Stream a r)
+                | End r
+
+readFrames :: Handle -> IO (Stream BS.ByteString (Maybe Error))
+readFrames hdl = do
+    (respLen, status) <- runGet frameHeader <$> BSL.hGet hdl 8
+    respBody <- BS.hGet hdl (fromIntegral respLen)
+    case status of
+      OkayContinues -> do rest <- unsafeInterleaveIO $ readFrames hdl
+                          return $ Next respBody rest
+      Okay     -> return $ Next respBody (End Nothing)
+      Error err-> return $ End (Just err)
+  where
+    frameHeader :: Get (Word32, ResponseCode)
+    frameHeader =
+      (,) <$> getWord32be
+          <*> getResponseCode
+
+throwStream :: Exception e => Stream a (Maybe e) -> [a]
+throwStream = f
+  where
+    f (Next x rest)  = x : f rest
+    f (End Nothing)  = []
+    f (End (Just e)) = throw e
+
+concatStream :: Stream BS.ByteString (Maybe Error) -> BSL.ByteString
+concatStream = BSL.fromChunks . throwStream
+
+doRequest :: Handle -> Request a -> IO a
 doRequest hdl req = do
     BSL.hPutStr hdl $ runPut $ putRequest req
-    respLen <- runGet getWord32be <$> BSL.hGet hdl 8
-    respBody <- BSL.hGet hdl $ fromIntegral respLen
-    return $! runGet (getResponse req) respBody
+    frames <- readFrames hdl
+    let x = runGet (getResponse req) (concatStream frames)
+    return x
 
