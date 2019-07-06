@@ -21,7 +21,7 @@
 /*
  * Wire format:
  *
- * Request from debugger consists of 
+ * Request from debugger consists of
  *   - uint32_t frame length
  *   - uint16_t command
  *   - payload
@@ -56,11 +56,9 @@ enum response_code {
 // RTS signatures
 // FIXME: These need to be made not private in GHC.
 extern "C" {
-struct Task;
 typedef void (*evac_fn)(void *user, StgClosure **root);
 void threadStableNameTable ( evac_fn evac, void *user );
 void threadStablePtrTable ( evac_fn evac, void *user );
-Task *newBoundTask(void);
 void stopAllCapabilities (Capability **pCap, Task *task);
 void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
 }
@@ -109,8 +107,8 @@ class Response {
 
   public:
     Response(Socket &sock) : Response(sock, 1024) { }
-    
-    Response(Socket &sock, size_t buf_size) 
+
+    Response(Socket &sock, size_t buf_size)
       : sock(sock),
         buf_size(buf_size),
         buf(new char[buf_size]),
@@ -253,7 +251,7 @@ static void handle_connection(const unsigned int sock_fd) {
 }
 
 void serve(void) {
-    struct sockaddr_un local, remote; 
+    struct sockaddr_un local, remote;
 
     int s = socket(AF_UNIX, SOCK_STREAM, 0);
     if (s == -1) {

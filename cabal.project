@@ -1,1 +1,4 @@
 packages: common, debuggee, debugger
+
+package network
+  ghc-options: -O0
