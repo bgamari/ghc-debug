@@ -21,6 +21,8 @@ p2 d = do
 -- Testing get version
 p3 d = do
   request d RequestVersion >>= print
+  request d RequestPause
+  request d RequestResume
 
 
 
