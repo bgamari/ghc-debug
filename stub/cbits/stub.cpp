@@ -70,15 +70,15 @@ static Task *task = NULL;
 
 extern "C"
 void pause_mutator() {
-  printf("pausing c++");
+  debugBelch("pausing c++");
   r_paused = rts_pause();
-  printf("paused c++");
+  debugBelch("paused c++");
   paused = true;
 }
 
 extern "C"
 void resume_mutator() {
-  printf("resuming c++\n");
+  debugBelch("resuming c++\n");
   rts_unpause(r_paused);
   paused = false;
 }
@@ -98,7 +98,7 @@ class Response {
     void flush(response_code status) {
         if (status != RESP_OKAY_CONTINUES || this->tail != this->buf + sizeof(Header)) {
             size_t len = this->tail - this->buf;
-            printf("LEN: %d", len);
+            debugBelch("LEN: %d", len);
             Header *hdr = (Header *) this->buf;
             hdr->len = len;
             hdr->status = status;
@@ -106,7 +106,7 @@ class Response {
             uint16_t status_payload;
             len_payload=htons(len);
             status_payload = htons(status);
-            printf("STATUS: %d\n", status);
+            debugBelch("STATUS: %d\n", status);
             // Header is the length
             this->sock.write((char *) &len_payload, sizeof(uint32_t));
             // Then status
@@ -156,7 +156,7 @@ class Response {
     }
 
     void finish(enum response_code status) {
-        printf("FINISH: %d\n", status);
+        debugBelch("FINISH: %d\n", status);
         this->flush(status);
     }
 };
@@ -187,21 +187,21 @@ void collect_stable_ptrs(std::function<void(StgClosure*)> f) {
 
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
-    printf("HANDLE: %d\n", cmd_len);
+    debugBelch("HANDLE: %d\n", cmd_len);
     Parser p(buf, cmd_len);
     Response resp(sock);
-    printf("P %d\n", p.available());
+    debugBelch("P %d\n", p.available());
     uint32_t cmd = ntohl(p.get<uint32_t>());
-    printf("CMD: %d\n", cmd);
+    debugBelch("CMD: %d\n", cmd);
     switch (cmd) {
       case CMD_VERSION:
         resp.finish(RESP_OKAY);
         break;
 
       case CMD_PAUSE:
-        printf("PAUSE: %d", paused);
+        debugBelch("PAUSE: %d", paused);
         if (paused) {
-            printf("ALREADY");
+            debugBelch("ALREADY");
             resp.finish(RESP_ALREADY_PAUSED);
         } else {
             pause_mutator();
@@ -257,11 +257,11 @@ static void handle_connection(const unsigned int sock_fd) {
         uint32_t cmdlen;
 
         sock.read((char *)&cmdlen, 4);
-        printf("LEN: %d\n", cmdlen);
+        debugBelch("LEN: %d\n", cmdlen);
         sock.read(buf, cmdlen);
-        printf("CONT:%s\n", buf);
+        debugBelch("CONT:%s\n", buf);
         try {
-            printf("LEN2: %d\n", cmdlen);
+            debugBelch("LEN2: %d\n", cmdlen);
             handle_command(sock, buf, cmdlen);
         } catch (Parser::EndOfInput e) {
             barf("error");
@@ -309,7 +309,7 @@ static std::thread *server_thread;
 
 extern "C"
 void start(void) {
-    printf("starting\n");
+    debugBelch("starting\n");
     server_thread = new std::thread(serve);
 }
 
