@@ -23,7 +23,7 @@ library
 
 executable debug-test
   main-is:             Test.hs
-  ghc-options:         -threaded
+  ghc-options:         -threaded -debug -g3
   build-depends:       base,
                        ghc-debug-stub
   default-language:    Haskell2010

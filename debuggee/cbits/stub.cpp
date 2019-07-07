@@ -64,22 +64,21 @@ void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
 }
 
 static bool paused = false;
+static RtsPaused r_paused;
 static Task *task = NULL;
 
 extern "C"
 void pause_mutator() {
-    if (task == NULL) {
-        task = newBoundTask();
-    }
-    stopAllCapabilities(NULL, task);
-    paused = true;
+  printf("pausing c++");
+  rts_pause();
+  printf("paused c++");
+  paused = true;
 }
 
 extern "C"
 void resume_mutator() {
-    ASSERT(paused);
-    releaseAllCapabilities(n_capabilities, NULL, task);
-    paused = false;
+  rts_unpause(r_paused);
+  paused = false;
 }
 
 class Response {
