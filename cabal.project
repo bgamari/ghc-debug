@@ -1,4 +1,4 @@
-packages: common, debuggee, debugger
+packages: common, stub, client
 
 package network
   ghc-options: -O0
