@@ -16,6 +16,7 @@
 
 #define MAX_CMD_SIZE 4096
 
+
 #define WORD_SIZE sizeof(unsigned long)
 
 /*
@@ -172,11 +173,13 @@ void collect_stable_ptrs(std::function<void(StgClosure*)> f) {
 }
 
 /* return non-zero on error */
-static int handle_command(Socket& sock, const char *buf, size_t len) {
-    Parser p(buf, len);
+static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
+    printf("HANDLE: %d\n", cmd_len);
+    Parser p(buf, cmd_len);
     Response resp(sock);
-
+    printf("P %d\n", p.available());
     uint32_t cmd = ntohl(p.get<uint32_t>());
+    printf("CMD: %d\n", cmd);
     switch (cmd) {
       case CMD_VERSION:
         resp.finish(RESP_OKAY);
@@ -237,11 +240,16 @@ static void handle_connection(const unsigned int sock_fd) {
     char *buf = new char[MAX_CMD_SIZE];
     while (true) {
         uint32_t cmdlen;
-        sock.read((char *) &cmdlen, 4);
+
+        sock.read((char *)&cmdlen, 4);
+        printf("LEN: %d\n", cmdlen);
         sock.read(buf, cmdlen);
+        printf("CONT:%s\n", buf);
         try {
+            printf("LEN2: %d\n", cmdlen);
             handle_command(sock, buf, cmdlen);
         } catch (Parser::EndOfInput e) {
+            barf("error");
             Response resp(sock);
             resp.finish(RESP_BAD_COMMAND);
         }
@@ -271,12 +279,12 @@ void serve(void) {
     if (listen(s, 1) != 0) {
         barf("listen failed");
     }
-
+    fflush(stdout);
     while (true) {
         socklen_t len;
         int s2 = accept(s, (struct sockaddr *) &remote, &len);
         if (s2 == -1) {
-          barf("accept failed");
+          barf("accept failed %d", s2);
         }
         handle_connection(s2);
     }
@@ -284,7 +292,9 @@ void serve(void) {
 
 static std::thread *server_thread;
 
+extern "C"
 void start(void) {
+    printf("starting\n");
     server_thread = new std::thread(serve);
 }
 

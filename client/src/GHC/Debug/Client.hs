@@ -24,7 +24,10 @@ withDebuggee :: FilePath  -- ^ debuggee's socket location
              -> IO a
 withDebuggee fname action = do
     s <- socket AF_UNIX Stream defaultProtocol
+    print s
+    putStrLn fname
     connect s (SockAddrUnix fname)
+    print "connected"
     hdl <- socketToHandle s ReadWriteMode
     infoTableEnv <- newMVar mempty
     action (Debuggee hdl infoTableEnv)
