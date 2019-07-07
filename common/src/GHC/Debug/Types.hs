@@ -51,7 +51,7 @@ newtype RawClosure = RawClosure BS.ByteString
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
     -- | Request protocol version
-    RequestVersion :: Request Word64
+    RequestVersion :: Request Word32
     -- | Pause the debuggee.
     RequestPause :: Request ()
     -- | Resume the debuggee.
@@ -101,7 +101,7 @@ putRequest RequestRoots          = putCommand cmdRequestRoots mempty
 putRequest (RequestClosures cs)  = putCommand cmdRequestClosures $ foldMap put cs
 
 getResponse :: Request a -> Get a
-getResponse RequestVersion       = get
+getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
@@ -139,6 +139,7 @@ readFrames hdl = do
     (respLen, status) <- runGet frameHeader <$> return bs --BSL.hGet hdl 6
     print (respLen, status)
     respBody <- BS.hGet hdl (fromIntegral respLen)
+    print respBody
     case status of
       OkayContinues -> do rest <- unsafeInterleaveIO $ readFrames hdl
                           return $ Next respBody rest
@@ -147,7 +148,7 @@ readFrames hdl = do
   where
     frameHeader :: Get (Word32, ResponseCode)
     frameHeader =
-      (,) <$> getWord32le
+      (,) <$> getWord32be
           <*> getResponseCode
 
 throwStream :: Exception e => Stream a (Maybe e) -> [a]

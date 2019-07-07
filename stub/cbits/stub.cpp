@@ -99,12 +99,9 @@ class Response {
         if (status != RESP_OKAY_CONTINUES || this->tail != this->buf + sizeof(Header)) {
             size_t len = this->tail - this->buf;
             debugBelch("LEN: %d", len);
-            Header *hdr = (Header *) this->buf;
-            hdr->len = len;
-            hdr->status = status;
             uint32_t len_payload;
             uint16_t status_payload;
-            len_payload=htons(len);
+            len_payload=htonl(len);
             status_payload = htons(status);
             debugBelch("STATUS: %d\n", status);
             // Header is the length
@@ -112,6 +109,12 @@ class Response {
             // Then status
             this->sock.write((char *) &status_payload, sizeof(uint16_t));
             // then the body, usually empty
+    printf("FLUSHING(%d)( ", len);
+    for (int i = 0; i < len; i++)
+    {
+      printf("%02X", buf[i]);
+    }
+    printf("\n");
             this->sock.write(this->buf, len);
             this->tail = this->buf;
         }
@@ -138,6 +141,7 @@ class Response {
 
     void write(const char *buf, size_t len) {
         if (len > this->buf_size) {
+            printf("LEN TOO BIG");
             this->flush(RESP_OKAY_CONTINUES);
 
             Header hdr;
@@ -147,9 +151,15 @@ class Response {
             this->sock.write(buf, len);
         } else {
             if (this->tail + len >= this->buf + this->buf_size) {
+                printf("FLUSHING: ");
                 this->flush(RESP_OKAY_CONTINUES);
             }
-
+    printf("ADDING(%d)( ", len);
+    for (int i = 0; i < len; i++)
+    {
+      printf("%02X", buf[i]);
+    }
+    printf("\n");
             memcpy(this->tail, buf, len);
             this->tail += len;
         }
@@ -195,6 +205,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     debugBelch("CMD: %d\n", cmd);
     switch (cmd) {
       case CMD_VERSION:
+        uint32_t ver_payload;
+        ver_payload=htonl(0);
+        resp.write(ver_payload);
         resp.finish(RESP_OKAY);
         break;
 
