@@ -71,7 +71,7 @@ static Task *task = NULL;
 extern "C"
 void pause_mutator() {
   printf("pausing c++");
-  rts_pause();
+  r_paused = rts_pause();
   printf("paused c++");
   paused = true;
 }
