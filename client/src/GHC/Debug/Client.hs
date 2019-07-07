@@ -3,6 +3,7 @@ module GHC.Debug.Client
   , withDebuggee
   , pauseDebuggee
   , request
+  , Request(..)
   ) where
 
 import Control.Concurrent

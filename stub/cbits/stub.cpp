@@ -78,6 +78,7 @@ void pause_mutator() {
 
 extern "C"
 void resume_mutator() {
+  printf("resuming c++\n");
   rts_unpause(r_paused);
   paused = false;
 }
@@ -97,11 +98,22 @@ class Response {
     void flush(response_code status) {
         if (status != RESP_OKAY_CONTINUES || this->tail != this->buf + sizeof(Header)) {
             size_t len = this->tail - this->buf;
+            printf("LEN: %d", len);
             Header *hdr = (Header *) this->buf;
             hdr->len = len;
             hdr->status = status;
+            uint32_t len_payload;
+            uint16_t status_payload;
+            len_payload=htons(len);
+            status_payload = htons(status);
+            printf("STATUS: %d\n", status);
+            // Header is the length
+            this->sock.write((char *) &len_payload, sizeof(uint32_t));
+            // Then status
+            this->sock.write((char *) &status_payload, sizeof(uint16_t));
+            // then the body, usually empty
             this->sock.write(this->buf, len);
-            this->tail = this->buf + sizeof(Header);
+            this->tail = this->buf;
         }
     }
 
@@ -112,7 +124,7 @@ class Response {
       : sock(sock),
         buf_size(buf_size),
         buf(new char[buf_size]),
-        tail(buf + sizeof(Header))
+        tail(buf)
         { }
 
     ~Response() {
@@ -144,6 +156,7 @@ class Response {
     }
 
     void finish(enum response_code status) {
+        printf("FINISH: %d\n", status);
         this->flush(status);
     }
 };
@@ -186,7 +199,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
 
       case CMD_PAUSE:
+        printf("PAUSE: %d", paused);
         if (paused) {
+            printf("ALREADY");
             resp.finish(RESP_ALREADY_PAUSED);
         } else {
             pause_mutator();

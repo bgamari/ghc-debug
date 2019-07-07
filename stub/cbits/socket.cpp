@@ -21,6 +21,12 @@ void Socket::read(char *buf, size_t len) {
 }
 
 void Socket::write(const char *buf, size_t len) {
+    printf("WRITING %s %d\n", buf, len);
+    for (int i = 0; i < len; i++)
+    {
+      printf("%02X", buf[i]);
+    }
+    printf("\n");
     while (len > 0) {
         ssize_t ret = ::write(this->fd, buf, len);
         if (ret < 0) {

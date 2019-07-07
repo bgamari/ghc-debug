@@ -63,7 +63,7 @@ data Request a where
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
 
-newtype CommandId = CommandId Word16
+newtype CommandId = CommandId Word32
                   deriving (Eq, Ord, Show)
                   deriving newtype (Binary)
 
@@ -87,14 +87,14 @@ cmdRequestInfoTables = CommandId 6
 
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
-    putWord32be $ fromIntegral $ BSL.length body'
+    putWord32le $ fromIntegral $ (4 + BSL.length body')
     put c
     putLazyByteString body'
   where
     body' = runPut body
 
 putRequest :: Request a -> Put
-putRequest RequestVersion        = putCommand cmdRequestVersion mempty 
+putRequest RequestVersion        = putCommand cmdRequestVersion mempty
 putRequest RequestPause          = putCommand cmdRequestPause mempty
 putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
@@ -114,7 +114,7 @@ data Error = BadCommand
 
 instance Exception Error
 
-data ResponseCode = Okay 
+data ResponseCode = Okay
                   | OkayContinues
                   | Error Error
                   deriving stock (Eq, Ord, Show)
@@ -134,7 +134,10 @@ data Stream a r = Next !a (Stream a r)
 
 readFrames :: Handle -> IO (Stream BS.ByteString (Maybe Error))
 readFrames hdl = do
-    (respLen, status) <- runGet frameHeader <$> BSL.hGet hdl 8
+    bs <- BSL.hGet hdl 6
+    print bs
+    (respLen, status) <- runGet frameHeader <$> return bs --BSL.hGet hdl 6
+    print (respLen, status)
     respBody <- BS.hGet hdl (fromIntegral respLen)
     case status of
       OkayContinues -> do rest <- unsafeInterleaveIO $ readFrames hdl
@@ -144,7 +147,7 @@ readFrames hdl = do
   where
     frameHeader :: Get (Word32, ResponseCode)
     frameHeader =
-      (,) <$> getWord32be
+      (,) <$> getWord32le
           <*> getResponseCode
 
 throwStream :: Exception e => Stream a (Maybe e) -> [a]
