@@ -267,9 +267,11 @@ static void handle_connection(const unsigned int sock_fd) {
     Socket sock(sock_fd);
     char *buf = new char[MAX_CMD_SIZE];
     while (true) {
-        uint32_t cmdlen;
+        uint32_t cmdlen_n, cmdlen;
 
-        sock.read((char *)&cmdlen, 4);
+        sock.read((char *)&cmdlen_n, 4);
+        cmdlen = ntohl(cmdlen_n);
+
         debugBelch("LEN: %d\n", cmdlen);
         sock.read(buf, cmdlen);
         debugBelch("CONT:%s\n", buf);

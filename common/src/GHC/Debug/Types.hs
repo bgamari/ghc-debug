@@ -87,7 +87,7 @@ cmdRequestInfoTables = CommandId 6
 
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
-    putWord32le $ fromIntegral $ (4 + BSL.length body')
+    putWord32be $ fromIntegral $ (4 + BSL.length body')
     put c
     putLazyByteString body'
   where
