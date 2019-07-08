@@ -11,9 +11,7 @@ import Control.Exception
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import Data.Hashable
-import Data.Monoid
 import Data.Word
-import GHC.Generics
 import System.IO
 import System.IO.Unsafe
 
@@ -21,8 +19,8 @@ import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
 
-import GHC.Exts.Heap
-import GHC.Exts.Heap (StgInfoTable)
+-- import GHC.Exts.Heap
+-- import GHC.Exts.Heap (StgInfoTable)
 
 -- TODO: Fetch this from debuggee
 tablesNextToCode :: Bool
@@ -62,6 +60,15 @@ data Request a where
     RequestClosures :: [ClosurePtr] -> Request [RawClosure]
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
+    -- | Wait for the debugee to pause itself and then
+    -- execute an action
+    RequestPoll :: Request ()
+    -- | A client can save objects by calling a special RTS method
+    -- This function returns the closures it saved.
+    RequestSavedObjects :: Request [ClosurePtr]
+    -- | Calls the debugging `findPtr` function and returns the retainers
+    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
+
 
 newtype CommandId = CommandId Word32
                   deriving (Eq, Ord, Show)
@@ -85,6 +92,9 @@ cmdRequestClosures = CommandId 5
 cmdRequestInfoTables :: CommandId
 cmdRequestInfoTables = CommandId 6
 
+cmdRequestPoll :: CommandId
+cmdRequestPoll = CommandId 7
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral $ (4 + BSL.length body')
@@ -99,6 +109,8 @@ putRequest RequestPause          = putCommand cmdRequestPause mempty
 putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
 putRequest (RequestClosures cs)  = putCommand cmdRequestClosures $ foldMap put cs
+putRequest RequestPoll           = putCommand cmdRequestPoll mempty
+putRequest _ = error "Not implemented"
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -106,6 +118,8 @@ getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many get
+getResponse RequestPoll          = get
+getResponse _ = error "Not implemented"
 
 data Error = BadCommand
            | AlreadyPaused
