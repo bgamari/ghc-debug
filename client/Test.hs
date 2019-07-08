@@ -2,11 +2,13 @@ module Main where
 
 import GHC.Debug.Client
 
+import Control.Monad
 
-main = withDebuggee "/tmp/ghc-debug" p3
+
+main = withDebuggee "/tmp/ghc-debug" p1
 
 -- Test pause/resume
-p1 d = pauseDebuggee d (print "help!")
+p1 d = pauseDebuggee d (void $ getChar)
 
 
 
@@ -23,6 +25,11 @@ p3 d = do
   request d RequestVersion >>= print
   request d RequestPause
   request d RequestResume
+
+p4 d = do
+  request d RequestPause
+  request d RequestRoots >>= print
+
 
 
 
