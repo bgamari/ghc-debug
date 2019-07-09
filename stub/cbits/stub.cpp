@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <cstdbool>
 #include <cstring>
+#include <iostream>
+#include <iomanip>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -98,7 +100,7 @@ class Response {
     void flush(response_code status) {
         if (status != RESP_OKAY_CONTINUES || this->tail != this->buf + sizeof(Header)) {
             size_t len = this->tail - this->buf;
-            debugBelch("LEN: %d", len);
+            debugBelch("LEN: %lu", len);
             uint32_t len_payload;
             uint16_t status_payload;
             len_payload=htonl(len);
@@ -109,7 +111,7 @@ class Response {
             // Then status
             this->sock.write((char *) &status_payload, sizeof(uint16_t));
             // then the body, usually empty
-    printf("FLUSHING(%d)( ", len);
+    printf("FLUSHING(%lu)( ", len);
     for (int i = 0; i < len; i++)
     {
       printf("%02X", buf[i]);
@@ -154,12 +156,10 @@ class Response {
                 printf("FLUSHING: ");
                 this->flush(RESP_OKAY_CONTINUES);
             }
-    printf("ADDING(%d)( ", len);
-    for (int i = 0; i < len; i++)
-    {
-      printf("%02X", buf[i]);
-    }
-    printf("\n");
+
+            printf("ADDING(%lu)( ", len);
+            for (int i = 0; i < len; ++i) std::cout << std::hex << (int) buf[i] << ' ';
+            std::cout << std::dec << std::endl ;
             memcpy(this->tail, buf, len);
             this->tail += len;
         }
@@ -195,12 +195,16 @@ void collect_stable_ptrs(std::function<void(StgClosure*)> f) {
     threadStablePtrTable((evac_fn) evac_fn_helper, &f);
 }
 
+void collect_threads_callback(void *user, StgTSO * tso){
+  ((Response *) user)->write((uint64_t) tso);
+}
+
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     debugBelch("HANDLE: %d\n", cmd_len);
     Parser p(buf, cmd_len);
     Response resp(sock);
-    debugBelch("P %d\n", p.available());
+    debugBelch("P %lu\n", p.available());
     uint32_t cmd = ntohl(p.get<uint32_t>());
     debugBelch("CMD: %d\n", cmd);
     switch (cmd) {
@@ -235,9 +239,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
-            collect_threads([&](StgTSO *tso) { resp.write((uint64_t) tso); });
-            collect_stable_names([&](StgClosure *sn) { resp.write((uint64_t) sn); });
-            collect_stable_ptrs([&](StgClosure *sn) { resp.write((uint64_t) sn); });
+            rts_listThreads(&collect_threads_callback, &resp);
+           // collect_stable_names([&](StgClosure *sn) { resp.write((uint64_t) sn); });
+           // collect_stable_ptrs([&](StgClosure *sn) { resp.write((uint64_t) sn); });
             resp.finish(RESP_OKAY);
         }
         break;

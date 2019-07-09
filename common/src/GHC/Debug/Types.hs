@@ -18,9 +18,16 @@ import System.IO.Unsafe
 import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
+import System.Endian
+
+import Numeric (showHex)
+
 
 -- import GHC.Exts.Heap
 -- import GHC.Exts.Heap (StgInfoTable)
+--
+prettyPrint :: BS.ByteString -> String
+prettyPrint = concatMap (flip showHex "") . BS.unpack
 
 -- TODO: Fetch this from debuggee
 tablesNextToCode :: Bool
@@ -35,8 +42,11 @@ newtype InfoTablePtr = InfoTablePtr Word64
                      deriving newtype (Binary, Hashable)
 
 newtype ClosurePtr = ClosurePtr Word64
-                   deriving (Eq, Ord, Show)
+                   deriving (Eq, Ord)
                    deriving newtype (Binary, Hashable)
+
+instance Show ClosurePtr where
+  show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
 newtype RawInfoTable = RawInfoTable BS.ByteString
                      deriving (Eq, Ord, Show)
@@ -153,7 +163,7 @@ readFrames hdl = do
     (respLen, status) <- runGet frameHeader <$> return bs --BSL.hGet hdl 6
     print (respLen, status)
     respBody <- BS.hGet hdl (fromIntegral respLen)
-    print respBody
+    putStrLn (prettyPrint respBody)
     case status of
       OkayContinues -> do rest <- unsafeInterleaveIO $ readFrames hdl
                           return $ Next respBody rest

@@ -20,7 +20,8 @@ library
                        bytestring >=0.10 && <0.11,
                        binary >=0.8 && <0.9,
                        hashable,
-                       ghc-heap
+                       ghc-heap,
+                       cpu
   hs-source-dirs:      src
   ghc-options: -Wall
   default-language:    Haskell2010
