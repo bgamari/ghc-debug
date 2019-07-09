@@ -199,6 +199,10 @@ void collect_threads_callback(void *user, StgTSO * tso){
   ((Response *) user)->write((uint64_t) tso);
 }
 
+void collect_misc_callback(void *user, StgClosure * clos){
+  ((Response *) user)->write((uint64_t) clos);
+}
+
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     debugBelch("HANDLE: %d\n", cmd_len);
@@ -240,8 +244,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
             rts_listThreads(&collect_threads_callback, &resp);
-           // collect_stable_names([&](StgClosure *sn) { resp.write((uint64_t) sn); });
-           // collect_stable_ptrs([&](StgClosure *sn) { resp.write((uint64_t) sn); });
+            rts_listMiscRoots(&collect_misc_callback, &resp);
             resp.finish(RESP_OKAY);
         }
         break;
