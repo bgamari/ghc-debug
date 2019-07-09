@@ -56,6 +56,7 @@ newtype RawClosure = RawClosure BS.ByteString
                    deriving (Eq, Ord, Show)
                    deriving newtype (Binary)
 
+
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
     -- | Request protocol version
@@ -118,7 +119,10 @@ putRequest RequestVersion        = putCommand cmdRequestVersion mempty
 putRequest RequestPause          = putCommand cmdRequestPause mempty
 putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
-putRequest (RequestClosures cs)  = putCommand cmdRequestClosures $ foldMap put cs
+putRequest (RequestClosures cs)  =
+  putCommand cmdRequestClosures $ do
+    putWord16be $ fromIntegral (length cs)
+    foldMap put cs
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest _ = error "Not implemented"
 
@@ -127,9 +131,15 @@ getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
-getResponse (RequestClosures _)  = many get
+getResponse (RequestClosures _)  = many getRawClosure
 getResponse RequestPoll          = get
 getResponse _ = error "Not implemented"
+
+getRawClosure :: Get RawClosure
+getRawClosure = do
+  len <- getInt32be
+  RawClosure <$> getByteString (fromIntegral len)
+
 
 data Error = BadCommand
            | AlreadyPaused

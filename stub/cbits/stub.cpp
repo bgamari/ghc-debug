@@ -253,11 +253,19 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
-            uint16_t n = p.get<uint16_t>();
+
+            debugBelch("GET_CLOSURE\n");
+            uint16_t n_raw = p.get<uint16_t>();
+            uint16_t n = htons(n_raw);
             for (; n > 0; n--) {
+                debugBelch("GET_CLOSURE_GET %d\n", n);
                 StgClosure *ptr = (StgClosure *) p.get<uint64_t>();
+                debugBelch("GET_CLOSURE_LEN %d\n", n);
                 size_t len = closure_sizeW(ptr) * WORD_SIZE;
-                resp.write((uint32_t) len);
+                uint32_t len_payload = htonl(len);
+                debugBelch("GET_CLOSURE_WRITE1 %lu\n", len);
+                resp.write(len_payload);
+                debugBelch("GET_CLOSURE_WRITE2 %d\n", n);
                 resp.write((const char *) ptr, len);
             }
             resp.finish(RESP_OKAY);

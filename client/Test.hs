@@ -5,7 +5,7 @@ import GHC.Debug.Client
 import Control.Monad
 
 
-main = withDebuggee "/tmp/ghc-debug" p4
+main = withDebuggee "/tmp/ghc-debug" p5
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -34,7 +34,8 @@ p4 d = do
 p5 d = do
   request d RequestPause
   r <- request d RequestRoots
-  request d (RequestClosures r) >>= print
+  print (length r)
+  request d (RequestClosures (take 10 r)) >>= print
 
 
 p6 d = do
@@ -54,7 +55,7 @@ p7 d = do
 p8 d = do
   request d RequestPause
   cs <- request d RequestSavedObjects
-  request d (RequestClosures cs)
+  request d (RequestClosures (take 1 cs))
 
 -- Using findPtr
 p9 d = do
