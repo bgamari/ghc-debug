@@ -17,6 +17,7 @@ import GHC.Debug.Decode
 import Network.Socket
 import qualified Data.HashMap.Strict as HM
 import System.IO
+import Debug.Trace
 
 data Debuggee = Debuggee { debuggeeHdl :: Handle
                          , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)

@@ -8,7 +8,8 @@
 module GHC.Debug.Decode (decodeClosure) where
 
 import GHC.Ptr (Ptr(..), plusPtr, castPtr, minusPtr)
-import GHC.Exts (Addr#, unsafeCoerce#)
+import GHC.Exts (Addr#, unsafeCoerce#, Any, Word#)
+import GHC.Word
 import GHC.IO.Unsafe
 import Foreign.Storable
 import Foreign.C.Types (CChar)
@@ -46,7 +47,14 @@ ptrToBox :: Ptr a -> Box
 ptrToBox (Ptr p) = unsafeCoerce# (NotABox p)
 
 boxToClosurePtr :: Box -> ClosurePtr
-boxToClosurePtr (Box x) = ClosurePtr (unsafeCoerce# x)
+boxToClosurePtr (Box x) = ClosurePtr (W64# (aToWord# x))
+
+-- This is a datatype that has the same layout as Ptr, so that by
+-- unsafeCoerce'ing, we obtain the Addr of the wrapped value
+data Ptr' a = Ptr' a
+
+aToWord# :: Any -> Word#
+aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
 decodeClosure :: RawInfoTable -> RawClosure -> GenClosure ClosurePtr
 decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
@@ -64,7 +72,9 @@ decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
         -- process
         print ("Closure", closPtr)
         print ("itbl", itblPtr)
-        fmap boxToClosurePtr <$> getBoxedClosureData (ptrToBox closPtr)
+        r <- getBoxedClosureData (ptrToBox closPtr)
+        print ("Decoded", r)
+        return $ fmap boxToClosurePtr r
   where
     fixTNTC :: Ptr a -> Ptr StgInfoTable
     fixTNTC ptr

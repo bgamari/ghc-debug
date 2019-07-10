@@ -3,9 +3,11 @@ module Main where
 import GHC.Debug.Client
 
 import Control.Monad
+import Debug.Trace
+import Control.Exception
 
 
-main = withDebuggee "/tmp/ghc-debug" p5b
+main = withDebuggee "/tmp/ghc-debug" p5a
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -35,15 +37,16 @@ p5 d = do
   request d RequestPause
   r <- request d RequestRoots
   print (length r)
-  let cs = [r !! 0]
-  print cs
-  (c:_) <- request d (RequestClosures cs)
-  let it = getInfoTblPtr c
-  print it
-  (itr:_) <- request d (RequestInfoTables [it])
-  print itr
-  print c
-  print (decodeClosure itr c)
+  forM_ [0..length r - 1] $ \i -> do
+    let cs = [r !! i]
+    print cs
+    (c:_) <- request d (RequestClosures cs)
+    let it = getInfoTblPtr c
+    print it
+    (itr:_) <- request d (RequestInfoTables [it])
+    print itr
+    print c
+    print (decodeClosure itr c)
 
 -- request all closures
 p5a d = do
@@ -68,7 +71,8 @@ p5b d = do
   print rs
   cs <- request d (RequestClosures rs)
   res <- mapM (lookupInfoTable d) cs
-  print (map (uncurry decodeClosure) res)
+  mapM print (zip (map getInfoTblPtr cs) rs)
+  mapM (evaluate . uncurry decodeClosure . traceShowId) res
 
 
 
