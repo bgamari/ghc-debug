@@ -35,7 +35,16 @@ p5 d = do
   request d RequestPause
   r <- request d RequestRoots
   print (length r)
-  request d (RequestClosures (take 10 r)) >>= print
+  let cs = [r !! 10]
+  print cs
+  (c:_) <- request d (RequestClosures cs)
+  let it = getInfoTblPtr c
+  print it
+  (itr:_) <- request d (RequestInfoTables [it])
+  print itr
+  print c
+  print (decodeClosure itr c)
+
 
 
 p6 d = do

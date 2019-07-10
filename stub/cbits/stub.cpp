@@ -20,6 +20,7 @@
 
 
 #define WORD_SIZE sizeof(unsigned long)
+#define INFO_TABLE_SIZE sizeof(StgInfoTable)
 
 /*
  * Wire format:
@@ -261,7 +262,39 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                 debugBelch("GET_CLOSURE_GET %d\n", n);
                 StgClosure *ptr = (StgClosure *) p.get<uint64_t>();
                 debugBelch("GET_CLOSURE_LEN %d\n", n);
+                debugBelch("WORD_SIZE %lu\n", WORD_SIZE);
+                debugBelch("CLOSURE_SIZE %lu\n", closure_sizeW(ptr));
+                debugBelch("CLOSURE_SIZE_PTR %p\n", ptr);
+
                 size_t len = closure_sizeW(ptr) * WORD_SIZE;
+                uint32_t len_payload = htonl(len);
+                debugBelch("GET_CLOSURE_WRITE1 %lu\n", len);
+                resp.write(len_payload);
+                debugBelch("GET_CLOSURE_WRITE2 %d\n", n);
+                resp.write((const char *) ptr, len);
+            }
+            resp.finish(RESP_OKAY);
+        }
+        break;
+      case CMD_GET_INFO_TABLES:
+        if (!paused) {
+            resp.finish(RESP_NOT_PAUSED);
+        } else {
+
+            debugBelch("GET_INFO_TABLES\n");
+            uint16_t n_raw = p.get<uint16_t>();
+            uint16_t n = htons(n_raw);
+            for (; n > 0; n--) {
+                debugBelch("GET_INFO_GET %d\n", n);
+                StgInfoTable *ptr_end = (StgInfoTable *) p.get<uint64_t>();
+                // TODO this offset is wrong sometimes
+                // You have to subtract 1 so that you get the pointer to the
+                // start of the info table.
+                StgInfoTable *ptr = ptr_end - 1;
+                debugBelch("INFO_TABLE_SIZE %lu\n", INFO_TABLE_SIZE);
+                debugBelch("INFO_TABLE_PTR %p\n", ptr);
+
+                size_t len = INFO_TABLE_SIZE;
                 uint32_t len_payload = htonl(len);
                 debugBelch("GET_CLOSURE_WRITE1 %lu\n", len);
                 resp.write(len_payload);

@@ -14,6 +14,7 @@ import Data.Hashable
 import Data.Word
 import System.IO
 import System.IO.Unsafe
+import Debug.Trace
 
 import Data.Binary
 import Data.Binary.Put
@@ -35,11 +36,14 @@ tablesNextToCode = True
 
 -- TODO: Fetch this from debuggee
 profiling :: Bool
-profiling = True
+profiling = False
 
 newtype InfoTablePtr = InfoTablePtr Word64
-                     deriving (Eq, Ord, Show)
+                     deriving (Eq, Ord)
                      deriving newtype (Binary, Hashable)
+
+instance Show InfoTablePtr where
+  show (InfoTablePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
 newtype ClosurePtr = ClosurePtr Word64
                    deriving (Eq, Ord)
@@ -56,6 +60,9 @@ newtype RawClosure = RawClosure BS.ByteString
                    deriving (Eq, Ord, Show)
                    deriving newtype (Binary)
 
+
+getInfoTblPtr :: RawClosure -> InfoTablePtr
+getInfoTblPtr (RawClosure bs) = InfoTablePtr (runGet getWord64be (BSL.take 8 (BSL.fromStrict bs)))
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
@@ -124,6 +131,10 @@ putRequest (RequestClosures cs)  =
     putWord16be $ fromIntegral (length cs)
     foldMap put cs
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
+putRequest (RequestInfoTables ts) =
+  putCommand cmdRequestInfoTables $ do
+    putWord16be $ fromIntegral (length ts)
+    foldMap put ts
 putRequest _ = error "Not implemented"
 
 getResponse :: Request a -> Get a
@@ -133,12 +144,20 @@ getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
 getResponse RequestPoll          = get
+getResponse (RequestInfoTables _) = many getRawInfoTable
 getResponse _ = error "Not implemented"
 
 getRawClosure :: Get RawClosure
 getRawClosure = do
   len <- getInt32be
+  traceShowM ("Raw Closure", len)
   RawClosure <$> getByteString (fromIntegral len)
+
+getRawInfoTable :: Get RawInfoTable
+getRawInfoTable = do
+  len <- getInt32be
+  traceShowM ("Raw Closure", len)
+  RawInfoTable <$> getByteString (fromIntegral len)
 
 
 data Error = BadCommand

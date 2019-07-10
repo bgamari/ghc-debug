@@ -25,6 +25,6 @@ library
 
 executable debugger
   main-is:             Test.hs
-  ghc-options:         -threaded
+  ghc-options:         -threaded -debug
   build-depends:       base, ghc-debug-client
   default-language:    Haskell2010

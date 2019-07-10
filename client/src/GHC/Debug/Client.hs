@@ -4,6 +4,8 @@ module GHC.Debug.Client
   , pauseDebuggee
   , request
   , Request(..)
+  , getInfoTblPtr
+  , decodeClosure
   ) where
 
 import Control.Concurrent
