@@ -7,7 +7,7 @@ import Debug.Trace
 import Control.Exception
 
 
-main = withDebuggee "/tmp/ghc-debug" p5a
+main = withDebuggee "/tmp/ghc-debug" p5
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -72,7 +72,7 @@ p5b d = do
   cs <- request d (RequestClosures rs)
   res <- mapM (lookupInfoTable d) cs
   mapM print (zip (map getInfoTblPtr cs) rs)
-  mapM (evaluate . uncurry decodeClosure . traceShowId) res
+  mapM (print . uncurry decodeClosure . traceShowId) res
 
 
 

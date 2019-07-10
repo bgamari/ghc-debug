@@ -27,6 +27,7 @@ import GHC.Debug.Types
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.Marshal.Array    (allocaArray)
 import Foreign.ForeignPtr       (ForeignPtr, withForeignPtr, touchForeignPtr)
+import System.Endian
 
 -- | Allocate a bytestring directly into memory and return a pointer to the
 -- allocated buffer
@@ -47,7 +48,7 @@ ptrToBox :: Ptr a -> Box
 ptrToBox (Ptr p) = unsafeCoerce# (NotABox p)
 
 boxToClosurePtr :: Box -> ClosurePtr
-boxToClosurePtr (Box x) = ClosurePtr (W64# (aToWord# x))
+boxToClosurePtr (Box x) = ClosurePtr (toBE64 (W64# (aToWord# x)))
 
 -- This is a datatype that has the same layout as Ptr, so that by
 -- unsafeCoerce'ing, we obtain the Addr of the wrapped value
