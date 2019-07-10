@@ -35,7 +35,7 @@ p5 d = do
   request d RequestPause
   r <- request d RequestRoots
   print (length r)
-  let cs = [r !! 10]
+  let cs = [r !! 0]
   print cs
   (c:_) <- request d (RequestClosures cs)
   let it = getInfoTblPtr c

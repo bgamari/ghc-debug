@@ -298,7 +298,6 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                 uint32_t len_payload = htonl(len);
                 debugBelch("GET_CLOSURE_WRITE1 %lu\n", len);
                 resp.write(len_payload);
-                debugBelch("GET_CLOSURE_WRITE2 %d\n", n);
                 resp.write((const char *) ptr, len);
             }
             resp.finish(RESP_OKAY);
