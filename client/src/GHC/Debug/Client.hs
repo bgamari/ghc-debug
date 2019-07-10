@@ -6,6 +6,7 @@ module GHC.Debug.Client
   , Request(..)
   , getInfoTblPtr
   , decodeClosure
+  , lookupInfoTable
   ) where
 
 import Control.Concurrent
@@ -39,15 +40,16 @@ withDebuggee fname action = do
 request :: Debuggee -> Request resp -> IO resp
 request (Debuggee hdl _) req = doRequest hdl req
 
-lookupInfoTable :: Debuggee -> InfoTablePtr -> IO RawInfoTable
-lookupInfoTable d ptr = do
+lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
+lookupInfoTable d rc = do
+    let ptr = getInfoTblPtr rc
     itblEnv <- readMVar (debuggeeInfoTblEnv d)
     case HM.lookup ptr itblEnv of
       Nothing -> do
         [itbl] <- request d (RequestInfoTables [ptr])
         modifyMVar_ (debuggeeInfoTblEnv d) $ return . HM.insert ptr itbl
-        return itbl
-      Just itbl ->  return itbl
+        return (itbl, rc)
+      Just itbl ->  return (itbl, rc)
 
 pauseDebuggee :: Debuggee -> IO a -> IO a
 pauseDebuggee d =

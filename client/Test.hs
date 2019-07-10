@@ -5,7 +5,7 @@ import GHC.Debug.Client
 import Control.Monad
 
 
-main = withDebuggee "/tmp/ghc-debug" p5a
+main = withDebuggee "/tmp/ghc-debug" p5b
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -60,6 +60,15 @@ p5a d = do
   print c
   print (decodeClosure itr c)
   -}
+
+-- request all closures
+p5b d = do
+  request d RequestPause
+  rs <- request d RequestRoots
+  print rs
+  cs <- request d (RequestClosures rs)
+  res <- mapM (lookupInfoTable d) cs
+  print (map (uncurry decodeClosure) res)
 
 
 
