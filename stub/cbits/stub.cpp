@@ -260,11 +260,11 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             uint16_t n = htons(n_raw);
             for (; n > 0; n--) {
                 debugBelch("GET_CLOSURE_GET %d\n", n);
-                StgClosure *ptr = (StgClosure *) p.get<uint64_t>();
+                StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
                 debugBelch("GET_CLOSURE_LEN %d\n", n);
                 debugBelch("WORD_SIZE %lu\n", WORD_SIZE);
-                debugBelch("CLOSURE_SIZE %lu\n", closure_sizeW(ptr));
                 debugBelch("CLOSURE_SIZE_PTR %p\n", ptr);
+                debugBelch("CLOSURE_SIZE %u\n", closure_sizeW(ptr));
 
                 size_t len = closure_sizeW(ptr) * WORD_SIZE;
                 uint32_t len_payload = htonl(len);
