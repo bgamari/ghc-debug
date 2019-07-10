@@ -57,7 +57,8 @@ decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
         -- The pointer is to the end of the info table (not the start)
         -- Info table is two words long which is why we subtract 16 from
         -- the pointer
-        poke ptr_to_itbl_ptr (castPtr (itblPtr `plusPtr` 16))
+        print itblSize
+        poke ptr_to_itbl_ptr (fixTNTC itblPtr)
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
         -- process
