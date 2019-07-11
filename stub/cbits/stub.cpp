@@ -45,7 +45,10 @@ enum commands {
     CMD_RESUME  = 3,
     CMD_GET_ROOTS = 4,
     CMD_GET_CLOSURES = 5,
-    CMD_GET_INFO_TABLES = 6
+    CMD_GET_INFO_TABLES = 6,
+    CMD_POLL = 7,
+    CMD_SAVED_OBJECTS = 8,
+    CMD_FIND_PTR = 9
 };
 
 enum response_code {
@@ -73,15 +76,13 @@ static Task *task = NULL;
 
 extern "C"
 void pause_mutator() {
-  debugBelch("pausing c++");
   r_paused = rts_pause();
-  debugBelch("paused c++");
   paused = true;
 }
 
 extern "C"
 void resume_mutator() {
-  debugBelch("resuming c++\n");
+  printf("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
   rts_unpause(r_paused);
   paused = false;
 }
@@ -204,6 +205,13 @@ void collect_misc_callback(void *user, StgClosure * clos){
   ((Response *) user)->write((uint64_t) clos);
 }
 
+void inform_callback(void *user, RtsPaused p){
+  ((Response *) user)->finish(RESP_OKAY);
+  r_paused = p;
+  printf("Informed %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  paused = true;
+}
+
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     debugBelch("HANDLE: %d\n", cmd_len);
@@ -302,6 +310,12 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             }
             resp.finish(RESP_OKAY);
         }
+        break;
+
+      case CMD_POLL:
+        rts_inform(&inform_callback, &resp);
+        // NOTE: Don't call finish so that the process blocks waiting for
+        // a response. We will send the response when the process pauses.
         break;
 
       default:

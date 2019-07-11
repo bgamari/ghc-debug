@@ -7,7 +7,7 @@ import Debug.Trace
 import Control.Exception
 
 
-main = withDebuggee "/tmp/ghc-debug" p5
+main = withDebuggee "/tmp/ghc-debug" p6
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)

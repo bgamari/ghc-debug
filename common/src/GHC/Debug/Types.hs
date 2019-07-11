@@ -113,6 +113,13 @@ cmdRequestInfoTables = CommandId 6
 cmdRequestPoll :: CommandId
 cmdRequestPoll = CommandId 7
 
+cmdRequestSavedObjects :: CommandId
+cmdRequestSavedObjects = CommandId 8
+
+cmdRequestFindPtr :: CommandId
+cmdRequestFindPtr = CommandId 9
+
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral $ (4 + BSL.length body')
@@ -130,11 +137,15 @@ putRequest (RequestClosures cs)  =
   putCommand cmdRequestClosures $ do
     putWord16be $ fromIntegral (length cs)
     foldMap put cs
-putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest (RequestInfoTables ts) =
   putCommand cmdRequestInfoTables $ do
     putWord16be $ fromIntegral (length ts)
     foldMap put ts
+putRequest RequestPoll           = putCommand cmdRequestPoll mempty
+putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
+putRequest (RequestFindPtr c)       =
+  putCommand cmdRequestFindPtr $ do
+    put c
 putRequest _ = error "Not implemented"
 
 getResponse :: Request a -> Get a
@@ -143,8 +154,10 @@ getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
-getResponse RequestPoll          = get
 getResponse (RequestInfoTables _) = many getRawInfoTable
+getResponse RequestPoll          = get
+getResponse RequestSavedObjects  = many get
+getResponse (RequestFindPtr _c)  = many get
 getResponse _ = error "Not implemented"
 
 getRawClosure :: Get RawClosure

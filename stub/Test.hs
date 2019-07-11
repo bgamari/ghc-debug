@@ -10,6 +10,7 @@ import Foreign.StablePtr
 loop :: IO ()
 loop = go 0
   where
+   go 10 = pause >> go 11
    go x = print x >> threadDelay 1000000 >> go (x + 1)
 
 data A = A Int
