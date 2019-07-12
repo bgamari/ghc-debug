@@ -7,7 +7,7 @@ import Debug.Trace
 import Control.Exception
 
 
-main = withDebuggee "/tmp/ghc-debug" p6
+main = withDebuggee "/tmp/ghc-debug" p8
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -99,6 +99,11 @@ p8 d = do
 p9 d = do
   request d RequestPause
   (s:_) <- request d RequestSavedObjects
+  request d (RequestFindPtr s) >>= print
+
+p10 d = do
+  request d RequestPause
+  (s:_) <- request d RequestRoots
   request d (RequestFindPtr s) >>= print
 
 

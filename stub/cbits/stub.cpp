@@ -64,10 +64,13 @@ enum response_code {
 // FIXME: These need to be made not private in GHC.
 extern "C" {
 typedef void (*evac_fn)(void *user, StgClosure **root);
+typedef void (*FindPtrCb)(void *user, StgClosure *);
 void threadStableNameTable ( evac_fn evac, void *user );
 void threadStablePtrTable ( evac_fn evac, void *user );
 void stopAllCapabilities (Capability **pCap, Task *task);
 void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
+void findPtr_cb(FindPtrCb , void* , P_);
+void findPtr(P_, int);
 }
 
 static bool paused = false;
@@ -317,6 +320,20 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         // NOTE: Don't call finish so that the process blocks waiting for
         // a response. We will send the response when the process pauses.
         break;
+
+      case CMD_SAVED_OBJECTS:
+        StgClosure * clos;
+        clos = rts_report_saved();
+        resp.write((const char *) clos, 8);
+        resp.finish(RESP_OKAY);
+        break;
+
+      case CMD_FIND_PTR:
+        printf("FIND_PTR\n");
+        findPtr_cb(&collect_misc_callback, &resp, NULL);
+        resp.finish(RESP_OKAY);
+        break;
+
 
       default:
         return 1;
