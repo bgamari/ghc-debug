@@ -10,6 +10,7 @@ import Foreign.StablePtr
 import GHC.Prim
 import GHC.Exts
 import GHC.IO
+import System.Mem
 
 loop :: IO ()
 loop = go 0
@@ -22,7 +23,10 @@ data A = A Int deriving Show
 main :: IO ()
 main = do
   start
-  let x = A 5
+  v <- readLn
+  let x = A v
+  print x
+  performGC
   IO (\s -> saveClosure# x s)
   print "start"
   loop

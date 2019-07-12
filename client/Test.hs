@@ -7,7 +7,7 @@ import Debug.Trace
 import Control.Exception
 
 
-main = withDebuggee "/tmp/ghc-debug" p8
+main = withDebuggee "/tmp/ghc-debug" p9
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -92,14 +92,23 @@ p7 d = do
 -- request saved objects
 p8 d = do
   request d RequestPause
-  cs <- request d RequestSavedObjects
-  request d (RequestClosures (take 1 cs))
+  sos <- request d RequestSavedObjects
+  cs <- request d (RequestClosures sos)
+  res <- mapM (lookupInfoTable d) cs
+  mapM print (zip (map getInfoTblPtr cs) sos)
+  mapM (print . uncurry decodeClosure . traceShowId) res
 
 -- Using findPtr
 p9 d = do
   request d RequestPause
   (s:_) <- request d RequestSavedObjects
-  request d (RequestFindPtr s) >>= print
+  print s
+  sos <- request d (RequestFindPtr s)
+  print ("FIND_PTR_RES", sos)
+  cs <- request d (RequestClosures sos)
+  res <- mapM (lookupInfoTable d) cs
+  mapM print (zip (map getInfoTblPtr cs) sos)
+  mapM (print . uncurry decodeClosure . traceShowId) res
 
 p10 d = do
   request d RequestPause

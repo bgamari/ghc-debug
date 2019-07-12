@@ -324,13 +324,18 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_SAVED_OBJECTS:
         StgClosure * clos;
         clos = rts_report_saved();
-        resp.write((const char *) clos, 8);
+        printf("SAVED: %p\n", clos);
+        resp.write((uint64_t) clos);
         resp.finish(RESP_OKAY);
         break;
 
       case CMD_FIND_PTR:
         printf("FIND_PTR\n");
-        findPtr_cb(&collect_misc_callback, &resp, NULL);
+        StgClosure *ptr;
+        ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
+        debugBelch("FIND_PTR %p\n", ptr);
+        debugBelch("FIND_PTR_SIZE %u\n", closure_sizeW(ptr));
+        findPtr_cb(&collect_misc_callback, &resp, (P_) ptr);
         resp.finish(RESP_OKAY);
         break;
 

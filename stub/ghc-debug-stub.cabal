@@ -23,7 +23,7 @@ library
 
 executable debug-test
   main-is:             Test.hs
-  ghc-options:         -threaded -debug -g3
+  ghc-options:         -threaded -debug -g3 -O0
   build-depends:       base,
                        ghc-debug-stub,
                        ghc-prim
