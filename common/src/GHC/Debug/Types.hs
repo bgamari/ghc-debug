@@ -42,6 +42,11 @@ newtype InfoTablePtr = InfoTablePtr Word64
                      deriving (Eq, Ord)
                      deriving newtype (Binary, Hashable)
 
+newtype ShowPtr = ShowPtr Word64
+
+instance Show ShowPtr where
+  show (ShowPtr w) = "0x" ++ showHex w ""
+
 instance Show InfoTablePtr where
   show (InfoTablePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
