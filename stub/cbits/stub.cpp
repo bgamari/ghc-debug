@@ -381,7 +381,9 @@ void serve(void) {
     // Bind socket
     {
         local.sun_family = AF_UNIX;
-        strcpy(local.sun_path, "/tmp/ghc-debug");
+        const char* sock = getenv("GHC_DEBUG_SOCKET");
+        if (sock == NULL){ sock = "/tmp/ghc-debug"; }
+        strcpy(local.sun_path, sock);
         unlink(local.sun_path);
         int len = strlen(local.sun_path) + sizeof(local.sun_family);
         if (bind(s, (struct sockaddr *) &local, len) != 0) {
