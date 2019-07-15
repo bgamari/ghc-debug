@@ -5,6 +5,7 @@ import GHC.Debug.Client
 import Control.Monad
 import Debug.Trace
 import Control.Exception
+import Control.Concurrent
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
@@ -117,6 +118,7 @@ p10 d = do
   request d (RequestFindPtr s) >>= print
 
 p11 d = do
+  threadDelay 10000000
   request d RequestPause
   ss <- request d RequestSavedObjects
   [c] <- request d (RequestClosures ss)
