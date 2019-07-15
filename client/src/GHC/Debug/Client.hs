@@ -34,28 +34,51 @@ import Data.Dwarf
 import Data.Dwarf.ADT
 import qualified Data.Text  as T
 import Data.List
+import System.Process
+import System.Environment
 
 data Debuggee = Debuggee { debuggeeHdl :: Handle
                          , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)
+                         , debuggeeDwarf :: Maybe Dwarf
                          }
 
--- | Open a debuggee's socket.
-withDebuggee :: FilePath  -- ^ debuggee's socket location
+
+debuggeeProcess :: FilePath -> FilePath -> IO CreateProcess
+debuggeeProcess exe sockName = do
+  e <- getEnvironment
+  return $
+    (proc exe []) { env = Just (("GHC_DEBUG_SOCKET", sockName) : e) }
+
+-- | Open a debuggee, this will also read the DWARF information
+withDebuggee :: FilePath  -- ^ path to executable
              -> (Debuggee -> IO a)
              -> IO a
-withDebuggee fname action = do
+withDebuggee exeName action = do
+    let sockName = "/tmp/ghc-debug2"
+    -- Start the process we want to debug
+    createProcess =<< debuggeeProcess exeName sockName
+
+    -- Read DWARF information from the executable
+    dwarf <- getDwarfInfo exeName
+
+    -- Now connect to the socket the debuggeeProcess just started
+    withDebuggeeSocket sockName (Just dwarf) action
+
+-- | Open a debuggee's socket directly
+withDebuggeeSocket :: FilePath  -- ^ debuggee's socket location
+                   -> Maybe Dwarf
+                   -> (Debuggee -> IO a)
+                   -> IO a
+withDebuggeeSocket sockName mdwarf action = do
     s <- socket AF_UNIX Stream defaultProtocol
-    print s
-    putStrLn ( fname)
-    connect s (SockAddrUnix fname)
-    print "connected"
+    connect s (SockAddrUnix sockName)
     hdl <- socketToHandle s ReadWriteMode
     infoTableEnv <- newMVar mempty
-    action (Debuggee hdl infoTableEnv)
+    action (Debuggee hdl infoTableEnv mdwarf)
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
 request :: Debuggee -> Request resp -> IO resp
-request (Debuggee hdl _) req = doRequest hdl req
+request (Debuggee hdl _ _) req = doRequest hdl req
 
 lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
 lookupInfoTable d rc = do
@@ -79,8 +102,10 @@ getDwarfInfo fn = do
 -- print $ DwarfPretty.dwarf dwarf
  return dwarf
 
-lookupDwarf :: InfoTablePtr -> Dwarf -> Maybe (FilePath, Int, Int)
-lookupDwarf (InfoTablePtr w) (Dwarf units) = asum (map (lookupDwarfUnit (fromBE64 w)) units)
+lookupDwarf :: Debuggee -> InfoTablePtr -> Maybe (FilePath, Int, Int)
+lookupDwarf d (InfoTablePtr w) = do
+  (Dwarf units) <- debuggeeDwarf d
+  asum (map (lookupDwarfUnit (fromBE64 w)) units)
 
 lookupDwarfUnit :: Word64 -> Boxed CompilationUnit -> Maybe (FilePath, Int, Int)
 lookupDwarfUnit w (Boxed _ cu) = do

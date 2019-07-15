@@ -8,7 +8,7 @@ import Control.Exception
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
-main = withDebuggee "/tmp/ghc-debug" p11
+main = withDebuggee prog p11
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -120,12 +120,8 @@ p11 d = do
   request d RequestPause
   ss <- request d RequestSavedObjects
   [c] <- request d (RequestClosures ss)
-  print ss
-  print c
   let itb = getInfoTblPtr c
-  print itb
-  dwarf <- getDwarfInfo prog
-  print (lookupDwarf itb dwarf)
+  print (lookupDwarf d itb)
 
 
 

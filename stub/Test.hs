@@ -15,15 +15,18 @@ import System.Mem
 loop :: IO ()
 loop = go 0
   where
-   go 10 = pause >> go 11
+   go 10 = go 11
    go x = print x >> threadDelay 1000000 >> go (x + 1)
 
 data A = A Int deriving Show
 
+v :: Int
+v = 5
+{-# NOINLINE v #-}
+
 main :: IO ()
 main = do
   start
-  v <- readLn
   let x = A v
   print x
   performGC
