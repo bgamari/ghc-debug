@@ -10,6 +10,7 @@ module GHC.Debug.Client
   , lookupInfoTable
   , getDwarfInfo
   , lookupDwarf
+  , showFileSnippet
   ) where
 
 import Control.Concurrent
@@ -37,6 +38,8 @@ import qualified Data.Text  as T
 import Data.List
 import System.Process
 import System.Environment
+import System.FilePath
+import System.Directory
 
 data Debuggee = Debuggee { debuggeeHdl :: Handle
                          , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)
@@ -114,7 +117,8 @@ lookupDwarfUnit w (Boxed _ cu) = do
   high <- cuHighPc cu
   guard (low <= w && w <= high)
   let (fs, ls) = cuLineNumInfo cu
-  foldl' (lookupDwarfLine w) Nothing (zip ls (tail ls))
+  (fp, l, c) <- foldl' (lookupDwarfLine w) Nothing (zip ls (tail ls))
+  return (T.unpack (cuCompDir cu) </> fp, l , c)
 
 lookupDwarfSubprogram :: Word64 -> Boxed Def -> Maybe Subprogram
 lookupDwarfSubprogram w (Boxed _ (DefSubprogram s)) = do
@@ -137,6 +141,21 @@ lookupDwarfLine w Nothing (d, nd) = do
       Just (T.unpack file, fromIntegral (lnmLine d), fromIntegral (lnmColumn d))
     else Nothing
 lookupDwarfLine _ (Just r) _ = Just r
+
+showFileSnippet :: (FilePath, Int, Int) -> IO ()
+showFileSnippet (fp, l, c) = do
+  exists <- doesFileExist fp
+  if not exists
+    then putStrLn ("Can't open file: " ++ fp)
+    else do
+      src <- zip [1..] . lines <$> readFile fp
+      let ctx = take 10 (drop (max (l - 5) 0) src)
+      putStrLn (fp <> ":" <> show l <> ":" <> show c)
+      mapM_ (\(n, l) ->
+       let sn = show n
+       in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
+
+
 
 
 
