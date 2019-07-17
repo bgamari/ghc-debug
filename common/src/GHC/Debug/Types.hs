@@ -84,7 +84,8 @@ data Request a where
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
     -- | Wait for the debugee to pause itself and then
-    -- execute an action
+    -- execute an action. It currently impossible to resume after
+    -- a pause caused by a poll.
     RequestPoll :: Request ()
     -- | A client can save objects by calling a special RTS method
     -- This function returns the closures it saved.
@@ -151,7 +152,6 @@ putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 putRequest (RequestFindPtr c)       =
   putCommand cmdRequestFindPtr $ do
     put c
-putRequest _ = error "Not implemented"
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -163,7 +163,6 @@ getResponse (RequestInfoTables _) = many getRawInfoTable
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
 getResponse (RequestFindPtr _c)  = many get
-getResponse _ = error "Not implemented"
 
 getRawClosure :: Get RawClosure
 getRawClosure = do
@@ -181,6 +180,7 @@ getRawInfoTable = do
 data Error = BadCommand
            | AlreadyPaused
            | NotPaused
+           | NoResume
            deriving stock (Eq, Ord, Show)
 
 instance Exception Error
@@ -198,6 +198,7 @@ getResponseCode = getWord16be >>= f
     f 0x100 = pure $ Error BadCommand
     f 0x101 = pure $ Error AlreadyPaused
     f 0x102 = pure $ Error NotPaused
+    f 0x103 = pure $ Error NoResume
     f _     = fail "Unknown response code"
 
 data Stream a r = Next !a (Stream a r)
@@ -234,8 +235,11 @@ concatStream = BSL.fromChunks . throwStream
 
 doRequest :: Handle -> Request a -> IO a
 doRequest hdl req = do
+    print "DO REQUEST"
     BSL.hPutStr hdl $ runPut $ putRequest req
+    print "WAITING"
     frames <- readFrames hdl
+    print "GOT RESPONSE"
     let x = runGet (getResponse req) (concatStream frames)
     return x
 

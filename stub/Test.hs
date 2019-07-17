@@ -15,7 +15,7 @@ import System.Mem
 loop :: IO ()
 loop = go 0
   where
-   go 10 = go 11
+   go 5 = pause >> go 11
    go x = print x >> threadDelay 1000000 >> go (x + 1)
 
 data A = A Int deriving Show

@@ -1,6 +1,7 @@
 module GHC.Debug.Client
   ( Debuggee
   , withDebuggee
+  , withDebuggeeSocket
   , pauseDebuggee
   , request
   , Request(..)

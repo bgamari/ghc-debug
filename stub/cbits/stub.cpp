@@ -58,6 +58,7 @@ enum response_code {
     RESP_BAD_COMMAND = 0x100,
     RESP_ALREADY_PAUSED = 0x101,
     RESP_NOT_PAUSED = 0x102,
+    RESP_NO_RESUME = 0x103,
 };
 
 // RTS signatures
@@ -75,7 +76,7 @@ void findPtr(P_, int);
 
 static bool paused = false;
 static RtsPaused r_paused;
-static Task *task = NULL;
+static bool r_poll_pause = false;
 
 extern "C"
 void pause_mutator() {
@@ -245,6 +246,11 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_RESUME:
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
+        } else if (r_poll_pause){
+            // See #7, resuming after the Haskell process pauses
+            // is a direct train to a segfault and I can't work out how to fix
+            // it. Therefore it's just disallowed for now.
+            resp.finish(RESP_NO_RESUME);
         } else {
             resume_mutator();
             resp.finish(RESP_OKAY);
@@ -316,6 +322,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
 
       case CMD_POLL:
+        r_poll_pause = true;
         rts_inform(&inform_callback, &resp);
         // NOTE: Don't call finish so that the process blocks waiting for
         // a response. We will send the response when the process pauses.

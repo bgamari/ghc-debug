@@ -7,26 +7,21 @@
 
 module GHC.Debug.Decode (decodeClosure) where
 
-import GHC.Ptr (Ptr(..), plusPtr, castPtr, minusPtr)
+import GHC.Ptr (Ptr(..), plusPtr, castPtr)
 import GHC.Exts (Addr#, unsafeCoerce#, Any, Word#)
 import GHC.Word
 import GHC.IO.Unsafe
 import Foreign.Storable
-import Foreign.C.Types (CChar)
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Unsafe as BS
 import qualified Data.ByteString.Internal as BSI
 
 import GHC.Exts.Heap
-import GHC.Exts.Heap.InfoTable.Types
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
 import GHC.Debug.Types
 import Foreign.Marshal.Alloc    (allocaBytes)
-import Foreign.Marshal.Array    (allocaArray)
-import Foreign.ForeignPtr       (ForeignPtr, withForeignPtr, touchForeignPtr)
+import Foreign.ForeignPtr       (withForeignPtr)
 import System.Endian
 
 -- | Allocate a bytestring directly into memory and return a pointer to the
@@ -79,10 +74,10 @@ decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
   where
     fixTNTC :: Ptr a -> Ptr StgInfoTable
     fixTNTC ptr
-      | tablesNextToCode = castPtr $ ptr  `plusPtr` itblSize
+      | tablesNextToCode = castPtr $ ptr  `plusPtr` itblSize'
       | otherwise        = castPtr $ ptr
 
-    itblSize
+    itblSize'
       | profiling  = ItblProf.itblSize
       | otherwise  = Itbl.itblSize
 
