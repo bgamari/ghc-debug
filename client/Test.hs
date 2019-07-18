@@ -10,7 +10,7 @@ import Control.Concurrent
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
 --main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p8
-main = withDebuggee prog p11
+main = withDebuggee prog p12
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -126,6 +126,17 @@ p11 d = do
   request d RequestPause
   ss <- request d RequestSavedObjects
   [c] <- request d (RequestClosures ss)
+  let itb = getInfoTblPtr c
+  case lookupDwarf d itb of
+    Just r -> showFileSnippet r
+    Nothing -> return ()
+
+p12 d = do
+  threadDelay 10000000
+  request d RequestPause
+  [ss] <- request d RequestSavedObjects
+  [r] <- request d (RequestFindPtr ss)
+  [c] <- request d (RequestClosures [r])
   let itb = getInfoTblPtr c
   case lookupDwarf d itb of
     Just r -> showFileSnippet r
