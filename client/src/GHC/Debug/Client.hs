@@ -58,11 +58,11 @@ withDebuggee :: FilePath  -- ^ path to executable
              -> IO a
 withDebuggee exeName action = do
     let sockName = "/tmp/ghc-debug2"
+    -- Read DWARF information from the executable
     -- Start the process we want to debug
     cp <- debuggeeProcess exeName sockName
-    -- Read DWARF information from the executable
-    dwarf <- getDwarfInfo exeName
-    withCreateProcess cp $ \_ _ _ _ ->
+    withCreateProcess cp $ \_ _ _ _ -> do
+      dwarf <- getDwarfInfo exeName
     -- Now connect to the socket the debuggeeProcess just started
       withDebuggeeSocket sockName (Just dwarf) action
 
@@ -123,7 +123,6 @@ lookupDwarfSubprogram :: Word64 -> Boxed Def -> Maybe Subprogram
 lookupDwarfSubprogram w (Boxed _ (DefSubprogram s)) = do
   low <- subprogLowPC s
   high <- subprogHighPC s
---  traceShowM (ShowPtr w, ShowPtr low, ShowPtr high, low <= w && w <= high)
   guard (low <= w && w <= high)
   return s
 lookupDwarfSubprogram _ _ = Nothing

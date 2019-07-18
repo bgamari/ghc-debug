@@ -14,7 +14,6 @@ import Data.Hashable
 import Data.Word
 import System.IO
 import System.IO.Unsafe
-import Debug.Trace
 
 import Data.Binary
 import Data.Binary.Put
@@ -167,13 +166,11 @@ getResponse (RequestFindPtr _c)  = many get
 getRawClosure :: Get RawClosure
 getRawClosure = do
   len <- getInt32be
-  traceShowM ("Raw Closure", len)
   RawClosure <$> getByteString (fromIntegral len)
 
 getRawInfoTable :: Get RawInfoTable
 getRawInfoTable = do
   len <- getInt32be
-  traceShowM ("Raw Closure", len)
   RawInfoTable <$> getByteString (fromIntegral len)
 
 
@@ -206,12 +203,8 @@ data Stream a r = Next !a (Stream a r)
 
 readFrames :: Handle -> IO (Stream BS.ByteString (Maybe Error))
 readFrames hdl = do
-    bs <- BSL.hGet hdl 6
-    print bs
-    (respLen, status) <- runGet frameHeader <$> return bs --BSL.hGet hdl 6
-    print (respLen, status)
+    (respLen, status) <- runGet frameHeader <$> BSL.hGet hdl 6
     respBody <- BS.hGet hdl (fromIntegral respLen)
-    putStrLn (prettyPrint respBody)
     case status of
       OkayContinues -> do rest <- unsafeInterleaveIO $ readFrames hdl
                           return $ Next respBody rest
@@ -235,11 +228,8 @@ concatStream = BSL.fromChunks . throwStream
 
 doRequest :: Handle -> Request a -> IO a
 doRequest hdl req = do
-    print "DO REQUEST"
     BSL.hPutStr hdl $ runPut $ putRequest req
-    print "WAITING"
     frames <- readFrames hdl
-    print "GOT RESPONSE"
     let x = runGet (getResponse req) (concatStream frames)
     return x
 
