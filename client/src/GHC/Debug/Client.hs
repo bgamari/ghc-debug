@@ -59,13 +59,13 @@ withDebuggee :: FilePath  -- ^ path to executable
 withDebuggee exeName action = do
     let sockName = "/tmp/ghc-debug2"
     -- Start the process we want to debug
-    createProcess =<< debuggeeProcess exeName sockName
-
+    cp <- debuggeeProcess exeName sockName
     -- Read DWARF information from the executable
     dwarf <- getDwarfInfo exeName
-
+    withCreateProcess cp $ \_ _ _ _ ->
     -- Now connect to the socket the debuggeeProcess just started
-    withDebuggeeSocket sockName (Just dwarf) action
+      withDebuggeeSocket sockName (Just dwarf) action
+
 
 -- | Open a debuggee's socket directly
 withDebuggeeSocket :: FilePath  -- ^ debuggee's socket location
