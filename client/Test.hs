@@ -9,8 +9,8 @@ import Control.Concurrent
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p6
-main = withDebuggee prog p8
+--main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p8
+main = withDebuggee prog p11
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)

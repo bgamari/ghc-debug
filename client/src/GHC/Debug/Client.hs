@@ -21,7 +21,6 @@ import GHC.Debug.Decode
 import Network.Socket
 import qualified Data.HashMap.Strict as HM
 import System.IO
-import Debug.Trace
 import Data.Word
 import Data.Maybe
 import System.Endian
@@ -116,7 +115,7 @@ lookupDwarfUnit w (Boxed _ cu) = do
   low <- cuLowPc cu
   high <- cuHighPc cu
   guard (low <= w && w <= high)
-  let (fs, ls) = cuLineNumInfo cu
+  LNE _ _fs ls <- cuLineNumInfo cu
   (fp, l, c) <- foldl' (lookupDwarfLine w) Nothing (zip ls (tail ls))
   return (T.unpack (cuCompDir cu) </> fp, l , c)
 
@@ -134,13 +133,12 @@ lookupDwarfLine :: Word64
                 -> (Dwarf.DW_LNE, Dwarf.DW_LNE)
                 -> Maybe (FilePath, Int, Int)
 lookupDwarfLine w Nothing (d, nd) = do
---  traceShowM (ShowPtr $ lnmAddress d, ShowPtr $ lnmAddress nd)
   if lnmAddress d <= w && w <= lnmAddress nd
     then do
-      let (file, _, _, _) = lnmFiles d !! (fromIntegral (lnmFile d) - 1)
-      Just (T.unpack file, fromIntegral (lnmLine d), fromIntegral (lnmColumn d))
+      let (LNEFile file _ _ _) = lnmFiles nd !! (fromIntegral (lnmFile nd) - 1)
+      Just (T.unpack file, fromIntegral (lnmLine nd), fromIntegral (lnmColumn nd))
     else Nothing
-lookupDwarfLine _ (Just r) _ = Just r
+lookupDwarfLine _ (Just r) _ =  Just r
 
 showFileSnippet :: (FilePath, Int, Int) -> IO ()
 showFileSnippet (fp, l, c) = do
