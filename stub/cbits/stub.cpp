@@ -177,7 +177,7 @@ class Response {
             //trace("ADDING(%lu)( ", len);
             //for (int i = 0; i < len; ++i) std::cout << std::hex << (int) buf[i] << ' ';
             //std::cout << std::dec << std::endl ;
-            //memcpy(this->tail, buf, len);
+            memcpy(this->tail, buf, len);
             this->tail += len;
         }
     }
