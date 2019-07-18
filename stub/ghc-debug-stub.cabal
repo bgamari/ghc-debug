@@ -13,6 +13,11 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
+flag trace
+  Description: Enable tracing
+  Default:     False
+  Manual:      True
+
 library
   exposed-modules:     GHC.Debug.Stub
   hs-source-dirs:      src
@@ -20,6 +25,8 @@ library
   default-language:    Haskell2010
   c-sources:           cbits/stub.cpp, cbits/socket.cpp
   extra-libraries:     stdc++
+  if flag(trace)
+    CPP-Options: -DTRACE
 
 executable debug-test
   main-is:             Test.hs

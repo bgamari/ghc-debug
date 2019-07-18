@@ -22,6 +22,17 @@
 #define WORD_SIZE sizeof(unsigned long)
 #define INFO_TABLE_SIZE sizeof(StgInfoTable)
 
+#ifdef TRACE
+void trace(const char * fmt, ...){
+  GNUC3_ATTRIBUTE(format (PRINTF, 1, 2));
+}
+#else
+void trace(const char * fmt, ...){
+  (void) fmt;
+}
+#endif
+
+
 /*
  * Wire format:
  *
@@ -86,7 +97,7 @@ void pause_mutator() {
 
 extern "C"
 void resume_mutator() {
-  printf("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
   rts_unpause(r_paused);
   paused = false;
 }
@@ -106,23 +117,23 @@ class Response {
     void flush(response_code status) {
         if (status != RESP_OKAY_CONTINUES || this->tail != this->buf + sizeof(Header)) {
             size_t len = this->tail - this->buf;
-            debugBelch("LEN: %lu", len);
+            trace("LEN: %lu", len);
             uint32_t len_payload;
             uint16_t status_payload;
             len_payload=htonl(len);
             status_payload = htons(status);
-            debugBelch("STATUS: %d\n", status);
+            trace("STATUS: %d\n", status);
             // Header is the length
             this->sock.write((char *) &len_payload, sizeof(uint32_t));
             // Then status
             this->sock.write((char *) &status_payload, sizeof(uint16_t));
             // then the body, usually empty
-    printf("FLUSHING(%lu)( ", len);
+    trace("FLUSHING(%lu)( ", len);
     for (int i = 0; i < len; i++)
     {
-      printf("%02X", buf[i]);
+      trace("%02X", buf[i]);
     }
-    printf("\n");
+    trace("\n");
             this->sock.write(this->buf, len);
             this->tail = this->buf;
         }
@@ -149,7 +160,7 @@ class Response {
 
     void write(const char *buf, size_t len) {
         if (len > this->buf_size) {
-            printf("LEN TOO BIG");
+            trace("LEN TOO BIG");
             this->flush(RESP_OKAY_CONTINUES);
 
             Header hdr;
@@ -159,11 +170,11 @@ class Response {
             this->sock.write(buf, len);
         } else {
             if (this->tail + len >= this->buf + this->buf_size) {
-                printf("FLUSHING: ");
+                trace("FLUSHING: ");
                 this->flush(RESP_OKAY_CONTINUES);
             }
 
-            printf("ADDING(%lu)( ", len);
+            trace("ADDING(%lu)( ", len);
             for (int i = 0; i < len; ++i) std::cout << std::hex << (int) buf[i] << ' ';
             std::cout << std::dec << std::endl ;
             memcpy(this->tail, buf, len);
@@ -172,7 +183,7 @@ class Response {
     }
 
     void finish(enum response_code status) {
-        debugBelch("FINISH: %d\n", status);
+        trace("FINISH: %d\n", status);
         this->flush(status);
     }
 };
@@ -212,18 +223,18 @@ void collect_misc_callback(void *user, StgClosure * clos){
 void inform_callback(void *user, RtsPaused p){
   ((Response *) user)->finish(RESP_OKAY);
   r_paused = p;
-  printf("Informed %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  trace("Informed %p %p\n", r_paused.pausing_task, r_paused.capabilities);
   paused = true;
 }
 
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
-    debugBelch("HANDLE: %d\n", cmd_len);
+    trace("HANDLE: %d\n", cmd_len);
     Parser p(buf, cmd_len);
     Response resp(sock);
-    debugBelch("P %lu\n", p.available());
+    trace("P %lu\n", p.available());
     uint32_t cmd = ntohl(p.get<uint32_t>());
-    debugBelch("CMD: %d\n", cmd);
+    trace("CMD: %d\n", cmd);
     switch (cmd) {
       case CMD_VERSION:
         uint32_t ver_payload;
@@ -233,9 +244,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
 
       case CMD_PAUSE:
-        debugBelch("PAUSE: %d", paused);
+        trace("PAUSE: %d", paused);
         if (paused) {
-            debugBelch("ALREADY");
+            trace("ALREADY");
             resp.finish(RESP_ALREADY_PAUSED);
         } else {
             pause_mutator();
@@ -272,22 +283,22 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
 
-            debugBelch("GET_CLOSURE\n");
+            trace("GET_CLOSURE\n");
             uint16_t n_raw = p.get<uint16_t>();
             uint16_t n = htons(n_raw);
             for (; n > 0; n--) {
-                debugBelch("GET_CLOSURE_GET %d\n", n);
+                trace("GET_CLOSURE_GET %d\n", n);
                 StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-                debugBelch("GET_CLOSURE_LEN %d\n", n);
-                debugBelch("WORD_SIZE %lu\n", WORD_SIZE);
-                debugBelch("CLOSURE_SIZE_PTR %p\n", ptr);
-                debugBelch("CLOSURE_SIZE %u\n", closure_sizeW(ptr));
+                trace("GET_CLOSURE_LEN %d\n", n);
+                trace("WORD_SIZE %lu\n", WORD_SIZE);
+                trace("CLOSURE_SIZE_PTR %p\n", ptr);
+                trace("CLOSURE_SIZE %u\n", closure_sizeW(ptr));
 
                 size_t len = closure_sizeW(ptr) * WORD_SIZE;
                 uint32_t len_payload = htonl(len);
-                debugBelch("GET_CLOSURE_WRITE1 %lu\n", len);
+                trace("GET_CLOSURE_WRITE1 %lu\n", len);
                 resp.write(len_payload);
-                debugBelch("GET_CLOSURE_WRITE2 %d\n", n);
+                trace("GET_CLOSURE_WRITE2 %d\n", n);
                 resp.write((const char *) ptr, len);
             }
             resp.finish(RESP_OKAY);
@@ -298,22 +309,22 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
 
-            debugBelch("GET_INFO_TABLES\n");
+            trace("GET_INFO_TABLES\n");
             uint16_t n_raw = p.get<uint16_t>();
             uint16_t n = htons(n_raw);
             for (; n > 0; n--) {
-                debugBelch("GET_INFO_GET %d\n", n);
+                trace("GET_INFO_GET %d\n", n);
                 StgInfoTable *ptr_end = (StgInfoTable *) p.get<uint64_t>();
                 // TODO this offset is wrong sometimes
                 // You have to subtract 1 so that you get the pointer to the
                 // start of the info table.
                 StgInfoTable *ptr = ptr_end - 1;
-                debugBelch("INFO_TABLE_SIZE %lu\n", INFO_TABLE_SIZE);
-                debugBelch("INFO_TABLE_PTR %p\n", ptr);
+                trace("INFO_TABLE_SIZE %lu\n", INFO_TABLE_SIZE);
+                trace("INFO_TABLE_PTR %p\n", ptr);
 
                 size_t len = INFO_TABLE_SIZE;
                 uint32_t len_payload = htonl(len);
-                debugBelch("GET_CLOSURE_WRITE1 %lu\n", len);
+                trace("GET_CLOSURE_WRITE1 %lu\n", len);
                 resp.write(len_payload);
                 resp.write((const char *) ptr, len);
             }
@@ -331,17 +342,17 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_SAVED_OBJECTS:
         StgClosure * clos;
         clos = rts_report_saved();
-        printf("SAVED: %p\n", clos);
+        trace("SAVED: %p\n", clos);
         resp.write((uint64_t) clos);
         resp.finish(RESP_OKAY);
         break;
 
       case CMD_FIND_PTR:
-        printf("FIND_PTR\n");
+        trace("FIND_PTR\n");
         StgClosure *ptr;
         ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-        debugBelch("FIND_PTR %p\n", ptr);
-        debugBelch("FIND_PTR_SIZE %u\n", closure_sizeW(ptr));
+        trace("FIND_PTR %p\n", ptr);
+        trace("FIND_PTR_SIZE %u\n", closure_sizeW(ptr));
         findPtr_cb(&collect_misc_callback, &resp, (P_) ptr);
         resp.finish(RESP_OKAY);
         break;
@@ -362,11 +373,11 @@ static void handle_connection(const unsigned int sock_fd) {
         sock.read((char *)&cmdlen_n, 4);
         cmdlen = ntohl(cmdlen_n);
 
-        debugBelch("LEN: %d\n", cmdlen);
+        trace("LEN: %d\n", cmdlen);
         sock.read(buf, cmdlen);
-        debugBelch("CONT:%s\n", buf);
+        trace("CONT:%s\n", buf);
         try {
-            debugBelch("LEN2: %d\n", cmdlen);
+            trace("LEN2: %d\n", cmdlen);
             handle_command(sock, buf, cmdlen);
         } catch (Parser::EndOfInput e) {
             barf("error");
@@ -416,7 +427,7 @@ static std::thread *server_thread;
 
 extern "C"
 void start(void) {
-    debugBelch("starting\n");
+    trace("starting\n");
     server_thread = new std::thread(serve);
 }
 
