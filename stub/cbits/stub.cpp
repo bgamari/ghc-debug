@@ -94,7 +94,7 @@ void findPtr(P_, int);
 
 static struct savedObjectsState {
     StgWord n_objects;
-    StgClosure objects[20];
+    StgStablePtr objects[20];
 } g_savedObjectState;
 
 class Response {
@@ -359,8 +359,8 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_SAVED_OBJECTS:
         int i;
         for (i = 0; i < g_savedObjectState.n_objects; i++) {
-          resp.write((uint64_t)(&g_savedObjectState.objects[i]));
-          trace("SAVED: %p\n", &g_savedObjectState.objects[i]);
+          StgStablePtr v = g_savedObjectState.objects[i];
+          resp.write((uint64_t)(UNTAG_CLOSURE((StgClosure *)deRefStablePtr(v))));
         }
         resp.finish(RESP_OKAY);
         break;
@@ -461,8 +461,7 @@ StgWord saveClosures(StgWord n, HsStablePtr *sps)
         return 20;
 
     for (i = 0; i < n; i++) {
-        trace("OBJ %p", deRefStablePtr(sps[i]));
-        ps->objects[i] = *(UNTAG_CLOSURE((StgClosure *)deRefStablePtr(sps[i])));
+        ps->objects[i] = sps[i];
     }
     ps->n_objects = i;
     return 0;
