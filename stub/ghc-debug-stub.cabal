@@ -21,17 +21,16 @@ flag trace
 library
   exposed-modules:     GHC.Debug.Stub
   hs-source-dirs:      src
-  build-depends:       base >=4.12 && <4.14
+  build-depends:       base >=4.12 && <4.14, ghc-prim
   default-language:    Haskell2010
   c-sources:           cbits/stub.cpp, cbits/socket.cpp
   extra-libraries:     stdc++
   if flag(trace)
-    CPP-Options: -DTRACE
+    C-Options: -DTRACE
 
 executable debug-test
   main-is:             Test.hs
   ghc-options:         -threaded -debug -g3 -O0
   build-depends:       base,
-                       ghc-debug-stub,
-                       ghc-prim
+                       ghc-debug-stub
   default-language:    Haskell2010

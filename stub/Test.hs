@@ -7,9 +7,6 @@ import GHC.Debug.Stub
 import Control.Concurrent
 import System.Mem.StableName
 import Foreign.StablePtr
-import GHC.Prim
-import GHC.Exts
-import GHC.IO
 import System.Mem
 
 loop :: IO ()
@@ -30,7 +27,7 @@ main = do
   let x = A v
   print x
   performGC
-  IO (\s -> saveClosure# x s)
+  saveClosures [Box x]
   print "start"
   loop
   print x

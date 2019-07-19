@@ -15,6 +15,8 @@
 #include <Rts.h>
 #include "socket.h"
 #include "parser.h"
+#include <stdarg.h>
+#include <stdio.h>
 
 #define MAX_CMD_SIZE 4096
 
@@ -23,14 +25,19 @@
 #define INFO_TABLE_SIZE sizeof(StgInfoTable)
 
 #ifdef TRACE
-void trace(const char * fmt, ...){
-  GNUC3_ATTRIBUTE(format (PRINTF, 1, 2));
+void trace(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
 }
 #else
 void trace(const char * fmt, ...){
   (void) fmt;
 }
 #endif
+
+
 
 
 /*
@@ -85,22 +92,10 @@ void findPtr_cb(FindPtrCb , void* , P_);
 void findPtr(P_, int);
 }
 
-static bool paused = false;
-static RtsPaused r_paused;
-static bool r_poll_pause = false;
-
-extern "C"
-void pause_mutator() {
-  r_paused = rts_pause();
-  paused = true;
-}
-
-extern "C"
-void resume_mutator() {
-  trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
-  rts_unpause(r_paused);
-  paused = false;
-}
+static struct savedObjectsState {
+    StgWord n_objects;
+    StgClosure objects[20];
+} g_savedObjectState;
 
 class Response {
   private:
@@ -188,6 +183,29 @@ class Response {
     }
 };
 
+static bool paused = false;
+static RtsPaused r_paused;
+static Response * r_poll_pause_resp = NULL;
+
+static StgStablePtr rts_saved_closure = NULL;
+
+extern "C"
+void pause_mutator() {
+  r_paused = rts_pause();
+  if (r_poll_pause_resp != NULL){
+      r_poll_pause_resp->finish(RESP_OKAY);
+  }
+  paused = true;
+}
+
+extern "C"
+void resume_mutator() {
+  trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  rts_unpause(r_paused);
+  paused = false;
+}
+
+
 void collect_threads(std::function<void(StgTSO*)> f) {
     for (int g=0; g < RtsFlags.GcFlags.generations; g++) {
         StgTSO *tso = generations[g].threads;
@@ -257,7 +275,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_RESUME:
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
-        } else if (r_poll_pause){
+        } else if (r_poll_pause_resp){
             // See #7, resuming after the Haskell process pauses
             // is a direct train to a segfault and I can't work out how to fix
             // it. Therefore it's just disallowed for now.
@@ -333,17 +351,17 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
 
       case CMD_POLL:
-        r_poll_pause = true;
-        rts_inform(&inform_callback, &resp);
+        r_poll_pause_resp = &resp;
         // NOTE: Don't call finish so that the process blocks waiting for
         // a response. We will send the response when the process pauses.
         break;
 
       case CMD_SAVED_OBJECTS:
-        StgClosure * clos;
-        clos = rts_report_saved();
-        trace("SAVED: %p\n", clos);
-        resp.write((uint64_t) clos);
+        int i;
+        for (i = 0; i < g_savedObjectState.n_objects; i++) {
+          resp.write((uint64_t)(&g_savedObjectState.objects[i]));
+          trace("SAVED: %p\n", &g_savedObjectState.objects[i]);
+        }
         resp.finish(RESP_OKAY);
         break;
 
@@ -429,5 +447,24 @@ extern "C"
 void start(void) {
     trace("starting\n");
     server_thread = new std::thread(serve);
+}
+
+
+
+extern "C"
+StgWord saveClosures(StgWord n, HsStablePtr *sps)
+{
+    struct savedObjectsState *ps = &g_savedObjectState;
+    StgWord i;
+
+    if(n > 20)
+        return 20;
+
+    for (i = 0; i < n; i++) {
+        trace("OBJ %p", deRefStablePtr(sps[i]));
+        ps->objects[i] = *(UNTAG_CLOSURE((StgClosure *)deRefStablePtr(sps[i])));
+    }
+    ps->n_objects = i;
+    return 0;
 }
 

@@ -7,10 +7,12 @@ import Debug.Trace
 import Control.Exception
 import Control.Concurrent
 
-prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
+prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p8
-main = withDebuggee prog p12
+prog2 = "/home/matt/dyepack/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/dyepack-0.1.0.0/x/example/build/example/example"
+
+main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p8
+--main = withDebuggee prog p8
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -132,8 +134,7 @@ p11 d = do
     Nothing -> return ()
 
 p12 d = do
-  threadDelay 10000000
-  request d RequestPause
+  request d RequestPoll
   [ss] <- request d RequestSavedObjects
   [r] <- request d (RequestFindPtr ss)
   [c] <- request d (RequestClosures [r])
