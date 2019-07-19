@@ -64,9 +64,10 @@ enum commands {
     CMD_GET_ROOTS = 4,
     CMD_GET_CLOSURES = 5,
     CMD_GET_INFO_TABLES = 6,
-    CMD_POLL = 7,
-    CMD_SAVED_OBJECTS = 8,
-    CMD_FIND_PTR = 9
+    CMD_GET_BITMAP = 7,
+    CMD_POLL = 8,
+    CMD_SAVED_OBJECTS = 9,
+    CMD_FIND_PTR = 10
 };
 
 enum response_code {
@@ -245,6 +246,20 @@ void inform_callback(void *user, RtsPaused p){
   paused = true;
 }
 
+static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, StgWord size) {
+    uint32_t b = 0;
+
+    for (uint32_t i = 0; i < size; b++) {
+        StgWord bitmap = large_bitmap->bitmap[b];
+        uint32_t j = stg_min(size-i, BITS_IN(W_));
+        i += j;
+        for (; j > 0; j--) {
+            resp.write((uint8_t) !(bitmap & 1));
+            bitmap = bitmap >> 1;
+        }
+    }
+}
+
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     trace("HANDLE: %d\n", cmd_len);
@@ -322,7 +337,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.finish(RESP_OKAY);
         }
         break;
+
       case CMD_GET_INFO_TABLES:
+        // TODO: Info tables are immutable so we needn't pause for this request
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
         } else {
@@ -336,19 +353,68 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                 // TODO this offset is wrong sometimes
                 // You have to subtract 1 so that you get the pointer to the
                 // start of the info table.
-                StgInfoTable *ptr = ptr_end - 1;
+                StgInfoTable *info = ptr_end - 1;
                 trace("INFO_TABLE_SIZE %lu\n", INFO_TABLE_SIZE);
-                trace("INFO_TABLE_PTR %p\n", ptr);
+                trace("INFO_TABLE_PTR %p\n", info);
 
                 size_t len = INFO_TABLE_SIZE;
                 uint32_t len_payload = htonl(len);
                 trace("GET_CLOSURE_WRITE1 %lu\n", len);
                 resp.write(len_payload);
-                resp.write((const char *) ptr, len);
+                resp.write((const char *) info, len);
             }
             resp.finish(RESP_OKAY);
         }
         break;
+
+      case CMD_GET_BITMAP:
+        {
+            StgInfoTable *ptr_end = (StgInfoTable *) p.get<uint64_t>();
+            // TODO this offset is wrong sometimes
+            // You have to subtract 1 so that you get the pointer to the
+            // start of the info table.
+            StgInfoTable *info = ptr_end - 1;
+            switch (info->type) {
+              case CATCH_STM_FRAME:
+              case CATCH_RETRY_FRAME:
+              case ATOMICALLY_FRAME:
+              case UNDERFLOW_FRAME:
+              case STOP_FRAME:
+              case CATCH_FRAME:
+              case RET_SMALL:
+              {
+                  // Small bitmap
+                  StgWord bitmap = BITMAP_BITS(info->layout.bitmap);
+                  StgWord size   = BITMAP_SIZE(info->layout.bitmap);
+                  resp.write((uint64_t) size);
+                  while (size > 0) {
+                      resp.write((uint8_t) ! (bitmap & 1));
+                      bitmap = bitmap >> 1;
+                      size--;
+                  }
+                  break;
+              }
+
+              case RET_BCO:
+              {
+                  StgBCO *bco = (StgBCO *) 0; // TODO: ugh
+                  write_large_bitmap(resp, BCO_BITMAP(bco), BCO_BITMAP_SIZE(bco));
+                  break;
+              }
+
+              case RET_BIG:
+              {
+                  StgLargeBitmap *bitmap = GET_LARGE_BITMAP(info);
+                  write_large_bitmap(resp, bitmap, bitmap->size);
+                  break;
+              }
+
+              default:
+                  barf("Bitmap requested for non-stack info table: %p", info);
+            }
+            resp.finish(RESP_OKAY);
+            break;
+        }
 
       case CMD_POLL:
         r_poll_pause_resp = &resp;

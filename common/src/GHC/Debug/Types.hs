@@ -8,6 +8,8 @@ module GHC.Debug.Types where
 
 import Control.Applicative
 import Control.Exception
+import Control.Monad
+import qualified Data.Array.Unboxed as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import Data.Hashable
@@ -91,7 +93,14 @@ data Request a where
     RequestSavedObjects :: Request [ClosurePtr]
     -- | Calls the debugging `findPtr` function and returns the retainers
     RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
+    -- | Request the pointer bitmap for an info table.
+    RequestBitmap :: InfoTablePtr -> Request PtrBitmap
 
+-- | A bitmap that records whether each field of a stack frame is a pointer.
+newtype PtrBitmap = PtrBitmap (A.Array Int Bool)
+
+traversePtrBitmap :: Monad m => (Bool -> m a) -> PtrBitmap -> m [a]
+traversePtrBitmap f (PtrBitmap arr) = mapM f (A.elems arr)
 
 newtype CommandId = CommandId Word32
                   deriving (Eq, Ord, Show)
@@ -115,15 +124,17 @@ cmdRequestClosures = CommandId 5
 cmdRequestInfoTables :: CommandId
 cmdRequestInfoTables = CommandId 6
 
+cmdRequestBitmap :: CommandId
+cmdRequestBitmap = CommandId 7
+
 cmdRequestPoll :: CommandId
-cmdRequestPoll = CommandId 7
+cmdRequestPoll = CommandId 8
 
 cmdRequestSavedObjects :: CommandId
-cmdRequestSavedObjects = CommandId 8
+cmdRequestSavedObjects = CommandId 9
 
 cmdRequestFindPtr :: CommandId
-cmdRequestFindPtr = CommandId 9
-
+cmdRequestFindPtr = CommandId 10
 
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
@@ -146,6 +157,9 @@ putRequest (RequestInfoTables ts) =
   putCommand cmdRequestInfoTables $ do
     putWord16be $ fromIntegral (length ts)
     foldMap put ts
+putRequest (RequestBitmap info)       =
+  putCommand cmdRequestBitmap $ do
+    put info
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 putRequest (RequestFindPtr c)       =
@@ -159,9 +173,17 @@ getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
 getResponse (RequestInfoTables _) = many getRawInfoTable
+getResponse (RequestBitmap _)    = getPtrBitmap
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
 getResponse (RequestFindPtr _c)  = many get
+
+getPtrBitmap :: Get PtrBitmap
+getPtrBitmap = do
+  len <- getWord32be
+  bits <- replicateM (fromIntegral len) getWord8
+  let arr = A.listArray (0, fromIntegral len-1) (map (==1) bits)
+  return $ PtrBitmap arr
 
 getRawClosure :: Get RawClosure
 getRawClosure = do
