@@ -369,6 +369,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
 
       case CMD_GET_BITMAP:
         {
+            response_code code = RESP_OKAY;
             StgInfoTable *ptr_end = (StgInfoTable *) p.get<uint64_t>();
             // TODO this offset is wrong sometimes
             // You have to subtract 1 so that you get the pointer to the
@@ -410,9 +411,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
               }
 
               default:
-                  barf("Bitmap requested for non-stack info table: %p", info);
+                  code = RESP_BAD_COMMAND;
             }
-            resp.finish(RESP_OKAY);
+            resp.finish(code);
             break;
         }
 
