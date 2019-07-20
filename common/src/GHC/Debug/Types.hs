@@ -22,6 +22,8 @@ import Data.Binary.Put
 import Data.Binary.Get
 import System.Endian
 
+import Debug.Trace
+
 import Numeric (showHex)
 
 
@@ -57,6 +59,17 @@ newtype ClosurePtr = ClosurePtr Word64
 
 instance Show ClosurePtr where
   show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
+
+subtractClosurePtr :: ClosurePtr -> ClosurePtr -> Word64
+subtractClosurePtr (ClosurePtr c) (ClosurePtr c2) =
+  (fromBE64 c) - (fromBE64 c2)
+
+rawClosureSize :: RawClosure -> Int
+rawClosureSize (RawClosure s) = BS.length s
+
+dropRawClosure :: Int -> RawClosure -> RawClosure
+dropRawClosure k (RawClosure s) = RawClosure (BS.drop k s)
+
 
 newtype RawInfoTable = RawInfoTable BS.ByteString
                      deriving (Eq, Ord, Show)
@@ -97,7 +110,7 @@ data Request a where
     RequestBitmap :: InfoTablePtr -> Request PtrBitmap
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
-newtype PtrBitmap = PtrBitmap (A.Array Int Bool)
+newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
 
 traversePtrBitmap :: Monad m => (Bool -> m a) -> PtrBitmap -> m [a]
 traversePtrBitmap f (PtrBitmap arr) = mapM f (A.elems arr)
@@ -181,7 +194,7 @@ getResponse (RequestFindPtr _c)  = many get
 getPtrBitmap :: Get PtrBitmap
 getPtrBitmap = do
   len <- getWord32be
-  bits <- replicateM (fromIntegral len) getWord8
+  bits <- replicateM (fromIntegral (len)) getWord8
   let arr = A.listArray (0, fromIntegral len-1) (map (==1) bits)
   return $ PtrBitmap arr
 

@@ -89,7 +89,7 @@ void threadStableNameTable ( evac_fn evac, void *user );
 void threadStablePtrTable ( evac_fn evac, void *user );
 void stopAllCapabilities (Capability **pCap, Task *task);
 void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
-void findPtr_cb(FindPtrCb , void* , P_);
+void findPtrCb(FindPtrCb , void* , P_);
 void findPtr(P_, int);
 }
 
@@ -387,7 +387,10 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                   // Small bitmap
                   StgWord bitmap = BITMAP_BITS(info->layout.bitmap);
                   StgWord size   = BITMAP_SIZE(info->layout.bitmap);
-                  resp.write((uint64_t) size);
+                  uint32_t size_payload;
+                  size_payload=htonl(size);
+                  trace("SIZE %d", size);
+                  resp.write((uint32_t) size_payload);
                   while (size > 0) {
                       resp.write((uint8_t) ! (bitmap & 1));
                       bitmap = bitmap >> 1;
@@ -438,7 +441,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
         trace("FIND_PTR %p\n", ptr);
         trace("FIND_PTR_SIZE %u\n", closure_sizeW(ptr));
-        findPtr_cb(&collect_misc_callback, &resp, (P_) ptr);
+        findPtrCb(&collect_misc_callback, &resp, (P_) ptr);
         resp.finish(RESP_OKAY);
         break;
 

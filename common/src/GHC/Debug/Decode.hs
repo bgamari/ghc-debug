@@ -5,7 +5,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 #endif
 
-module GHC.Debug.Decode (decodeClosure) where
+module GHC.Debug.Decode (decodeClosure, decodeInfoTable) where
 
 import GHC.Ptr (Ptr(..), plusPtr, castPtr)
 import GHC.Exts (Addr#, unsafeCoerce#, Any, Word#)
@@ -72,12 +72,20 @@ decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
         print ("Decoded", r)
         return $ fmap boxToClosurePtr r
   where
-    fixTNTC :: Ptr a -> Ptr StgInfoTable
-    fixTNTC ptr
-      | tablesNextToCode = castPtr $ ptr  `plusPtr` itblSize'
-      | otherwise        = castPtr $ ptr
 
+
+fixTNTC :: Ptr a -> Ptr StgInfoTable
+fixTNTC ptr
+  | tablesNextToCode = castPtr $ ptr  `plusPtr` itblSize'
+  | otherwise        = castPtr $ ptr
+  where
     itblSize'
       | profiling  = ItblProf.itblSize
       | otherwise  = Itbl.itblSize
+
+decodeInfoTable :: RawInfoTable -> StgInfoTable
+decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
+  print itbl
+  allocate itbl $ \itblPtr -> do
+    peekItbl itblPtr
 

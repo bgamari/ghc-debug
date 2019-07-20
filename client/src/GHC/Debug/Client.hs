@@ -7,10 +7,16 @@ module GHC.Debug.Client
   , Request(..)
   , getInfoTblPtr
   , decodeClosure
+  , decodeStack
+  , FieldValue(..)
+  , decodeInfoTable
   , lookupInfoTable
   , getDwarfInfo
   , lookupDwarf
   , showFileSnippet
+  , subtractClosurePtr
+  , rawClosureSize
+  , dropRawClosure
   ) where
 
 import Control.Concurrent
@@ -18,6 +24,7 @@ import Control.Exception
 import Control.Monad
 import GHC.Debug.Types
 import GHC.Debug.Decode
+import GHC.Debug.Decode.Stack
 import Network.Socket
 import qualified Data.HashMap.Strict as HM
 import System.IO

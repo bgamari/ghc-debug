@@ -6,13 +6,14 @@ import Control.Monad
 import Debug.Trace
 import Control.Exception
 import Control.Concurrent
+import GHC.Exts.Heap
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
 prog2 = "/home/matt/dyepack/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/dyepack-0.1.0.0/x/example/build/example/example"
 
-main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p8
---main = withDebuggee prog p8
+main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p13
+--main = withDebuggee prog p13
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -144,6 +145,41 @@ p12 d = do
     Nothing -> return ()
 
 
+-- testing stack decoding
+p13 d = do
+  request d RequestPause
+  -- Just get TSO closure
+  (r:_) <- request d RequestRoots
+  let rs = [r]
+  print rs
+  cs <- request d (RequestClosures rs)
+  res <- mapM (lookupInfoTable d) cs
+  mapM print (zip (map getInfoTblPtr cs) rs)
+  -- Should be one TSO closure
+  let is = map (decodeInfoTable . fst) res
+  let [cs] = map (uncurry decodeClosure) res
+  let sps = stackFromTSO cs
+  print ("SPS", sps)
+  [sps_cs] <- request d (RequestClosures [sps])
+  sps_res <- lookupInfoTable d sps_cs
+  let s = uncurry decodeClosure sps_res
+  print ("SPS", sps)
+  print ("SP", (stackPointer s))
+  print (rawClosureSize sps_cs)
+  let n = (subtractClosurePtr (stackPointer s) sps)
+  print n
+  let stack = (dropRawClosure (fromIntegral n) sps_cs)
+  print stack
+  i <- lookupInfoTable d stack
+  let st_it = decodeInfoTable . fst $ i
+  print i
+  print st_it
+  bt <- request d (RequestBitmap (getInfoTblPtr stack))
+  let decoded_stack = decodeStack stack st_it bt
+  print decoded_stack
+
+
+stackFromTSO (TSOClosure _ sp) = sp
 
 
 

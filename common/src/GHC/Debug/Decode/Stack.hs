@@ -13,23 +13,22 @@ import Data.Binary.Get as B
 import GHC.Debug.Types
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Exts.Heap.InfoTable.Types
+import System.Endian
 
 data FieldValue = Ptr !ClosurePtr
-                | NonPtr !Word64
+                | NonPtr !Word64 deriving Show
 
-decodeStack :: (InfoTablePtr -> StgInfoTable)
-            -> (InfoTablePtr -> PtrBitmap)
-            -> BS.ByteString
-            -> [(InfoTablePtr, [FieldValue])]
-decodeStack getInfoTable getBitmap closure =
-  B.runGet (getStack getInfoTable getBitmap) (BSL.fromStrict closure)
+decodeStack :: RawClosure
+            -> StgInfoTable
+            -> PtrBitmap
+            -> [(StgInfoTable, [FieldValue])]
+decodeStack (RawClosure closure) itbl bitmap =
+  B.runGet (getStack bitmap itbl) (BSL.fromStrict closure)
 
-getStack :: (InfoTablePtr -> StgInfoTable)
-         -> (InfoTablePtr -> PtrBitmap)
-         -> Get [(InfoTablePtr, [FieldValue])]
-getStack getInfoTable getBitmap = many $ do
-    itblPtr <- lookAhead getInfoTablePtr
-    let itbl = getInfoTable itblPtr
+getStack :: PtrBitmap
+         -> StgInfoTable
+         -> Get [(StgInfoTable, [FieldValue])]
+getStack bitmap itbl = many $ do
     case tipe itbl of
       RET_BCO -> do
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
@@ -38,11 +37,10 @@ getStack getInfoTable getBitmap = many $ do
         -- In all other cases we request the pointer bitmap from the debuggee
         -- and decode as appropriate.
         _itblPtr <- getInfoTablePtr
-        let bitmap = getBitmap itblPtr
         fields <- traversePtrBitmap decodeField bitmap
-        return (itblPtr, fields)
+        return (itbl, fields)
   where
-    decodeField True  = Ptr . ClosurePtr <$> getWord
+    decodeField True  = Ptr . ClosurePtr . toBE64 <$> getWord
     decodeField False = NonPtr <$> getWord
 
 getInfoTablePtr :: Get InfoTablePtr
