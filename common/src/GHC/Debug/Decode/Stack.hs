@@ -18,12 +18,21 @@ data FieldValue = Ptr !ClosurePtr
 decodeStack :: (InfoTablePtr -> PtrBitmap) -> BS.ByteString -> [(InfoTablePtr, [FieldValue])]
 decodeStack getBitmap closure = B.runGet (getStack getBitmap) (BSL.fromStrict closure)
 
-getStack :: (InfoTablePtr -> PtrBitmap) -> Get [(InfoTablePtr, [FieldValue])]
-getStack getBitmap = many $ do
-    itblPtr <- getInfoTablePtr
-    let bitmap = getBitmap itblPtr
-    fields <- traversePtrBitmap decodeField bitmap
-    return (itblPtr, fields)
+getStack :: (InfoTablePtr -> InfoTable) -> (InfoTablePtr -> PtrBitmap) -> Get [(InfoTablePtr, [FieldValue])]
+getStack getInfoTable getBitmap = many $ do
+    itblPtr <- peek getInfoTablePtr
+    let itbl = getInfoTable itblPtr
+    case tipe itbl of
+      RET_BCO -> do
+        -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
+        error "getStack: RET_BCO"
+      _ -> do
+        -- In all other cases we request the pointer bitmap from the debuggee
+        -- and decode as appropriate.
+        _itblPtr <- getInfoTablePtr
+        let bitmap = getBitmap itblPtr
+        fields <- traversePtrBitmap decodeField bitmap
+        return (itblPtr, fields)
   where
     decodeField True  = Ptr . ClosurePtr <$> getWord
     decodeField False = NonPtr <$> getWord
