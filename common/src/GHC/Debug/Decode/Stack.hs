@@ -11,16 +11,24 @@ import Control.Applicative
 import Data.Binary.Get as B
 
 import GHC.Debug.Types
+import GHC.Exts.Heap.ClosureTypes
+import GHC.Exts.Heap.InfoTable.Types
 
 data FieldValue = Ptr !ClosurePtr
                 | NonPtr !Word64
 
-decodeStack :: (InfoTablePtr -> PtrBitmap) -> BS.ByteString -> [(InfoTablePtr, [FieldValue])]
-decodeStack getBitmap closure = B.runGet (getStack getBitmap) (BSL.fromStrict closure)
+decodeStack :: (InfoTablePtr -> StgInfoTable)
+            -> (InfoTablePtr -> PtrBitmap)
+            -> BS.ByteString
+            -> [(InfoTablePtr, [FieldValue])]
+decodeStack getInfoTable getBitmap closure =
+  B.runGet (getStack getInfoTable getBitmap) (BSL.fromStrict closure)
 
-getStack :: (InfoTablePtr -> InfoTable) -> (InfoTablePtr -> PtrBitmap) -> Get [(InfoTablePtr, [FieldValue])]
+getStack :: (InfoTablePtr -> StgInfoTable)
+         -> (InfoTablePtr -> PtrBitmap)
+         -> Get [(InfoTablePtr, [FieldValue])]
 getStack getInfoTable getBitmap = many $ do
-    itblPtr <- peek getInfoTablePtr
+    itblPtr <- lookAhead getInfoTablePtr
     let itbl = getInfoTable itblPtr
     case tipe itbl of
       RET_BCO -> do
