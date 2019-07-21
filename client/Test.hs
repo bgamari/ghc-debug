@@ -6,7 +6,6 @@ import Control.Monad
 import Debug.Trace
 import Control.Exception
 import Control.Concurrent
-import GHC.Exts.Heap
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 

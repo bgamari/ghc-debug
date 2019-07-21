@@ -4,7 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
 
-module GHC.Debug.Types where
+module GHC.Debug.Types(module T, module GHC.Debug.Types) where
 
 import Control.Applicative
 import Control.Exception
@@ -25,63 +25,9 @@ import System.Endian
 import Debug.Trace
 
 import Numeric (showHex)
+import GHC.Debug.Types.Closures as T
+import GHC.Debug.Types.Ptr as T
 
-
--- import GHC.Exts.Heap
--- import GHC.Exts.Heap (StgInfoTable)
---
-prettyPrint :: BS.ByteString -> String
-prettyPrint = concatMap (flip showHex "") . BS.unpack
-
--- TODO: Fetch this from debuggee
-tablesNextToCode :: Bool
-tablesNextToCode = True
-
--- TODO: Fetch this from debuggee
-profiling :: Bool
-profiling = False
-
-newtype InfoTablePtr = InfoTablePtr Word64
-                     deriving (Eq, Ord)
-                     deriving newtype (Binary, Hashable)
-
-newtype ShowPtr = ShowPtr Word64
-
-instance Show ShowPtr where
-  show (ShowPtr w) = "0x" ++ showHex w ""
-
-instance Show InfoTablePtr where
-  show (InfoTablePtr p) =  "0x" ++ showHex (fromBE64 p) ""
-
-newtype ClosurePtr = ClosurePtr Word64
-                   deriving (Eq, Ord)
-                   deriving newtype (Binary, Hashable)
-
-instance Show ClosurePtr where
-  show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
-
-subtractClosurePtr :: ClosurePtr -> ClosurePtr -> Word64
-subtractClosurePtr (ClosurePtr c) (ClosurePtr c2) =
-  (fromBE64 c) - (fromBE64 c2)
-
-rawClosureSize :: RawClosure -> Int
-rawClosureSize (RawClosure s) = BS.length s
-
-dropRawClosure :: Int -> RawClosure -> RawClosure
-dropRawClosure k (RawClosure s) = RawClosure (BS.drop k s)
-
-
-newtype RawInfoTable = RawInfoTable BS.ByteString
-                     deriving (Eq, Ord, Show)
-                     deriving newtype (Binary)
-
-newtype RawClosure = RawClosure BS.ByteString
-                   deriving (Eq, Ord, Show)
-                   deriving newtype (Binary)
-
-
-getInfoTblPtr :: RawClosure -> InfoTablePtr
-getInfoTblPtr (RawClosure bs) = InfoTablePtr (runGet getWord64be (BSL.take 8 (BSL.fromStrict bs)))
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where

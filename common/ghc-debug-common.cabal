@@ -17,6 +17,9 @@ library
   exposed-modules:     GHC.Debug.Types,
                        GHC.Debug.Decode,
                        GHC.Debug.Decode.Stack
+                       GHC.Debug.Types.Closures
+                       GHC.Debug.Types.Ptr
+                       GHC.Debug.Decode.Convert
   build-depends:       base >=4.12 && <4.14,
                        bytestring >=0.10 && <0.11,
                        binary >=0.8 && <0.9,

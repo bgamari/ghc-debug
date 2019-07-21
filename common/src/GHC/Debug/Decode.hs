@@ -15,11 +15,13 @@ import Foreign.Storable
 
 import qualified Data.ByteString.Internal as BSI
 
+import qualified GHC.Exts.Heap as GHC
 import GHC.Exts.Heap
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
 import GHC.Debug.Types
+import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import System.Endian
@@ -52,7 +54,7 @@ data Ptr' a = Ptr' a
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
-decodeClosure :: RawInfoTable -> RawClosure -> GenClosure ClosurePtr
+decodeClosure :: RawInfoTable -> RawClosure -> DebugClosure ClosurePtr
 decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
     allocate itbl $ \itblPtr -> do
       allocate clos $ \closPtr -> do
@@ -66,11 +68,11 @@ decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
         -- process
-        print ("Closure", closPtr)
-        print ("itbl", itblPtr)
+        --print ("Closure", closPtr)
+        --print ("itbl", itblPtr)
         r <- getBoxedClosureData (ptrToBox closPtr)
-        print ("Decoded", r)
-        return $ fmap boxToClosurePtr r
+        --print ("Decoded", r)
+        return $ convertClosure $ fmap boxToClosurePtr r
   where
 
 

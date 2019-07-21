@@ -17,6 +17,7 @@ module GHC.Debug.Client
   , subtractClosurePtr
   , rawClosureSize
   , dropRawClosure
+  , DebugClosure(..)
   ) where
 
 import Control.Concurrent
