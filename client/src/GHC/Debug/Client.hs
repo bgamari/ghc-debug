@@ -14,10 +14,11 @@ module GHC.Debug.Client
   , getDwarfInfo
   , lookupDwarf
   , showFileSnippet
-  , subtractClosurePtr
-  , rawClosureSize
-  , dropRawClosure
   , DebugClosure(..)
+  , dereferenceClosures
+  , dereferenceClosure
+  , dereferenceStack
+  , fullTraversal
   ) where
 
 import Control.Concurrent
@@ -33,6 +34,8 @@ import Data.Word
 import Data.Maybe
 import System.Endian
 import Data.Foldable
+import Data.Coerce
+import Data.Bitraversable
 
 
 import qualified Data.Dwarf as Dwarf
@@ -160,7 +163,37 @@ showFileSnippet (fp, l, c) = do
        let sn = show n
        in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
 
+dereferenceClosure :: Debuggee -> ClosurePtr -> IO Closure
+dereferenceClosure d c = head <$> dereferenceClosures d [c]
 
+dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [Closure]
+dereferenceClosures d cs = do
+    raw_cs <- request d (RequestClosures cs)
+    let its = map getInfoTblPtr raw_cs
+    raw_its <- request d (RequestInfoTables its)
+    return $ map (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
+
+dereferenceStack :: Debuggee -> StackCont -> IO Stack
+dereferenceStack d (StackCont stack) = do
+  print stack
+  i <- lookupInfoTable d (coerce stack)
+  let st_it = decodeInfoTable . fst $ i
+  print i
+  print st_it
+  bt <- request d (RequestBitmap (getInfoTblPtr (coerce stack)))
+  let decoded_stack = decodeStack stack st_it bt
+  print decoded_stack
+  return decoded_stack
+
+fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
+fullTraversal d c = do
+  dc <- dereferenceClosure d c
+  MkFix1 <$> bitraverse (fullStackTraversal d) (fullTraversal d)  dc
+
+fullStackTraversal :: Debuggee -> StackCont -> IO UStack
+fullStackTraversal d sc = do
+  ds <- dereferenceStack d sc
+  MkFix2 <$> bitraverse (fullStackTraversal d) (fullTraversal d) ds
 
 
 

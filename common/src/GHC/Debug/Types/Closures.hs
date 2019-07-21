@@ -4,6 +4,8 @@
 {-# LANGUAGE UnliftedFFITypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE UndecidableInstances #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
 - additional support for STACK closures which are only possible to decode
 - out of process
@@ -12,8 +14,15 @@ module GHC.Debug.Types.Closures (
     -- * Closures
       Closure
     , DebugClosure(..)
+    , FieldValue(..)
+    , DebugStack(..)
+    , Stack
     , GHC.PrimType(..)
     , allClosures
+    , Fix1(..)
+    , Fix2(..)
+    , UClosure
+    , UStack
     ) where
 
 import Prelude -- See note [Why do we import Prelude here?]
@@ -30,11 +39,31 @@ import GHC.Exts
 import GHC.Generics
 import Numeric
 import GHC.Debug.Types.Ptr
+import Data.Bifunctor
+import Data.Bifoldable
+import Data.Bitraversable
+
+
+data Fix1 (f :: * -> * -> *) (g :: * -> * -> *) = MkFix1 (g (Fix2 f g) (Fix1 f g))
+data Fix2 f g = MkFix2 (f (Fix2 f g) (Fix1 f g))
+
+instance Show (g (Fix2 f g) (Fix1 f g)) => Show (Fix1 f g) where
+        showsPrec n (MkFix1 x) = showParen (n > 10) $ \s ->
+                "Fix1 " ++ showsPrec 11 x s
+
+instance Show (f (Fix2 f g) (Fix1 f g)) => Show (Fix2 f g) where
+        showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
+                "Fix2 " ++ showsPrec 11 x s
+
+type UClosure = Fix1 DebugStack DebugClosure
+type UStack   = Fix2 DebugStack DebugClosure
 
 ------------------------------------------------------------------------
 -- Closures
 
-type Closure = DebugClosure ClosurePtr
+type Closure = DebugClosure StackCont ClosurePtr
+
+type Stack = DebugStack StackCont ClosurePtr
 
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
@@ -50,7 +79,7 @@ type Closure = DebugClosure ClosurePtr
 -- See
 -- <https://gitlab.haskell.org/ghc/ghc/wikis/commentary/rts/storage/heap-objects>
 -- for more information.
-data DebugClosure b
+data DebugClosure s b
   = -- | A data constructor
     ConstrClosure
         { info       :: !StgInfoTable
@@ -199,7 +228,7 @@ data DebugClosure b
      { info :: !StgInfoTable
      , size :: !HalfWord
      , dirty :: !HalfWord
-     , stackPointer :: !b
+     , stackPointer :: !s
      , stack :: [Word]
      }
 
@@ -256,9 +285,70 @@ data DebugClosure b
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
+data DebugStack s b =
+  DebugStack { stack_info :: !StgInfoTable
+             , values :: [FieldValue b] } deriving Show
+
+instance Bitraversable DebugStack where
+  bitraverse _ g (DebugStack a1 vs) = DebugStack a1 <$> traverse (traverse g) vs
+
+
+data FieldValue b = SPtr b
+                  | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable)
+
+instance Bifunctor DebugStack where
+  bimap = bimapDefault
+
+instance Bifoldable DebugStack where
+  bifoldMap = bifoldMapDefault
+
+
+instance Bitraversable DebugClosure where
+  bitraverse f g c =
+    case c of
+      ConstrClosure a1 bs a2 a3 a4 a5 ->
+        (\cs -> ConstrClosure a1 cs a2 a3 a4 a5) <$> traverse g bs
+      FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
+      ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
+      SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
+      PAPClosure a1 a2 a3 b bs -> PAPClosure a1 a2 a3 <$> g b <*> traverse g bs
+      APClosure a1 a2 a3 b bs  -> APClosure a1 a2 a3 <$> g b <*> traverse g bs
+      APStackClosure a1 b bs   -> APStackClosure a1 <$> g b <*> traverse g bs
+      IndClosure a1 b -> IndClosure a1 <$> g b
+      BCOClosure a1 b1 b2 b3 a2 a3 a4 ->
+        (\c1 c2 c3 -> BCOClosure a1 c1 c2 c3 a2 a3 a4) <$> g b1 <*> g b2 <*> g b3
+      BlackholeClosure a1 b -> BlackholeClosure a1 <$> g b
+      ArrWordsClosure a1 a2 a3 -> pure (ArrWordsClosure a1 a2 a3)
+      MutArrClosure a1 a2 a3 bs -> MutArrClosure a1 a2 a3 <$> traverse g bs
+      SmallMutArrClosure a1 a2 bs -> SmallMutArrClosure a1 a2 <$> traverse g bs
+      MVarClosure a1 b1 b2 b3     -> MVarClosure a1 <$> g b1 <*> g b2 <*> g b3
+      MutVarClosure a1 b -> MutVarClosure a1 <$> g b
+      BlockingQueueClosure a1 b1 b2 b3 b4 ->
+        BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
+      TSOClosure a1 b -> TSOClosure a1 <$> g b
+      StackClosure a1 a2 a3 s1 ss -> StackClosure a1 a2 a3 <$> f s1 <*> pure ss
+      IntClosure p i -> pure (IntClosure p i)
+      WordClosure p i -> pure (WordClosure p i)
+      Int64Closure p i -> pure (Int64Closure p i)
+      Word64Closure p i -> pure (Word64Closure p i)
+      AddrClosure p i -> pure (AddrClosure p i)
+      FloatClosure p i -> pure (FloatClosure p i)
+      DoubleClosure p i -> pure (DoubleClosure p i)
+      OtherClosure a1 bs ws -> OtherClosure a1 <$> traverse g bs <*> pure ws
+      UnsupportedClosure i  -> pure (UnsupportedClosure i)
+
+instance Bifunctor DebugClosure where
+  bimap = bimapDefault
+
+instance Bifoldable DebugClosure where
+  bifoldMap = bifoldMapDefault
+
+
+
+
 
 -- | For generic code, this function returns all referenced closures.
-allClosures :: DebugClosure b -> [b]
+allClosures :: DebugClosure s b -> [b]
 allClosures (ConstrClosure {..}) = ptrArgs
 allClosures (ThunkClosure {..}) = ptrArgs
 allClosures (SelectorClosure {..}) = [selectee]

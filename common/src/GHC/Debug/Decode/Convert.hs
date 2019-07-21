@@ -10,7 +10,7 @@ import GHC.Debug.Types
 
 -- | Convert a GenClosure from ghc-heap to a DebugClosure,
 -- it is mostly an identity function, apart from STACK closures.
-convertClosure :: GHC.GenClosure b -> DebugClosure b
+convertClosure :: GHC.GenClosure b -> DebugClosure b b
 convertClosure  g =
   case g of
     GHC.ConstrClosure a1 a2 a3 a4 a5 a6 -> ConstrClosure a1 a2 a3 a4 a5 a6

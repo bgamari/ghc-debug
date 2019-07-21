@@ -15,20 +15,18 @@ import GHC.Exts.Heap.ClosureTypes
 import GHC.Exts.Heap.InfoTable.Types
 import System.Endian
 
-data FieldValue = Ptr !ClosurePtr
-                | NonPtr !Word64 deriving Show
 
-decodeStack :: RawClosure
+decodeStack :: RawStack
             -> StgInfoTable
             -> PtrBitmap
-            -> [(StgInfoTable, [FieldValue])]
-decodeStack (RawClosure closure) itbl bitmap =
+            -> Stack
+decodeStack (RawStack closure) itbl bitmap =
   B.runGet (getStack bitmap itbl) (BSL.fromStrict closure)
 
 getStack :: PtrBitmap
          -> StgInfoTable
-         -> Get [(StgInfoTable, [FieldValue])]
-getStack bitmap itbl = many $ do
+         -> Get Stack
+getStack bitmap itbl = do
     case tipe itbl of
       RET_BCO -> do
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
@@ -38,10 +36,10 @@ getStack bitmap itbl = many $ do
         -- and decode as appropriate.
         _itblPtr <- getInfoTablePtr
         fields <- traversePtrBitmap decodeField bitmap
-        return (itbl, fields)
+        return (DebugStack itbl fields)
   where
-    decodeField True  = Ptr . ClosurePtr . toBE64 <$> getWord
-    decodeField False = NonPtr <$> getWord
+    decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord
+    decodeField False = SNonPtr <$> getWord
 
 getInfoTablePtr :: Get InfoTablePtr
 getInfoTablePtr = InfoTablePtr <$> getWord64le -- TODO word size

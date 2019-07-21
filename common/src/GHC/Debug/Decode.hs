@@ -9,6 +9,8 @@ module GHC.Debug.Decode (decodeClosure, decodeInfoTable) where
 
 import GHC.Ptr (Ptr(..), plusPtr, castPtr)
 import GHC.Exts (Addr#, unsafeCoerce#, Any, Word#)
+import Data.Coerce
+import Data.Bifunctor
 import GHC.Word
 import GHC.IO.Unsafe
 import Foreign.Storable
@@ -16,7 +18,7 @@ import Foreign.Storable
 import qualified Data.ByteString.Internal as BSI
 
 import qualified GHC.Exts.Heap as GHC
-import GHC.Exts.Heap
+import GHC.Exts.Heap hiding (Closure)
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
@@ -44,8 +46,8 @@ deriving instance Functor GenClosure
 ptrToBox :: Ptr a -> Box
 ptrToBox (Ptr p) = unsafeCoerce# (NotABox p)
 
-boxToClosurePtr :: Box -> ClosurePtr
-boxToClosurePtr (Box x) = ClosurePtr (toBE64 (W64# (aToWord# x)))
+boxToRawAddress :: Box -> Word64
+boxToRawAddress (Box x) = (toBE64 (W64# (aToWord# x)))
 
 -- This is a datatype that has the same layout as Ptr, so that by
 -- unsafeCoerce'ing, we obtain the Addr of the wrapped value
@@ -54,8 +56,8 @@ data Ptr' a = Ptr' a
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
-decodeClosure :: RawInfoTable -> RawClosure -> DebugClosure ClosurePtr
-decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
+decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) -> Closure
+decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate itbl $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
@@ -72,8 +74,10 @@ decodeClosure (RawInfoTable itbl) (RawClosure clos) = unsafePerformIO $ do
         --print ("itbl", itblPtr)
         r <- getBoxedClosureData (ptrToBox closPtr)
         --print ("Decoded", r)
-        return $ convertClosure $ fmap boxToClosurePtr r
+        return $ bimap stackCont  ClosurePtr . convertClosure $ fmap boxToRawAddress r
   where
+    stackCont :: Word64 -> StackCont
+    stackCont sp =  StackCont (getRawStack (StackPtr sp) ptr rc)
 
 
 fixTNTC :: Ptr a -> Ptr StgInfoTable
