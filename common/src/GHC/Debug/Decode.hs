@@ -72,9 +72,10 @@ decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO 
         -- process
         --print ("Closure", closPtr)
         --print ("itbl", itblPtr)
-        r <- getBoxedClosureData (ptrToBox closPtr)
+        r <- getBoxedClosureDataW (ptrToBox closPtr)
         --print ("Decoded", r)
-        return $ bimap stackCont  ClosurePtr . convertClosure $ fmap boxToRawAddress r
+        return $ bimap stackCont  ClosurePtr . convertClosure
+          $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont
     stackCont sp =  StackCont (getRawStack (StackPtr sp) ptr rc)
