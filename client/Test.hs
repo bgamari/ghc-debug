@@ -131,10 +131,11 @@ p12 d = do
 -- testing stack decoding
 p13 d = do
   request d RequestPause
-  -- Just get TSO closure
-  (r:_) <- request d RequestRoots
-  res <- fullTraversal d r
-  print res
+  rs <- request d RequestRoots
+  forM_ rs $ \r -> do
+    print r
+    res <- fullTraversal d r
+    print res
 
 
 stackFromTSO (TSOClosure _ sp) = sp

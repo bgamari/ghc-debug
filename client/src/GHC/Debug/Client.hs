@@ -170,6 +170,7 @@ dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [Closure]
 dereferenceClosures d cs = do
     raw_cs <- request d (RequestClosures cs)
     let its = map getInfoTblPtr raw_cs
+    print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
     return $ map (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
 
