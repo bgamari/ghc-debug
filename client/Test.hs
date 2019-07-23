@@ -121,12 +121,17 @@ p11 d = do
 p12 d = do
   request d RequestPoll
   [ss] <- request d RequestSavedObjects
-  [r] <- request d (RequestFindPtr ss)
-  [c] <- request d (RequestClosures [r])
-  let itb = getInfoTblPtr c
-  case lookupDwarf d itb of
-    Just r -> showFileSnippet r
-    Nothing -> return ()
+  print ("saved", ss)
+  r <- request d (RequestFindPtr ss)
+  print ("findptr", r)
+  dereferenceClosures d r >>= print
+  cs <- request d (RequestClosures r)
+  print cs
+  forM_ cs $ \c -> do
+    let itb = getInfoTblPtr c
+    case lookupDwarf d itb of
+      Just r -> showFileSnippet r
+      Nothing -> return ()
 
 -- testing stack decoding
 p13 d = do
