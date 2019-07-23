@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
 - additional support for STACK closures which are only possible to decode
 - out of process
@@ -23,6 +24,10 @@ module GHC.Debug.Types.Closures (
     , Fix2(..)
     , UClosure
     , UStack
+    , Tritraversable(..)
+    , trimap
+    , ConstrDesc(..)
+    , parseConstrDesc
     ) where
 
 import Prelude -- See note [Why do we import Prelude here?]
@@ -32,6 +37,7 @@ import GHC.Exts.Heap.InfoTable
 import qualified GHC.Exts.Heap as GHC
 
 
+import Data.Functor.Identity
 import Data.Bits
 import Data.Int
 import Data.Word
@@ -42,28 +48,31 @@ import GHC.Debug.Types.Ptr
 import Data.Bifunctor
 import Data.Bifoldable
 import Data.Bitraversable
+import Data.List
+import Data.Char
 
 
-data Fix1 (f :: * -> * -> *) (g :: * -> * -> *) = MkFix1 (g (Fix2 f g) (Fix1 f g))
-data Fix2 f g = MkFix2 (f (Fix2 f g) (Fix1 f g))
+data Fix1 (string :: *) (f :: * -> *) (g :: * -> * -> * -> *) =
+  MkFix1 (g string (Fix2 string f g) (Fix1 string f g))
+data Fix2 s f g = MkFix2 (f (Fix1 s f g))
 
-instance Show (g (Fix2 f g) (Fix1 f g)) => Show (Fix1 f g) where
+instance Show (g string (Fix2 string f g) (Fix1 string f g)) => Show (Fix1 string f g) where
         showsPrec n (MkFix1 x) = showParen (n > 10) $ \s ->
                 "Fix1 " ++ showsPrec 11 x s
 
-instance Show (f (Fix2 f g) (Fix1 f g)) => Show (Fix2 f g) where
+instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
-type UClosure = Fix1 DebugStack DebugClosure
-type UStack   = Fix2 DebugStack DebugClosure
+type UClosure = Fix1 ConstrDesc DebugStack DebugClosure
+type UStack   = Fix2 ConstrDesc DebugStack DebugClosure
 
 ------------------------------------------------------------------------
 -- Closures
 
-type Closure = DebugClosure StackCont ClosurePtr
+type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
 
-type Stack = DebugStack StackCont ClosurePtr
+type Stack = DebugStack ClosurePtr
 
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
@@ -79,15 +88,13 @@ type Stack = DebugStack StackCont ClosurePtr
 -- See
 -- <https://gitlab.haskell.org/ghc/ghc/wikis/commentary/rts/storage/heap-objects>
 -- for more information.
-data DebugClosure s b
+data DebugClosure string s b
   = -- | A data constructor
     ConstrClosure
         { info       :: !StgInfoTable
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
-        , pkg        :: !String         -- ^ Package name
-        , modl       :: !String         -- ^ Module name
-        , name       :: !String         -- ^ Constructor name
+        , constrDesc :: !string
         }
 
     -- | A function
@@ -285,29 +292,66 @@ data DebugClosure s b
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
-data DebugStack s b =
+data DebugStack b =
   DebugStack { stack_info :: !StgInfoTable
-             , values :: [FieldValue b] } deriving Show
+             , values :: [FieldValue b] } deriving (Traversable, Functor, Foldable, Show)
 
-instance Bitraversable DebugStack where
-  bitraverse _ g (DebugStack a1 vs) = DebugStack a1 <$> traverse (traverse g) vs
+data ConstrDesc = ConstrDesc {
+          pkg        :: !String         -- ^ Package name
+        , modl       :: !String         -- ^ Module name
+        , name       :: !String         -- ^ Constructor name
+        } deriving Show
+
+
+-- Copied from ghc-heap
+parseConstrDesc :: String -> ConstrDesc
+parseConstrDesc input =
+    if not . all (>0) . fmap length $ [p,m,occ]
+                     then ConstrDesc "" "" input
+                     else ConstrDesc p m occ
+  where
+    (p, rest1) = break (== ':') input
+    (m, occ)
+        = (intercalate "." $ reverse modWords, occWord)
+        where
+        (modWords, occWord) =
+            if length rest1 < 1 --  XXXXXXXXx YUKX
+                --then error "getConDescAddress:parse:length rest1 < 1"
+                then parseModOcc [] []
+                else parseModOcc [] (tail rest1)
+    -- We only look for dots if str could start with a module name,
+    -- i.e. if it starts with an upper case character.
+    -- Otherwise we might think that "X.:->" is the module name in
+    -- "X.:->.+", whereas actually "X" is the module name and
+    -- ":->.+" is a constructor name.
+    parseModOcc :: [String] -> String -> ([String], String)
+    parseModOcc acc str@(c : _)
+        | isUpper c =
+            case break (== '.') str of
+                (top, []) -> (acc, top)
+                (top, _:bot) -> parseModOcc (top : acc) bot
+    parseModOcc acc str = (acc, str)
+
+class Tritraversable m where
+  tritraverse ::
+    Applicative f => (a -> f b) -> (c -> f d) -> (e -> f g) -> m a c e -> f (m b d g)
+
+trimap :: forall a b c d e f t . Tritraversable t => (a -> b) -> (c -> d) -> (e -> f) -> t a c e -> t b d f
+trimap = coerce
+  (tritraverse :: (a -> Identity b)
+              -> (c -> Identity d)
+              -> (e -> Identity f) -> t a c e -> Identity (t b d f))
 
 
 data FieldValue b = SPtr b
                   | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable)
 
-instance Bifunctor DebugStack where
-  bimap = bimapDefault
 
-instance Bifoldable DebugStack where
-  bifoldMap = bifoldMapDefault
-
-
-instance Bitraversable DebugClosure where
-  bitraverse f g c =
+instance Tritraversable DebugClosure where
+  tritraverse h f g c =
     case c of
-      ConstrClosure a1 bs a2 a3 a4 a5 ->
-        (\cs -> ConstrClosure a1 cs a2 a3 a4 a5) <$> traverse g bs
+      ConstrClosure a1 bs ds str ->
+        (\cs str -> ConstrClosure a1 cs ds str) <$> traverse g bs <*> h str
       FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
       ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
@@ -337,18 +381,19 @@ instance Bitraversable DebugClosure where
       OtherClosure a1 bs ws -> OtherClosure a1 <$> traverse g bs <*> pure ws
       UnsupportedClosure i  -> pure (UnsupportedClosure i)
 
+{-
 instance Bifunctor DebugClosure where
   bimap = bimapDefault
 
 instance Bifoldable DebugClosure where
   bifoldMap = bifoldMapDefault
-
+-}
 
 
 
 
 -- | For generic code, this function returns all referenced closures.
-allClosures :: DebugClosure s b -> [b]
+allClosures :: DebugClosure str sta b -> [b]
 allClosures (ConstrClosure {..}) = ptrArgs
 allClosures (ThunkClosure {..}) = ptrArgs
 allClosures (SelectorClosure {..}) = [selectee]

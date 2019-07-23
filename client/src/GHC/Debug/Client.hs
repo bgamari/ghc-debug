@@ -168,7 +168,9 @@ dereferenceClosure d c = head <$> dereferenceClosures d [c]
 
 dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [Closure]
 dereferenceClosures d cs = do
+    print cs
     raw_cs <- request d (RequestClosures cs)
+    print raw_cs
     let its = map getInfoTblPtr raw_cs
     print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
@@ -186,15 +188,23 @@ dereferenceStack d (StackCont stack) = do
   print decoded_stack
   return decoded_stack
 
+dereferenceConDesc :: Debuggee -> ClosurePtr -> IO ConstrDesc
+dereferenceConDesc d i = do
+  request d (RequestConstrDesc i)
+
+
 fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
 fullTraversal d c = do
   dc <- dereferenceClosure d c
-  MkFix1 <$> bitraverse (fullStackTraversal d) (fullTraversal d)  dc
+  print dc
+  MkFix1 <$> tritraverse (dereferenceConDesc d) (fullStackTraversal d) (fullTraversal d)  dc
 
 fullStackTraversal :: Debuggee -> StackCont -> IO UStack
 fullStackTraversal d sc = do
   ds <- dereferenceStack d sc
-  MkFix2 <$> bitraverse (fullStackTraversal d) (fullTraversal d) ds
+  print ds
+  MkFix2 <$> traverse (fullTraversal d) ds
+
 
 
 

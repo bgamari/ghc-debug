@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types) where
 
@@ -12,6 +13,7 @@ import Control.Monad
 import qualified Data.Array.Unboxed as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C8
 import Data.Hashable
 import Data.Word
 import System.IO
@@ -54,6 +56,8 @@ data Request a where
     RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
     -- | Request the pointer bitmap for an info table.
     RequestBitmap :: InfoTablePtr -> Request PtrBitmap
+    -- | Request the description for an info table.
+    RequestConstrDesc :: ClosurePtr -> Request ConstrDesc
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
 newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
@@ -95,6 +99,9 @@ cmdRequestSavedObjects = CommandId 9
 cmdRequestFindPtr :: CommandId
 cmdRequestFindPtr = CommandId 10
 
+cmdRequestConstrDesc :: CommandId
+cmdRequestConstrDesc = CommandId 11
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral $ (4 + BSL.length body')
@@ -119,6 +126,8 @@ putRequest (RequestInfoTables ts) =
 putRequest (RequestBitmap info)       =
   putCommand cmdRequestBitmap $ do
     put info
+putRequest (RequestConstrDesc info) =
+  putCommand cmdRequestConstrDesc $ put info
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 putRequest (RequestFindPtr c)       =
@@ -133,9 +142,15 @@ getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
 getResponse (RequestInfoTables _) = many getRawInfoTable
 getResponse (RequestBitmap _)    = getPtrBitmap
+getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
 getResponse (RequestFindPtr _c)  = many get
+
+getConstrDesc :: Get ConstrDesc
+getConstrDesc = do
+  len <- getInt32be
+  parseConstrDesc . C8.unpack <$> getByteString (fromIntegral len)
 
 getPtrBitmap :: Get PtrBitmap
 getPtrBitmap = do

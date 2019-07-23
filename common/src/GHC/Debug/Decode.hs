@@ -65,7 +65,6 @@ decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO 
         -- The pointer is to the end of the info table (not the start)
         -- Info table is two words long which is why we subtract 16 from
         -- the pointer
-        print itblSize
         poke ptr_to_itbl_ptr (fixTNTC itblPtr)
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
@@ -74,7 +73,7 @@ decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO 
         --print ("itbl", itblPtr)
         r <- getBoxedClosureDataW (ptrToBox closPtr)
         --print ("Decoded", r)
-        return $ bimap stackCont  ClosurePtr . convertClosure
+        return $ trimap (const ptr) stackCont  ClosurePtr . convertClosure
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont

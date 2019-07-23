@@ -67,7 +67,8 @@ enum commands {
     CMD_GET_BITMAP = 7,
     CMD_POLL = 8,
     CMD_SAVED_OBJECTS = 9,
-    CMD_FIND_PTR = 10
+    CMD_FIND_PTR = 10,
+    CMD_CON_DESCR = 11
 };
 
 enum response_code {
@@ -444,6 +445,23 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         findPtrCb(&collect_misc_callback, &resp, (P_) ptr);
         resp.finish(RESP_OKAY);
         break;
+
+      case CMD_CON_DESCR:
+        {
+        trace("CON_DESCR\n");
+        StgClosure *ptr_end = (StgClosure *) p.get<uint64_t>();
+        trace("CON_DESC2 %p\n", ptr_end);
+        const char * con_desc = GET_CON_DESC(get_con_itbl(UNTAG_CLOSURE(ptr_end)));
+        trace("CON_DESC: %p %lu\n", con_desc, strlen(con_desc));
+        uint32_t len_payload;
+        len_payload=htonl(strlen(con_desc));
+        resp.write(len_payload);
+        for (i = 0; i < strlen(con_desc); i++){
+          resp.write(con_desc[i]);
+        }
+        resp.finish(RESP_OKAY);
+        break;
+        }
 
 
       default:

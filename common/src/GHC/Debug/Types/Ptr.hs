@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE DerivingVia #-}
 
 module GHC.Debug.Types.Ptr where
 
@@ -63,6 +64,10 @@ newtype StackPtr = StackPtr Word64
 
 instance Show StackPtr where
   show (StackPtr p) =  "0x" ++ showHex (fromBE64 p) ""
+
+newtype StringPtr = StringPtr Word64
+  deriving Show via StackPtr
+
 
 
 

@@ -12,7 +12,7 @@ prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718
 
 prog2 = "/home/matt/dyepack/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/dyepack-0.1.0.0/x/example/build/example/example"
 
---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p13
+--main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
 main = withDebuggee prog p13
 
 -- Test pause/resume
@@ -138,7 +138,13 @@ p13 d = do
     print res
 
 
-stackFromTSO (TSOClosure _ sp) = sp
+p14 d = do
+  request d RequestPause
+  rs <- request d RequestSavedObjects
+  forM_ rs $ \r -> do
+    print r
+    res <- fullTraversal d r
+    print res
 
 
 
