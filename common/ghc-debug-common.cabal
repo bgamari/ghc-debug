@@ -28,5 +28,6 @@ library
                        ghc-heap,
                        cpu
   hs-source-dirs:      src
+  c-sources: cbits/GhcDebug.cmm
   ghc-options: -Wall
   default-language:    Haskell2010

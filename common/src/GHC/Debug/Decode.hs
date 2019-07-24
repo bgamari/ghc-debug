@@ -1,5 +1,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE GHCForeignImportPrim #-}
+{-# LANGUAGE UnliftedFFITypes #-}
 #if !MIN_VERSION_ghc_heap(8,7,0)
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -8,7 +11,8 @@
 module GHC.Debug.Decode (decodeClosure, decodeInfoTable) where
 
 import GHC.Ptr (Ptr(..), plusPtr, castPtr)
-import GHC.Exts (Addr#, unsafeCoerce#, Any, Word#)
+import GHC.Exts -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
+import GHC.Int
 import Data.Coerce
 import Data.Bifunctor
 import GHC.Word
@@ -27,6 +31,28 @@ import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import System.Endian
+
+foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
+              Any -> (# Addr#, ByteArray#, ByteArray# #)
+
+getBoxedClosureDataW :: Box -> IO (GenClosure Word)
+getBoxedClosureDataW (Box x) =
+  getClosureDataX (getClosureRawW . unsafeCoerce#) x
+
+getClosureRawW :: a -> IO (Ptr StgInfoTable, [Word], [Word])
+getClosureRawW x = do
+  case unpackClosureWords# (unsafeCoerce# x) of
+     (# iptr, dat, pointers #) -> do
+         let nelems = (I# (sizeofByteArray# dat)) `div` 8
+             end = fromIntegral nelems - 1
+             rawWds = [W# (indexWordArray# dat i) | I# i <- [0.. end] ]
+
+         let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
+             end_ptrs = fromIntegral nelems_ptrs - 1
+             rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
+         pure (Ptr iptr, rawWds, rawPtrs)
+
+
 
 -- | Allocate a bytestring directly into memory and return a pointer to the
 -- allocated buffer
