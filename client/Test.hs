@@ -10,10 +10,10 @@ import Data.Bitraversable
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
-prog2 = "/home/matt/dyepack/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190628/dyepack-0.1.0.0/x/example/build/example/example"
+prog2 = "/home/matt/dyepack/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/dyepack-0.1.0.0/x/example/build/example/example"
 
 --main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
-main = withDebuggee prog p13
+main = withDebuggee prog2 p12
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -121,12 +121,26 @@ p11 d = do
 p12 d = do
   request d RequestPoll
   [ss] <- request d RequestSavedObjects
-  print ("saved", ss)
   r <- request d (RequestFindPtr ss)
-  print ("findptr", r)
-  dereferenceClosures d r >>= print
+  print ss
+  putStrLn "Retaining closures"
+  dcs <- dereferenceClosures d r
+  mapM print dcs
+  putStrLn ""
   cs <- request d (RequestClosures r)
-  print cs
+  forM_ cs $ \c -> do
+    let itb = getInfoTblPtr c
+    case lookupDwarf d itb of
+      Just r -> showFileSnippet r
+      Nothing -> return ()
+
+  print "Following thunk"
+  let thunk = r !! 2
+  r <- request d (RequestFindPtr thunk)
+  putStrLn "Retaining closures 2"
+  dereferenceClosures d r >>= mapM print
+  putStrLn ""
+  cs <- request d (RequestClosures r)
   forM_ cs $ \c -> do
     let itb = getInfoTblPtr c
     case lookupDwarf d itb of
