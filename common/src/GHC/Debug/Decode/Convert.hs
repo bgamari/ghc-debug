@@ -10,7 +10,7 @@ import GHC.Debug.Types
 
 -- | Convert a GenClosure from ghc-heap to a DebugClosure,
 -- it is mostly an identity function, apart from STACK closures.
-convertClosure :: GHC.GenClosure b -> DebugClosure () b b
+convertClosure :: (Num a, Eq a) => GHC.GenClosure a -> DebugClosure () a a
 convertClosure  g =
   case g of
     -- The () here will be overwritten by a constant value in
@@ -41,5 +41,11 @@ convertClosure  g =
     GHC.FloatClosure a1 a2              -> FloatClosure a1 a2
     GHC.DoubleClosure a1 a2             -> DoubleClosure a1 a2
     GHC.OtherClosure a1 a2 a3           -> OtherClosure a1 a2 a3
+    GHC.WeakClosure a1 a2 a3 a4 a5 a6   ->
+      -- nullPtr check
+      let link = if a6 == 0
+                  then Nothing
+                  else Just a6
+      in WeakClosure a1 a2 a3 a4 a5 link
     GHC.UnsupportedClosure a1           -> UnsupportedClosure a1
 

@@ -239,6 +239,16 @@ data DebugClosure string s b
      , stack :: [Word]
      }
 
+    | WeakClosure
+        { info        :: !StgInfoTable
+        , cfinalizers :: !b
+        , key         :: !b
+        , value       :: !b
+        , finalizer   :: !b
+        , mlink       :: !(Maybe b) -- ^ next weak pointer for the capability, can be NULL.
+        }
+
+
     ------------------------------------------------------------
     -- Unboxed unlifted closures
 
@@ -371,6 +381,8 @@ instance Tritraversable DebugClosure where
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
       TSOClosure a1 b -> TSOClosure a1 <$> g b
       StackClosure a1 a2 a3 s1 ss -> StackClosure a1 a2 a3 <$> f s1 <*> pure ss
+      WeakClosure a1 a2 a3 a4 a5 a6 ->
+        WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
       IntClosure p i -> pure (IntClosure p i)
       WordClosure p i -> pure (WordClosure p i)
       Int64Closure p i -> pure (Int64Closure p i)
