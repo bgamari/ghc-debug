@@ -116,19 +116,19 @@ getDwarfInfo fn = do
 -- print $ DwarfPretty.dwarf dwarf
  return dwarf
 
-lookupDwarf :: Debuggee -> InfoTablePtr -> Maybe (FilePath, Int, Int)
+lookupDwarf :: Debuggee -> InfoTablePtr -> Maybe ([FilePath], Int, Int)
 lookupDwarf d (InfoTablePtr w) = do
   (Dwarf units) <- debuggeeDwarf d
   asum (map (lookupDwarfUnit (fromBE64 w)) units)
 
-lookupDwarfUnit :: Word64 -> Boxed CompilationUnit -> Maybe (FilePath, Int, Int)
+lookupDwarfUnit :: Word64 -> Boxed CompilationUnit -> Maybe ([FilePath], Int, Int)
 lookupDwarfUnit w (Boxed _ cu) = do
   low <- cuLowPc cu
   high <- cuHighPc cu
   guard (low <= w && w <= high)
-  LNE _ _fs ls <- cuLineNumInfo cu
+  (LNE ds fs ls) <- cuLineNumInfo cu
   (fp, l, c) <- foldl' (lookupDwarfLine w) Nothing (zip ls (tail ls))
-  return (T.unpack (cuCompDir cu) </> fp, l , c)
+  return (map (\d -> T.unpack (cuCompDir cu) </> T.unpack d </> fp) ds, l , c)
 
 lookupDwarfSubprogram :: Word64 -> Boxed Def -> Maybe Subprogram
 lookupDwarfSubprogram w (Boxed _ (DefSubprogram s)) = do
@@ -150,29 +150,30 @@ lookupDwarfLine w Nothing (d, nd) = do
     else Nothing
 lookupDwarfLine _ (Just r) _ =  Just r
 
-showFileSnippet :: (FilePath, Int, Int) -> IO ()
-showFileSnippet (fp, l, c) = do
-  exists <- doesFileExist fp
-  if not exists
-    then putStrLn ("Can't open file: " ++ fp)
-    else do
-      src <- zip [1..] . lines <$> readFile fp
-      let ctx = take 10 (drop (max (l - 5) 0) src)
-      putStrLn (fp <> ":" <> show l <> ":" <> show c)
-      mapM_ (\(n, l) ->
-       let sn = show n
-       in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
+showFileSnippet :: ([FilePath], Int, Int) -> IO ()
+showFileSnippet (fps, l, c) = go fps
+  where
+    go [] = putStrLn ("No files could be found: " ++ show fps)
+    go (fp: fps) = do
+      exists <- doesFileExist fp
+      if not exists
+        then go fps
+        else do
+          src <- zip [1..] . lines <$> readFile fp
+          let ctx = take 10 (drop (max (l - 5) 0) src)
+          putStrLn (fp <> ":" <> show l <> ":" <> show c)
+          mapM_ (\(n, l) ->
+           let sn = show n
+           in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
 
 dereferenceClosure :: Debuggee -> ClosurePtr -> IO Closure
 dereferenceClosure d c = head <$> dereferenceClosures d [c]
 
 dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [Closure]
 dereferenceClosures d cs = do
-    print cs
     raw_cs <- request d (RequestClosures cs)
-    print raw_cs
     let its = map getInfoTblPtr raw_cs
-    print $ map (lookupDwarf d) its
+    --print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
     return $ map (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
 
