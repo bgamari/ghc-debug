@@ -11,6 +11,7 @@ import Foreign.StablePtr
 import Foreign.Marshal.Array
 import Control.Monad
 import Foreign.C.Types
+import System.Mem
 
 -- | Start listening for remote debugging
 foreign import ccall safe "start"
@@ -18,7 +19,10 @@ foreign import ccall safe "start"
 
 -- | Break program execution for debugging.
 foreign import ccall safe "pause_mutator"
-    pause :: IO ()
+    pause_c :: IO ()
+
+pause :: IO ()
+pause = performGC >> pause_c
 
 -- | Resume program execution for debugging.
 foreign import ccall safe "resume_mutator"
