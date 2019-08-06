@@ -18,7 +18,9 @@ module GHC.Debug.Client
   , dereferenceClosures
   , dereferenceClosure
   , dereferenceStack
+  , dereferenceConDesc
   , fullTraversal
+  , Tritraversable(..)
   ) where
 
 import Control.Concurrent

@@ -1,0 +1,72 @@
+name:               ghc-vis
+version:            0.9
+license:            BSD3
+license-file:       LICENSE
+category:           GHC, Debug, Development
+cabal-version:      >= 1.10
+build-type:         Custom
+author:             Dennis Felsing, Joachim Breitner, Contributors
+maintainer:         Dennis Felsing <dennis@felsin9.de>
+homepage:           http://felsin9.de/nnis/ghc-vis
+copyright:          Dennis Felsing 2012-2018
+synopsis:           Live visualization of data structures in GHCi
+description:        Visualize live data structures in GHCi. Evaluation is not
+                    forced and you can interact with the visualized data
+                    structures. This allows seeing Haskell's lazy evaluation
+                    and sharing in action.
+                    .
+                    See <http://felsin9.de/nnis/ghc-vis/#basic-usage> for the
+                    basic usage of ghc-vis or watch a short video demonstrating
+                    how it can be used with GHCi's debugger:
+                    <http://felsin9.de/nnis/ghc-vis/#combined-debugger>
+
+tested-with: GHC == 8.6.1
+Extra-source-files: nonghci-test.hs
+
+flag full
+  Default: False
+  Description: "Full ghc-vis window: decorations, buttons, legend"
+
+flag graph
+  Default: True
+  Description: "Enable the graph view"
+
+--flag sdl
+--  Default: False
+--  Description: "SDL window"
+
+Library
+  Exposed-modules: GHC.Vis
+  Other-modules: GHC.Vis.Internal GHC.Vis.Types GHC.Vis.View.List GHC.Vis.View.Common Paths_ghc_vis
+  Default-Language: Haskell2010
+  Build-depends: base >= 4.5,
+                 mtl >= 2.0,
+                 fgl >= 5.4 ,
+                 deepseq >= 1.3,
+                 text >= 0.11,
+                 transformers >= 0.3,
+                 containers >= 0.4,
+                 ghc-debug-common,
+                 ghc-debug-client,
+                 threepenny-gui,
+                 threepenny-utils,
+                 keycode
+  Hs-source-dirs: src/
+  Ghc-options: -Wall -fno-warn-unused-do-bind
+
+  if flag(full)
+      Cpp-options: -DFULL_WINDOW
+
+  --if flag(sdl)
+  --    Build-depends: SDL == 0.6.*
+  --    Cpp-options: -DSDL_WINDOW
+
+Executable as-a-library
+  main-is: Main.hs
+  hs-source-dirs: test
+  build-depends: ghc-vis, base
+--  other-modules:
+
+source-repository head
+    type:     git
+    location: https://github.com/def-/ghc-vis.git

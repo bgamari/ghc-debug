@@ -1,4 +1,4 @@
-name:                ghc-debug-client
+name:                ghc-debugger
 version:             0.1.0.0
 -- synopsis:
 -- description:
@@ -13,12 +13,8 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
-library
-  exposed-modules:     GHC.Debug.Client
-  build-depends:       base >=4.12 && <4.14,
-                       network >=2.6 && <2.7,
-                       unordered-containers,
-                       ghc-debug-common, cpu,
-                       dwarfadt, dwarf-el, text, process, filepath, directory
-  hs-source-dirs:      src
+executable debugger
+  main-is:             Test.hs
+  ghc-options:         -threaded -debug -g3
+  build-depends:       base, ghc-debug-client, ghc-heap, ghc-vis
   default-language:    Haskell2010

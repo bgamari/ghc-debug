@@ -7,13 +7,14 @@ import Debug.Trace
 import Control.Exception
 import Control.Concurrent
 import Data.Bitraversable
+import GHC.Vis
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
 prog2 = "/home/matt/dyepack/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190718/dyepack-0.1.0.0/x/example/build/example/example"
 
 --main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
-main = withDebuggee prog2 p12
+main = withDebuggee prog p15
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -164,6 +165,14 @@ p14 d = do
     print r
     res <- fullTraversal d r
     print res
+
+-- Testing ghc-vis
+p15 d = do
+  request d RequestPause
+  (r:_) <- request d RequestSavedObjects
+  vis d
+  view r "saved"
+  getChar
 
 
 

@@ -15,6 +15,7 @@ module GHC.Debug.Types.Closures (
     -- * Closures
       Closure
     , DebugClosure(..)
+    , StgInfoTable(..)
     , FieldValue(..)
     , DebugStack(..)
     , Stack
