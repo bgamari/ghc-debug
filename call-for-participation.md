@@ -84,6 +84,15 @@ as when the executable was compiled. The DWARF information inside the executable
 the modtime of the file so in the debugger we can check if the file has been modified
 in the meantime. There is a similar check already implemented in gdb.
 
+## Starter: Implement a `-DZ` option to zero memory when it is gced
+
+Tools such as `ghc-debug` work much better if memory is zeroed after it is freed.
+Currently the only way to do this in GHC is to use the `-DS` flag but this also
+enables some expensive sanity checks.
+
+It would be good to implement an option `-DZ` which zeros memory appropiately so
+it can be enabled when using `ghc-debug`.
+
 ## Intermediate: Clean up the API
 
 The current API to write debugging programs could be refined. In particular, the
