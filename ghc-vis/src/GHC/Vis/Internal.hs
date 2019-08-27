@@ -232,6 +232,11 @@ parseInternal _ (MVarClosure _ qHead qTail qValue)
         cTail <- liftM mbParens $ contParse qTail
         cValue <- liftM mbParens $ contParse qValue
         return $ Unnamed "MVar#(" : cHead ++ [Unnamed ","] ++ cTail ++ [Unnamed ","] ++ cValue ++ [Unnamed ")"]
+parseInternal _ (SmallMutArrClosure _ _ bPtrs)
+  = do cPtrs <- mapM contParse bPtrs
+       let tPtrs = intercalate [Unnamed ","] cPtrs
+       return $ if null tPtrs then [Unnamed ""] else Unnamed "(" : tPtrs ++ [Unnamed ")"]
+
 
 contParse :: Maybe HeapGraphIndex -> PrintState [VisObject]
 contParse Nothing = return []
