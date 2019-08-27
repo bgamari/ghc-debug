@@ -8,6 +8,8 @@ import Control.Concurrent
 import System.Mem.StableName
 import Foreign.StablePtr
 import System.Mem
+import qualified Data.Sequence
+import qualified Data.HashMap.Strict
 
 loop :: IO ()
 loop = go 0
@@ -25,9 +27,16 @@ main :: IO ()
 main = do
   start
   let x = A v
-  print x
+  let !y = Data.Sequence.fromList [1..5]
+  let !z = replicate 5 0
+
+  print (take 3 z)
+  print y
+--  print h
   performGC
-  saveClosures [Box x]
+  saveClosures [Box y]
   print "start"
   loop
   print x
+  print y
+  print z
