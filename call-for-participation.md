@@ -15,6 +15,15 @@ It's important that there are two different processes because in order to report
 you have to completely pause the executation of the program you want to debug. If you don't do this then GC will
 quickly invalidate any information that you obtain.
 
+The API already allows you to perform some simple tasks.
+
+* Decode the GC roots
+* Save specific objects for inspection in the debugger
+* Use `findPtr` to find closures which reference a specific address.
+* Read DWARF information from an executable and map info table pointers to source
+  locations.
+* Visualise closures on a web interface.
+
 There are still many parts of the library which could be improved. At Munihac 2019 we (@bgamari and @mpickering) will
 work on implementing the crucial missing features to the library.
 
