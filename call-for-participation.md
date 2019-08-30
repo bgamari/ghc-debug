@@ -22,14 +22,11 @@ work on implementing the crucial missing features to the library.
 
 The library lives at: http://www.github.com/bgamari/ghc-debug
 
-In order to build the library you need to use a custom version of GHC from this branch:
-
-The easiest way to set up the correct build environment is by using this `shell.nix` script.
+In order to build the library you need to use a custom version of GHC from this branch: https://gitlab.haskell.org/ghc/ghc/tree/wip/ghc-debug
 
 If you end up building `ghc` yourself then make sure you use at least the `quick` flavour so that
 the RTS is built is all the necessary ways. Then you can use `cabal new-configure` to set the
 path to ghc.
-
 
 Once the environment is set up you can use `cabal new-build` as normal in order to build the project.
 There are a few components which are useful to know about.
@@ -45,7 +42,7 @@ There are two tasks which Ben and I will focus on in order to fix some fundament
 
 ## Decoding Stack Closures
 
-A full heap traversal is not currently possible because we don't decode STACK closures properly. They have
+A full heap traversal is not currently possible because we don't decode STACK closures. They have
 a sightly different structure to other closures but Ben has indicated that he knows what to do here.
 
 ## Fixing the pause behaviour
@@ -53,11 +50,10 @@ a sightly different structure to other closures but Ben has indicated that he kn
 Currently there are two pause modes, one where the debugger pauses and one where the debuggee pauses.
 
 * If the debugger initiates the pause then unpausing works correctly.
-* If the debuggee initiates the pause then unpauses causes an assertion failure.
+* If the debuggee initiates the pause then unpausing causes an assertion failure.
 
 This second case needs to be fixed as initiating the pause from the debuggee is far more useful as you
 have precise control over when exactly the pause happens.
-
 
 # Future Goals
 
@@ -76,6 +72,8 @@ to warn a user that they need to use the threaded runtime.
 which you might plausibly care about.
 
 You can use this recent MR which added support for WEAK closures as a starting point.
+
+https://gitlab.haskell.org/ghc/ghc/merge_requests/1475
 
 ## Starter: Check that file modtime matches DWARF information
 
@@ -96,7 +94,7 @@ it can be enabled when using `ghc-debug`.
 ## Intermediate: Clean up the API
 
 The current API to write debugging programs could be refined. In particular, the
-`Debugger` is explicitly passed around everywhere rather than using a `Reader` like monad.
+`Debuggee` record is explicitly passed around everywhere rather than using a `Reader` like monad.
 
 No particular thought has been given to what API endpoints are exposed so organising them and
 writing documentation would be worthwhile.
@@ -104,13 +102,14 @@ writing documentation would be worthwhile.
 ## Intermediate: Implement closure timestamps
 
 `ClosurePtr`s are only valid in the current pause window. Information about the current
-pause window should be tracked
+pause window should be tracked and the API should enforce you can only lookup
+pointers from the current generation.
 
 ## Intermediate: Integrate `haxl`
 
 It will be much more efficient if we can batch together non-dependent requests
 to decode closures. However, it is much more convenient to provide an API which
-performs an individual request. The `haxl` library is designed to solve this problem
+performs an individual request. The [`haxl`](http://hackage.haskell.org/package/haxl) library is designed to solve this problem
 so it would be good to implement support for it.
 
 The `RequestClosures` request already supports requesting multiple closures at once so
@@ -140,7 +139,7 @@ residency crosses a certain threshold.
 ## Advanced: Allow thunk closures to be evaluated
 
 It's unclear exactly how to implement this but the basic idea is that
-it should be possible to request that the RTS evaluates a THUNK closure.
+it should be possible to request that the RTS evaluates a `THUNK` closure.
 
 Once the request is made, the RTS should be unpaused, the closure evaluated, repaused
 and the resulting closure sent back to the debugger.
