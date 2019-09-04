@@ -26,17 +26,10 @@ v = 5
 main :: IO ()
 main = do
   start
-  let x = A v
   let !y = Data.Sequence.fromList [1..5]
-  let !z = replicate 5 0
-
-  print (take 3 z)
-  print y
---  print h
+  let !y = [1..5]
   performGC
   saveClosures [Box y]
   print "start"
   loop
-  print x
   print y
-  print z
