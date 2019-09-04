@@ -1,4 +1,4 @@
-packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test
+packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test
 
 allow-newer: all
 
