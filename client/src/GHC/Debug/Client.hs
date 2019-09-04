@@ -130,7 +130,10 @@ lookupDwarfUnit w (Boxed _ cu) = do
   guard (low <= w && w <= high)
   (LNE ds fs ls) <- cuLineNumInfo cu
   (fp, l, c) <- foldl' (lookupDwarfLine w) Nothing (zip ls (tail ls))
-  return (map (\d -> T.unpack (cuCompDir cu) </> T.unpack d </> fp) ds, l , c)
+  let res_fps = if null ds then [T.unpack (cuCompDir cu) </> fp]
+                           else map (\d -> T.unpack (cuCompDir cu) </> T.unpack d </> fp) ds
+  return ( res_fps
+         , l , c)
 
 lookupDwarfSubprogram :: Word64 -> Boxed Def -> Maybe Subprogram
 lookupDwarfSubprogram w (Boxed _ (DefSubprogram s)) = do
