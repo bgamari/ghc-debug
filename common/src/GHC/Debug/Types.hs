@@ -45,7 +45,7 @@ data Request a where
     RequestClosures :: [ClosurePtr] -> Request [RawClosure]
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
-    -- | Wait for the debugee to pause itself and then
+    -- | Wait for the debuggee to pause itself and then
     -- execute an action. It currently impossible to resume after
     -- a pause caused by a poll.
     RequestPoll :: Request ()
