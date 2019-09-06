@@ -14,7 +14,6 @@ import qualified Data.Array.Unboxed as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
-import Data.Hashable
 import Data.Word
 import System.IO
 import System.IO.Unsafe
@@ -22,11 +21,7 @@ import System.IO.Unsafe
 import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
-import System.Endian
 
-import Debug.Trace
-
-import Numeric (showHex)
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
 

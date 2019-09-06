@@ -39,16 +39,11 @@ import qualified GHC.Exts.Heap as GHC
 
 
 import Data.Functor.Identity
-import Data.Bits
 import Data.Int
 import Data.Word
 import GHC.Exts
 import GHC.Generics
-import Numeric
 import GHC.Debug.Types.Ptr
-import Data.Bifunctor
-import Data.Bifoldable
-import Data.Bitraversable
 import Data.List
 import Data.Char
 
