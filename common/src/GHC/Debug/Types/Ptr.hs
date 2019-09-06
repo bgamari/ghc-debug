@@ -58,7 +58,9 @@ newtype ClosurePtr = ClosurePtr Word64
 instance Show ClosurePtr where
   show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
-data StackCont = StackCont RawStack deriving Show
+data StackCont = StackCont { stackContStack :: !RawStack
+                           , stackContSp    :: !Word64
+                           } deriving Show
 
 newtype StackPtr = StackPtr Word64
 
