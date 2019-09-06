@@ -5,18 +5,10 @@ module GHC.Debug.Types.Graph where
 
 
 
-import GHC.Arr          (Array(..))
-
-import Foreign          hiding ( void )
 import Data.Char
 import Data.List
 import Data.Maybe       ( catMaybes )
-import Data.Monoid      ( Monoid, (<>), mempty )
-import Data.Functor
 import Data.Function
-import Data.Foldable    ( Foldable )
-import qualified Data.Foldable as F
-import Data.Traversable ( Traversable )
 import qualified Data.Traversable as T
 import qualified Data.IntMap as M
 import Control.Monad
@@ -24,7 +16,6 @@ import Control.Monad.Trans.State
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer.Strict
-import Control.Exception.Base (evaluate)
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Closures
 
