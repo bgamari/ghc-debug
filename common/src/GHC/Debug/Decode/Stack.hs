@@ -36,7 +36,7 @@ getStack bitmap itbl = do
         -- and decode as appropriate.
         _itblPtr <- getInfoTablePtr
         fields <- traversePtrBitmap decodeField bitmap
-        return (DebugStack itbl fields)
+        return (DebugStackFrame itbl fields)
   where
     decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord
     decodeField False = SNonPtr <$> getWord
