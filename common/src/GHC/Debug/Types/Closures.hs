@@ -17,7 +17,7 @@ module GHC.Debug.Types.Closures (
     , DebugClosure(..)
     , StgInfoTable(..)
     , FieldValue(..)
-    , DebugStack(..)
+    , DebugStackFrame(..)
     , Stack
     , GHC.PrimType(..)
     , allClosures
@@ -65,15 +65,15 @@ instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
-type UClosure = Fix1 ConstrDesc DebugStack DebugClosure
-type UStack   = Fix2 ConstrDesc DebugStack DebugClosure
+type UClosure = Fix1 ConstrDesc DebugStackFrame DebugClosure
+type UStack   = Fix2 ConstrDesc DebugStackFrame DebugClosure
 
 ------------------------------------------------------------------------
 -- Closures
 
 type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
 
-type Stack = DebugStack ClosurePtr
+type Stack = DebugStackFrame ClosurePtr
 
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
@@ -303,9 +303,11 @@ data DebugClosure string s b
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
-data DebugStack b =
-  DebugStack { stack_info :: !StgInfoTable
-             , values :: [FieldValue b] } deriving (Traversable, Functor, Foldable, Show)
+data DebugStackFrame b
+  = DebugStackFrame
+        { frame_info :: !StgInfoTable
+        , values     :: [FieldValue b]
+        } deriving (Traversable, Functor, Foldable, Show)
 
 data ConstrDesc = ConstrDesc {
           pkg        :: !String         -- ^ Package name
