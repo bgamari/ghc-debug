@@ -37,7 +37,7 @@ data Request a where
     -- | Request the debuggee's root pointers.
     RequestRoots :: Request [ClosurePtr]
     -- | Request a set of closures.
-    RequestClosures :: [ClosurePtr] -> Request [RawClosure]
+    RequestClosures :: [ClosurePtr] -> Request [(ClosurePtr, RawClosure)]
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
     -- | Wait for the debuggee to pause itself and then
@@ -134,7 +134,7 @@ getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
-getResponse (RequestClosures _)  = many getRawClosure
+getResponse (RequestClosures cs) = zip cs <$> many getRawClosure
 getResponse (RequestInfoTables _) = many getRawInfoTable
 getResponse (RequestBitmap _)    = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
