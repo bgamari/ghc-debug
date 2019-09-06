@@ -4,8 +4,8 @@ let
   np = import (_np.fetchFromGitHub {
     owner  = "NixOS";
     repo   = "nixpkgs";
-    rev    = "7d5375ebf4cd417465327d7ab453687fd19663c9";
-    sha256 = "0vb7ikjscrp2rw0dfw6pilxqpjm50l5qg2x2mn1vfh93dkl2aan7";
+    rev    = "541d9cce8af7a490fb9085305939569567cb58e6";
+    sha256 = "0jgz72hhzkd5vyq5v69vpljjlnf0lqaz7fh327bvb3cvmwbfxrja";
   }) {};
 
   mkGhc = (import (np.fetchFromGitHub {
