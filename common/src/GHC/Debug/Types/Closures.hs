@@ -231,8 +231,7 @@ data DebugClosure string s b
      { info :: !StgInfoTable
      , size :: !HalfWord
      , dirty :: !HalfWord
-     , stackPointer :: !s
-     , stack :: [Word]
+     , stack :: !s
      }
 
   | WeakClosure
@@ -378,7 +377,7 @@ instance Tritraversable DebugClosure where
       BlockingQueueClosure a1 b1 b2 b3 b4 ->
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
       TSOClosure a1 b -> TSOClosure a1 <$> g b
-      StackClosure a1 a2 a3 s1 ss -> StackClosure a1 a2 a3 <$> f s1 <*> pure ss
+      StackClosure a1 a2 a3 s1 -> StackClosure a1 a2 a3 <$> f s1
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
       IntClosure p i -> pure (IntClosure p i)
