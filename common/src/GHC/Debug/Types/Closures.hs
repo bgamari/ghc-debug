@@ -240,14 +240,14 @@ data DebugClosure string s b
      , stack :: [Word]
      }
 
-    | WeakClosure
-        { info        :: !StgInfoTable
-        , cfinalizers :: !b
-        , key         :: !b
-        , value       :: !b
-        , finalizer   :: !b
-        , mlink       :: !(Maybe b) -- ^ next weak pointer for the capability, can be NULL.
-        }
+  | WeakClosure
+     { info        :: !StgInfoTable
+     , cfinalizers :: !b
+     , key         :: !b
+     , value       :: !b
+     , finalizer   :: !b
+     , mlink       :: !(Maybe b) -- ^ next weak pointer for the capability, can be NULL.
+     }
 
 
     ------------------------------------------------------------
