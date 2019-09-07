@@ -52,10 +52,12 @@ import System.Process
 import System.Environment
 import System.FilePath
 import System.Directory
+import Text.Printf
 
 data Debuggee = Debuggee { debuggeeHdl :: Handle
                          , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)
                          , debuggeeDwarf :: Maybe Dwarf
+                         , debuggeeFilename :: FilePath
                          }
 
 
@@ -77,24 +79,25 @@ withDebuggee exeName action = do
     withCreateProcess cp $ \_ _ _ _ -> do
       dwarf <- getDwarfInfo exeName
     -- Now connect to the socket the debuggeeProcess just started
-      withDebuggeeSocket sockName (Just dwarf) action
+      withDebuggeeSocket exeName sockName (Just dwarf) action
 
 
 -- | Open a debuggee's socket directly
-withDebuggeeSocket :: FilePath  -- ^ debuggee's socket location
+withDebuggeeSocket :: FilePath  -- ^ executable name of the debuggee
+                   -> FilePath  -- ^ debuggee's socket location
                    -> Maybe Dwarf
                    -> (Debuggee -> IO a)
                    -> IO a
-withDebuggeeSocket sockName mdwarf action = do
+withDebuggeeSocket exeName sockName mdwarf action = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix sockName)
     hdl <- socketToHandle s ReadWriteMode
     infoTableEnv <- newMVar mempty
-    action (Debuggee hdl infoTableEnv mdwarf)
+    action (Debuggee hdl infoTableEnv mdwarf exeName)
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
 request :: Debuggee -> Request resp -> IO resp
-request (Debuggee hdl _ _) req = doRequest hdl req
+request d req = doRequest (debuggeeHdl d) req
 
 lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
 lookupInfoTable d rc = do
@@ -155,15 +158,17 @@ lookupDwarfLine w Nothing (d, nd) = do
     else Nothing
 lookupDwarfLine _ (Just r) _ =  Just r
 
-showFileSnippet :: ([FilePath], Int, Int) -> IO ()
-showFileSnippet (fps, l, c) = go fps
+showFileSnippet :: Debuggee -> ([FilePath], Int, Int) -> IO ()
+showFileSnippet d (fps, l, c) = go fps
   where
     go [] = putStrLn ("No files could be found: " ++ show fps)
     go (fp: fps) = do
       exists <- doesFileExist fp
+      -- get file modtime
       if not exists
         then go fps
         else do
+          fp `warnIfNewer` (debuggeeFilename d)
           src <- zip [1..] . lines <$> readFile fp
           let ctx = take 10 (drop (max (l - 5) 0) src)
           putStrLn (fp <> ":" <> show l <> ":" <> show c)
@@ -211,6 +216,15 @@ fullStackTraversal d sc = do
   print ds
   MkFix2 <$> traverse (fullTraversal d) ds
 
-
-
-
+-- | Print a warning if source file (first argument) is newer than the binary (second argument)
+warnIfNewer :: FilePath -> FilePath -> IO ()
+warnIfNewer fpSrc fpBin = do
+    modTimeSource <- getModificationTime fpSrc
+    modTimeBinary <- getModificationTime fpBin
+    if modTimeSource > modTimeBinary
+    then 
+      hPutStrLn stderr $
+        printf "Warning: %s is newer than %s. Code snippets might be wrong!"
+          fpSrc fpBin
+    else
+      return ()

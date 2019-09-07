@@ -117,7 +117,7 @@ p11 d = do
   [c] <- request d (RequestClosures ss)
   let itb = getInfoTblPtr c
   case lookupDwarf d itb of
-    Just r -> showFileSnippet r
+    Just r -> showFileSnippet d r
     Nothing -> return ()
 
 p12 d = do
@@ -133,7 +133,7 @@ p12 d = do
   forM_ cs $ \c -> do
     let itb = getInfoTblPtr c
     case lookupDwarf d itb of
-      Just r -> showFileSnippet r
+      Just r -> showFileSnippet d r
       Nothing -> return ()
 
   print "Following thunk"
@@ -146,7 +146,7 @@ p12 d = do
   forM_ cs $ \c -> do
     let itb = getInfoTblPtr c
     case lookupDwarf d itb of
-      Just r -> showFileSnippet r
+      Just r -> showFileSnippet d r
       Nothing -> return ()
 
 -- testing stack decoding
