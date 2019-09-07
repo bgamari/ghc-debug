@@ -9,6 +9,7 @@
 #include <sys/un.h>
 #include <arpa/inet.h>
 
+
 #include <thread>
 #include <functional>
 
@@ -147,7 +148,7 @@ class Response {
         { }
 
     ~Response() {
-        delete this->buf;
+        delete[] this->buf;
     }
 
     template<typename T>
@@ -467,6 +468,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       default:
         return 1;
     }
+    return 0;
 }
 
 /* return non-zero on error */
