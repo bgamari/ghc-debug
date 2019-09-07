@@ -27,7 +27,7 @@ main :: IO ()
 main = do
   start
   let !y = Data.Sequence.fromList [1..5]
-  let !y = [1..5]
+  -- let !y = [1..5]
   performGC
   saveClosures [Box y]
   print "start"
