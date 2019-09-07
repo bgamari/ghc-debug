@@ -206,8 +206,7 @@ ppHeapGraph (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
         _ -> 'x'
 
     ppBindingMap = M.fromList $
-        concat $
-        map (zipWith (\j (i,c) -> (i, [c] ++ show j)) [(1::Int)..]) $
+        concatMap (zipWith (\j (i,c) -> (i, c : show j)) [(1::Int)..]) $
         groupBy ((==) `on` snd) $
         sortBy (compare `on` snd)
         [ (i, bindingLetter i) | i <- bindings ]
@@ -218,40 +217,39 @@ ppHeapGraph (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
     ppEntry prec hge
         | Just s <- isString hge = show s
         | Just l <- isList hge   = "[" ++ intercalate "," (map (ppRef 0) l) ++ "]"
-        | otherwise = ppClosure ppRef prec (trimap show id id (hgeClosure hge))
+        | otherwise = ppClosure ppRef prec (hgeClosure hge)
       where
         app [a] = a  ++ "()"
-        app xs = addBraces (10 <= prec) (intercalate " " xs)
+        app xs = addBraces (10 <= prec) (unwords xs)
 
     ppRef _ Nothing = "..."
     ppRef prec (Just i) | i `elem` bindings = ppVar i
                         | otherwise = ppEntry prec (iToE i)
     iToE i = m M.! i
 
-    iToUnboundE i = if i `elem` bindings then Nothing else M.lookup i m
+    iToUnboundE i
+        | i `elem` bindings = Nothing
+        | otherwise         = M.lookup i m
 
-    isList :: HeapGraphEntry a -> Maybe ([Maybe HeapGraphIndex])
-    isList hge = Nothing
-    {-
-        if isNil (hgeClosure hge) || True
-          then return []
-          else undefined
+    isList :: HeapGraphEntry a -> Maybe [Maybe HeapGraphIndex]
+    isList hge
+        | isNil (hgeClosure hge) =
+            return []
+        | otherwise = do
             (h,t) <- isCons (hgeClosure hge)
             ti <- t
             e <- iToUnboundE ti
             t' <- isList e
             return $ (:) h t'
-            -}
 
     isString :: HeapGraphEntry a -> Maybe String
     isString e = do
---        list <- isList e
+        list <- isList e
         -- We do not want to print empty lists as "" as we do not know that they
         -- are really strings.
-        Nothing
---        if (null list)
---            then Nothing
---            else mapM (isChar . hgeClosure <=< iToUnboundE <=< id) list
+        if null list
+        then Nothing
+        else mapM (isChar . hgeClosure <=< iToUnboundE <=< id) list
 
 
 -- | In the given HeapMap, list all indices that are used more than once. The
@@ -276,33 +274,34 @@ braceize :: [String] -> String
 braceize [] = ""
 braceize xs = "{" ++ intercalate "," xs ++ "}"
 
-isChar :: DebugClosure String s c -> Maybe Char
-isChar (ConstrClosure { constrDesc = "C#", dataArgs = [ch], ptrArgs = []}) = Just (chr (fromIntegral ch))
+isChar :: DebugClosure ConstrDesc s c -> Maybe Char
+isChar ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "C#"}, dataArgs = [ch], ptrArgs = []} = Just (chr (fromIntegral ch))
 isChar _ = Nothing
 
-isCons :: DebugClosure String s c -> Maybe (c, c)
-isCons (ConstrClosure { constrDesc = ":", dataArgs = [], ptrArgs = [h,t]}) = Just (h,t)
+isNil :: DebugClosure ConstrDesc s c -> Bool
+isNil ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "[]"}, dataArgs = _, ptrArgs = []} = True
+isNil _ = False
+
+isCons :: DebugClosure ConstrDesc s c -> Maybe (c, c)
+isCons ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = ":"}, dataArgs = [], ptrArgs = [h,t]} = Just (h,t)
 isCons _ = Nothing
 
-isTup :: DebugClosure String s c -> Maybe [c]
-isTup (ConstrClosure { dataArgs = [], ..}) =
-    if length constrDesc >= 3 &&
-       head constrDesc == '(' && last constrDesc == ')' &&
-       all (==',') (tail (init constrDesc))
+isTup :: DebugClosure ConstrDesc s c -> Maybe [c]
+isTup ConstrClosure{ dataArgs = [], ..} =
+    if length (name constrDesc) >= 3 &&
+       head (name constrDesc) == '(' && last (name constrDesc) == ')' &&
+       all (==',') (tail (init (name constrDesc)))
     then Just ptrArgs else Nothing
 isTup _ = Nothing
 
 
-isNil :: DebugClosure String s c -> Bool
-isNil (ConstrClosure { constrDesc = "[]", dataArgs = [], ptrArgs = []}) = True
-isNil _ = False
 
 -- | A pretty-printer that tries to generate valid Haskell for evalutated data.
 -- It assumes that for the included boxes, you already replaced them by Strings
 -- using 'Data.Foldable.map' or, if you need to do IO, 'Data.Foldable.mapM'.
 --
 -- The parameter gives the precedendence, to avoid avoidable parenthesises.
-ppClosure :: (Int -> c -> String) -> Int -> DebugClosure String s c -> String
+ppClosure :: (Int -> c -> String) -> Int -> DebugClosure ConstrDesc s c -> String
 ppClosure showBox prec c = case c of
     _ | Just ch <- isChar c -> app $
         ["C#", show ch]
@@ -311,7 +310,7 @@ ppClosure showBox prec c = case c of
     _ | Just vs <- isTup c ->
         "(" ++ intercalate "," (map (showBox 0) vs) ++ ")"
     ConstrClosure {..} -> app $
-        constrDesc : map (showBox 10) ptrArgs ++ map show dataArgs
+        name constrDesc : map (showBox 10) ptrArgs ++ map show dataArgs
     ThunkClosure {..} -> app $
         "_thunk" : map (showBox 10) ptrArgs ++ map show dataArgs
     SelectorClosure {..} -> app
