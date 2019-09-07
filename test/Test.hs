@@ -1,6 +1,7 @@
 module Main where
 
 import GHC.Debug.Client
+import GHC.Debug.Types.Graph
 
 import Control.Monad
 import Debug.Trace
@@ -175,5 +176,9 @@ p15 d = do
   view r "saved"
   getChar
 
-
-
+-- pretty-print graph
+p16 d = do
+  request d RequestPause
+  [so] <- request d RequestSavedObjects
+  hg <- buildHeapGraph (derefBox d) 20 () so
+  putStrLn $ ppHeapGraph hg

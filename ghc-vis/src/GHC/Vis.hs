@@ -44,7 +44,8 @@ module GHC.Vis (
   clear,
   restore,
   history,
-  setDepth
+  setDepth,
+  derefBox
   )
   where
 
