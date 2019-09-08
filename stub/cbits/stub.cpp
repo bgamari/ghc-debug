@@ -509,7 +509,7 @@ void serve(void) {
         local.sun_family = AF_UNIX;
         const char* sock = getenv("GHC_DEBUG_SOCKET");
         if (sock == NULL){ sock = "/tmp/ghc-debug"; }
-        strcpy(local.sun_path, sock);
+        strncpy(local.sun_path, sock, sizeof(local.sun_path));
         unlink(local.sun_path);
         if (bind(s, (struct sockaddr *) &local, sizeof(local)) != 0) {
             barf("bind failed");
