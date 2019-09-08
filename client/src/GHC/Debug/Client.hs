@@ -1,3 +1,5 @@
+{-# LANGUAGE GADTs #-}
+
 module GHC.Debug.Client
   ( Debuggee
   , DebuggeeAction
@@ -7,6 +9,7 @@ module GHC.Debug.Client
   , pauseDebuggee
   , request
   , Request(..)
+  , getCurrentFrame
   , getInfoTblPtr
   , decodeClosure
   , decodeStack
@@ -41,6 +44,7 @@ import System.Endian
 import Data.Foldable
 import Data.Coerce
 import Data.Bitraversable
+import Data.Word (Word32)
 
 
 import qualified Data.Dwarf as Dwarf
@@ -61,6 +65,7 @@ data Debuggee = Debuggee { debuggeeHdl :: Handle
                          , debuggeeInfoTblEnv :: HM.HashMap InfoTablePtr RawInfoTable
                          , debuggeeDwarf :: Maybe Dwarf
                          , debuggeeFilename :: FilePath
+                         , debuggeeFrame :: Word32
                          }
 
 type DebuggeeAction a = StateT Debuggee IO a
@@ -101,13 +106,19 @@ withDebuggeeSocket exeName sockName mdwarf action = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix sockName)
     hdl <- socketToHandle s ReadWriteMode
-    evalStateT action (Debuggee hdl mempty mdwarf exeName)
+    evalStateT action (Debuggee hdl mempty mdwarf exeName 0)
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
 request :: Request resp -> DebuggeeAction resp
 request req = do
-  hdl <- gets debuggeeHdl
-  liftIO $ doRequest hdl req
+    hdl <- gets debuggeeHdl
+    payload <- liftIO $ doRequest hdl req
+    -- if we did a successful pause, the payload contains the current frame
+    -- number
+    case req of
+      RequestPause -> modify' $ \d -> d { debuggeeFrame = payload }
+      _ -> return ()
+    return payload
 
 lookupInfoTable :: RawClosure -> DebuggeeAction (RawInfoTable, RawClosure)
 lookupInfoTable rc = do
@@ -248,3 +259,7 @@ warnIfNewer fpSrc fpBin = do
           fpSrc fpBin
     else
       return ()
+
+-- | Return the current frame number
+getCurrentFrame :: DebuggeeAction Word32
+getCurrentFrame = gets debuggeeFrame

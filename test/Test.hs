@@ -4,12 +4,13 @@ import GHC.Debug.Client
 import GHC.Debug.Types.Graph
 
 import Control.Monad
-import Control.Monad.State.Lazy (liftIO, get)
+import Control.Monad.State.Lazy (liftIO, get, gets)
 import Debug.Trace
 import Control.Exception
 import Control.Concurrent
 import Data.Bitraversable
 import GHC.Vis
+import Text.Printf
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190806/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
@@ -201,3 +202,15 @@ p16 = do
   dbg <- get
   hg <- liftIO $ buildHeapGraph (derefBox dbg) 20 () so
   liftIO $ putStrLn $ ppHeapGraph hg
+
+p17 = do
+  printFrame
+  replicateM_ 20 $ do
+    printFrame
+    request RequestPause
+    request RequestResume
+  where
+    printFrame = do
+      frame <- getCurrentFrame
+      liftIO $ putStrLn $
+        printf "Current frame number: %d" frame
