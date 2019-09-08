@@ -511,8 +511,7 @@ void serve(void) {
         if (sock == NULL){ sock = "/tmp/ghc-debug"; }
         strcpy(local.sun_path, sock);
         unlink(local.sun_path);
-        int len = strlen(local.sun_path) + sizeof(local.sun_family);
-        if (bind(s, (struct sockaddr *) &local, len) != 0) {
+        if (bind(s, (struct sockaddr *) &local, sizeof(local)) != 0) {
             barf("bind failed");
         }
     }
