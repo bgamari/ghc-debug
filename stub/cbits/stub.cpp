@@ -126,12 +126,12 @@ class Response {
             // Then status
             this->sock.write((char *) &status_payload, sizeof(uint16_t));
             // then the body, usually empty
-    trace("FLUSHING(%lu)( ", len);
-    for (int i = 0; i < len; i++)
-    {
-      trace("%02X", buf[i]);
-    }
-    trace("\n");
+            trace("FLUSHING(%lu)( ", len);
+            for (int i = 0; i < len; i++)
+            {
+              trace("%02X", buf[i]);
+            }
+            trace("\n");
             this->sock.write(this->buf, len);
             this->tail = this->buf;
         }
