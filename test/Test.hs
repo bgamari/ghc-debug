@@ -4,11 +4,13 @@ import GHC.Debug.Client
 import GHC.Debug.Types.Graph
 
 import Control.Monad
+import Control.Monad.State.Lazy (liftIO, get, gets)
 import Debug.Trace
 import Control.Exception
 import Control.Concurrent
 import Data.Bitraversable
 import GHC.Vis
+import Text.Printf
 
 prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.20190806/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
@@ -16,48 +18,54 @@ prog2 = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.9.0.2019080
 
 --main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
 main = withDebuggee prog2 p12
---main = withDebuggee prog p15
+-- main = withDebuggee prog p15
 
 -- Test pause/resume
-p1 d = pauseDebuggee d (void $ getChar)
-
+p1 :: DebuggeeAction ()
+p1 = do
+  pauseDebuggee (liftIO getChar)
+  return ()
 
 -- Testing error codes
-p2 d = do
-  request d RequestPause
-  print "req1"
-  request d RequestPause
-  request d RequestPause
-  request d RequestPause
+p2 = do
+  request RequestPause
+  liftIO $ print "req1"
+  request RequestPause
+  request RequestPause
+  request RequestPause
 
 -- Testing get version
-p3 d = do
-  request d RequestVersion >>= print
-  request d RequestPause
-  request d RequestResume
+p3 :: DebuggeeAction ()
+p3 = do
+  version <- request RequestVersion
+  liftIO $ print version
+  request RequestPause
+  request RequestResume
+  return ()
 
 -- Testing get roots
-p4 d = do
-  request d RequestPause
-  request d RequestRoots >>= print
+p4 = do
+  request RequestPause
+  roots <- request RequestRoots
+  liftIO $ print roots
 
 -- request closures
-p5 d = do
-  request d RequestPause
-  r <- request d RequestRoots
-  print (length r)
+p5 = do
+  request RequestPause
+  r <- request RequestRoots
+  liftIO $ print (length r)
   forM_ [0..length r - 1] $ \i -> do
     let cs = [r !! i]
-    print cs
-    dereferenceClosures d cs
+    liftIO $ print cs
+    dereferenceClosures cs
 
 -- request all closures
-p5a d = do
-  request d RequestPause
-  rs <- request d RequestRoots
-  print rs
-  cs <- request d (RequestClosures rs)
-  print cs
+p5a = do
+  request RequestPause
+  rs <- request RequestRoots
+  liftIO $ print rs
+  cs <- request (RequestClosures rs)
+  liftIO $ print cs
   {-
   let it = getInfoTblPtr c
   print it
@@ -68,117 +76,141 @@ p5a d = do
   -}
 
 -- request all closures
-p5b d = do
-  request d RequestPause
-  rs <- request d RequestRoots
-  dereferenceClosures d rs
+p5b = do
+  request RequestPause
+  rs <- request RequestRoots
+  dereferenceClosures rs
 
 
-
-p6 d = do
+p6 = do
   -- This blocks until a pause
-  request d RequestPoll
-  print "POLL"
+  request RequestPoll
+  liftIO $ print "POLL"
   -- Should return already paused
-  request d RequestPause
-  print "PAUSE"
+  request RequestPause
+  liftIO $ print "PAUSE"
   -- Now unpause
-  request d RequestResume
-  print "RESUME"
+  request RequestResume
+  liftIO $ print "RESUME"
 
 -- Request saved objects
-p7 d = do
-  request d RequestPause
-  request d RequestSavedObjects >>= print
+p7 = do
+  request RequestPause
+  objs <- request RequestSavedObjects
+  liftIO $ print objs
 
 -- request saved objects
-p8 d = do
-  request d RequestPause
-  sos <- request d RequestSavedObjects
-  dereferenceClosures d sos
+p8 = do
+  request RequestPause
+  sos <- request RequestSavedObjects
+  dereferenceClosures sos
 
 -- Using findPtr
-p9 d = do
-  request d RequestPause
-  (s:_) <- request d RequestSavedObjects
-  print s
-  sos <- request d (RequestFindPtr s)
-  print ("FIND_PTR_RES", sos)
-  dereferenceClosures d sos
+p9 = do
+  request RequestPause
+  (s:_) <- request RequestSavedObjects
+  liftIO $ print s
+  sos <- request (RequestFindPtr s)
+  liftIO $ print ("FIND_PTR_RES", sos)
+  dereferenceClosures sos
 
 p10 d = do
-  request d RequestPause
-  (s:_) <- request d RequestRoots
-  request d (RequestFindPtr s) >>= print
+  request RequestPause
+  (s:_) <- request RequestRoots
+  ptr <- request (RequestFindPtr s)
+  liftIO $ print ptr
 
-p11 d = do
-  threadDelay 10000000
-  request d RequestPause
-  ss <- request d RequestSavedObjects
-  [c] <- request d (RequestClosures ss)
+p11 = do
+  liftIO $ threadDelay 10000000
+  request RequestPause
+  ss <- request RequestSavedObjects
+  [c] <- request (RequestClosures ss)
   let itb = getInfoTblPtr c
-  case lookupDwarf d itb of
-    Just r -> showFileSnippet d r
+  mDwarf <- lookupDwarf itb
+  case mDwarf of
+    Just r -> showFileSnippet r
     Nothing -> return ()
 
-p12 d = do
-  request d RequestPoll
-  [ss] <- request d RequestSavedObjects
-  r <- request d (RequestFindPtr ss)
-  print ss
-  putStrLn "Retaining closures"
-  dcs <- dereferenceClosures d r
-  mapM print dcs
-  putStrLn ""
-  cs <- request d (RequestClosures r)
+p12 = do
+  liftIO $ putStrLn "Polling.."
+  request RequestPoll
+  liftIO $ putStrLn "Requesting saved objects.."
+  [ss] <- request RequestSavedObjects
+  liftIO $ putStrLn "Requesting pointer to saved objects.."
+  r <- request (RequestFindPtr ss)
+  liftIO $ print ss
+  liftIO $ putStrLn "Retaining closures"
+  dcs <- dereferenceClosures r
+  liftIO $ mapM print dcs
+  liftIO $ putStrLn ""
+  liftIO $ putStrLn "Requesting closures.."
+  cs <- request (RequestClosures r)
   forM_ cs $ \c -> do
     let itb = getInfoTblPtr c
-    case lookupDwarf d itb of
-      Just r -> showFileSnippet d r
+    mDwarf <- lookupDwarf itb
+    case mDwarf of
+      Just r -> showFileSnippet r
       Nothing -> return ()
 
-  print "Following thunk"
+  liftIO $ print "Following thunk"
   let thunk = r !! 2
-  r <- request d (RequestFindPtr thunk)
-  putStrLn "Retaining closures 2"
-  dereferenceClosures d r >>= mapM print
-  putStrLn ""
-  cs <- request d (RequestClosures r)
+  r <- request (RequestFindPtr thunk)
+  liftIO $ putStrLn "Retaining closures 2"
+  closures <- dereferenceClosures r
+  liftIO $ mapM_ print closures
+  liftIO $ putStrLn ""
+  cs <- request (RequestClosures r)
   forM_ cs $ \c -> do
     let itb = getInfoTblPtr c
-    case lookupDwarf d itb of
-      Just r -> showFileSnippet d r
+    mDwarf <- lookupDwarf itb
+    case mDwarf of
+      Just r -> showFileSnippet r
       Nothing -> return ()
 
 -- testing stack decoding
-p13 d = do
-  request d RequestPause
-  rs <- request d RequestRoots
+p13 = do
+  request RequestPause
+  rs <- request RequestRoots
   forM_ rs $ \r -> do
-    print r
-    res <- fullTraversal d r
-    print res
+    liftIO $ print r
+    res <- fullTraversal r
+    liftIO $ print res
 
 
-p14 d = do
-  request d RequestPause
-  rs <- request d RequestSavedObjects
+p14 = do
+  request RequestPause
+  rs <- request RequestSavedObjects
   forM_ rs $ \r -> do
-    print r
-    res <- fullTraversal d r
-    print res
+    liftIO $ print r
+    res <- fullTraversal r
+    liftIO $ print res
 
 -- Testing ghc-vis
-p15 d = do
-  request d RequestPause
-  (r:_) <- request d RequestSavedObjects
-  vis d
-  view r "saved"
-  getChar
+p15 :: DebuggeeAction Char
+p15 = do
+  request RequestPause
+  (r:_) <- request RequestSavedObjects
+  d <- get
+  liftIO $ vis d
+  liftIO $ view r "saved"
+  liftIO $ getChar
 
 -- pretty-print graph
-p16 d = do
-  request d RequestPause
-  [so] <- request d RequestSavedObjects
-  hg <- buildHeapGraph (derefBox d) 20 () so
-  putStrLn $ ppHeapGraph hg
+p16 = do
+  request RequestPause
+  [so] <- request RequestSavedObjects
+  dbg <- get
+  hg <- liftIO $ buildHeapGraph (derefBox dbg) 20 () so
+  liftIO $ putStrLn $ ppHeapGraph hg
+
+p17 = do
+  printFrame
+  replicateM_ 20 $ do
+    printFrame
+    request RequestPause
+    request RequestResume
+  where
+    printFrame = do
+      frame <- getCurrentFrame
+      liftIO $ putStrLn $
+        printf "Current frame number: %d" frame

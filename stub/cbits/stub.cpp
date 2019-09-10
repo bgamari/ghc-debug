@@ -126,12 +126,12 @@ class Response {
             // Then status
             this->sock.write((char *) &status_payload, sizeof(uint16_t));
             // then the body, usually empty
-    trace("FLUSHING(%lu)( ", len);
-    for (int i = 0; i < len; i++)
-    {
-      trace("%02X", buf[i]);
-    }
-    trace("\n");
+            trace("FLUSHING(%lu)( ", len);
+            for (int i = 0; i < len; i++)
+            {
+              trace("%02X", buf[i]);
+            }
+            trace("\n");
             this->sock.write(this->buf, len);
             this->tail = this->buf;
         }
@@ -187,6 +187,8 @@ class Response {
 };
 
 static bool paused = false;
+// track how often the target was paused
+static uint32_t num_pause_frame = 0;
 static RtsPaused r_paused;
 static Response * r_poll_pause_resp = NULL;
 
@@ -199,6 +201,7 @@ void pause_mutator() {
       r_poll_pause_resp->finish(RESP_OKAY);
   }
   paused = true;
+  ++num_pause_frame;
 }
 
 extern "C"
@@ -282,9 +285,13 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         trace("PAUSE: %d", paused);
         if (paused) {
             trace("ALREADY");
+            // even though we are already paused we tell the callee what pause
+            // frame we are in
+            resp.write(htonl(num_pause_frame));
             resp.finish(RESP_ALREADY_PAUSED);
         } else {
             pause_mutator();
+            resp.write(htonl(num_pause_frame));
             resp.finish(RESP_OKAY);
         }
         break;

@@ -30,8 +30,8 @@ import GHC.Debug.Types.Ptr as T
 data Request a where
     -- | Request protocol version
     RequestVersion :: Request Word32
-    -- | Pause the debuggee.
-    RequestPause :: Request ()
+    -- | Pause the debuggee, get number of current pause frame.
+    RequestPause :: Request Word32
     -- | Resume the debuggee.
     RequestResume :: Request ()
     -- | Request the debuggee's root pointers.
@@ -131,7 +131,7 @@ putRequest (RequestFindPtr c)       =
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
-getResponse RequestPause         = get
+getResponse RequestPause         = getWord32be
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure

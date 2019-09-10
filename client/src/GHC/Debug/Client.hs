@@ -1,10 +1,15 @@
+{-# LANGUAGE GADTs #-}
+
 module GHC.Debug.Client
   ( Debuggee
+  , DebuggeeAction
+  , applyDebuggeeAction
   , withDebuggee
   , withDebuggeeSocket
   , pauseDebuggee
   , request
   , Request(..)
+  , getCurrentFrame
   , getInfoTblPtr
   , decodeClosure
   , decodeStack
@@ -26,6 +31,7 @@ module GHC.Debug.Client
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
+import Control.Monad.State.Lazy
 import GHC.Debug.Types
 import GHC.Debug.Decode
 import GHC.Debug.Decode.Stack
@@ -38,6 +44,7 @@ import System.Endian
 import Data.Foldable
 import Data.Coerce
 import Data.Bitraversable
+import Data.Word (Word32)
 
 
 import qualified Data.Dwarf as Dwarf
@@ -55,10 +62,17 @@ import System.Directory
 import Text.Printf
 
 data Debuggee = Debuggee { debuggeeHdl :: Handle
-                         , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)
+                         , debuggeeInfoTblEnv :: HM.HashMap InfoTablePtr RawInfoTable
                          , debuggeeDwarf :: Maybe Dwarf
                          , debuggeeFilename :: FilePath
+                         , debuggeeFrame :: Word32
                          }
+
+type DebuggeeAction a = StateT Debuggee IO a
+
+
+applyDebuggeeAction :: Debuggee -> DebuggeeAction a -> IO a
+applyDebuggeeAction = flip evalStateT
 
 
 debuggeeProcess :: FilePath -> FilePath -> IO CreateProcess
@@ -69,7 +83,7 @@ debuggeeProcess exe sockName = do
 
 -- | Open a debuggee, this will also read the DWARF information
 withDebuggee :: FilePath  -- ^ path to executable
-             -> (Debuggee -> IO a)
+             -> DebuggeeAction a
              -> IO a
 withDebuggee exeName action = do
     let sockName = "/tmp/ghc-debug2"
@@ -86,33 +100,45 @@ withDebuggee exeName action = do
 withDebuggeeSocket :: FilePath  -- ^ executable name of the debuggee
                    -> FilePath  -- ^ debuggee's socket location
                    -> Maybe Dwarf
-                   -> (Debuggee -> IO a)
+                   -> DebuggeeAction a
                    -> IO a
 withDebuggeeSocket exeName sockName mdwarf action = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix sockName)
     hdl <- socketToHandle s ReadWriteMode
-    infoTableEnv <- newMVar mempty
-    action (Debuggee hdl infoTableEnv mdwarf exeName)
+    evalStateT action (Debuggee hdl mempty mdwarf exeName 0)
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
-request :: Debuggee -> Request resp -> IO resp
-request d req = doRequest (debuggeeHdl d) req
+request :: Request resp -> DebuggeeAction resp
+request req = do
+    hdl <- gets debuggeeHdl
+    payload <- liftIO $ doRequest hdl req
+    -- if we did a successful pause, the payload contains the current frame
+    -- number
+    case req of
+      RequestPause -> modify' $ \d -> d { debuggeeFrame = payload }
+      _ -> return ()
+    return payload
 
-lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
-lookupInfoTable d rc = do
+lookupInfoTable :: RawClosure -> DebuggeeAction (RawInfoTable, RawClosure)
+lookupInfoTable rc = do
     let ptr = getInfoTblPtr rc
-    itblEnv <- readMVar (debuggeeInfoTblEnv d)
+    itblEnv <- gets debuggeeInfoTblEnv
     case HM.lookup ptr itblEnv of
       Nothing -> do
-        [itbl] <- request d (RequestInfoTables [ptr])
-        modifyMVar_ (debuggeeInfoTblEnv d) $ return . HM.insert ptr itbl
+        [itbl] <- request (RequestInfoTables [ptr])
+        infoTblEnv <- gets debuggeeInfoTblEnv
+        modify' $ \s -> s { debuggeeInfoTblEnv = HM.insert ptr itbl infoTblEnv }
         return (itbl, rc)
       Just itbl ->  return (itbl, rc)
 
-pauseDebuggee :: Debuggee -> IO a -> IO a
-pauseDebuggee d =
-    bracket_ (void $ request d RequestPause) (void $ request d RequestResume)
+pauseDebuggee :: DebuggeeAction a -> DebuggeeAction a
+pauseDebuggee action = do
+    -- TODO: replace poor-mans bracket_ with proper implementation for StateT
+    request RequestPause
+    rc <- action
+    request RequestResume
+    return rc
 
 getDwarfInfo :: FilePath -> IO Dwarf
 getDwarfInfo fn = do
@@ -121,10 +147,12 @@ getDwarfInfo fn = do
 -- print $ DwarfPretty.dwarf dwarf
  return dwarf
 
-lookupDwarf :: Debuggee -> InfoTablePtr -> Maybe ([FilePath], Int, Int)
-lookupDwarf d (InfoTablePtr w) = do
-  (Dwarf units) <- debuggeeDwarf d
-  asum (map (lookupDwarfUnit (fromBE64 w)) units)
+lookupDwarf :: InfoTablePtr -> DebuggeeAction (Maybe ([FilePath], Int, Int))
+lookupDwarf (InfoTablePtr w) = do
+  mDwarf <- gets debuggeeDwarf
+  case mDwarf of
+    Nothing -> return Nothing
+    Just (Dwarf units) -> return $ asum (map (lookupDwarfUnit (fromBE64 w)) units)
 
 lookupDwarfUnit :: Word64 -> Boxed CompilationUnit -> Maybe ([FilePath], Int, Int)
 lookupDwarfUnit w (Boxed _ cu) = do
@@ -158,17 +186,21 @@ lookupDwarfLine w Nothing (d, nd) = do
     else Nothing
 lookupDwarfLine _ (Just r) _ =  Just r
 
-showFileSnippet :: Debuggee -> ([FilePath], Int, Int) -> IO ()
-showFileSnippet d (fps, l, c) = go fps
+showFileSnippet :: ([FilePath], Int, Int) -> DebuggeeAction ()
+showFileSnippet (fps, l, c) =  do
+  dbgFilename <- gets debuggeeFilename
+  liftIO $ go dbgFilename fps
   where
-    go [] = putStrLn ("No files could be found: " ++ show fps)
-    go (fp: fps) = do
-      exists <- doesFileExist fp
+    go :: FilePath -> [FilePath] -> IO ()
+    go _ [] = putStrLn ("No files could be found: " ++ show fps)
+    go dbgFilename (fp:fps) = do
+      exists <- liftIO $ doesFileExist $ fp
       -- get file modtime
       if not exists
-        then go fps
+        then go dbgFilename fps
         else do
-          fp `warnIfNewer` (debuggeeFilename d)
+          -- TODO: get the modtime of debuggee above
+          fp `warnIfNewer` dbgFilename
           src <- zip [1..] . lines <$> readFile fp
           let ctx = take 10 (drop (max (l - 5) 0) src)
           putStrLn (fp <> ":" <> show l <> ":" <> show c)
@@ -176,45 +208,44 @@ showFileSnippet d (fps, l, c) = go fps
            let sn = show n
            in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
 
-dereferenceClosure :: Debuggee -> ClosurePtr -> IO Closure
-dereferenceClosure d c = head <$> dereferenceClosures d [c]
+dereferenceClosure :: ClosurePtr -> DebuggeeAction Closure
+dereferenceClosure c = head <$> dereferenceClosures [c]
 
-dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [Closure]
-dereferenceClosures d cs = do
-    raw_cs <- request d (RequestClosures cs)
+dereferenceClosures :: [ClosurePtr] -> DebuggeeAction [Closure]
+dereferenceClosures cs = do
+    raw_cs <- request (RequestClosures cs)
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
-    raw_its <- request d (RequestInfoTables its)
+    raw_its <- request (RequestInfoTables its)
     return $ map (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
 
-dereferenceStack :: Debuggee -> StackCont -> IO Stack
-dereferenceStack d (StackCont stack) = do
-  print stack
-  i <- lookupInfoTable d (coerce stack)
+dereferenceStack :: StackCont -> DebuggeeAction Stack
+dereferenceStack (StackCont stack) = do
+  liftIO $ print stack
+  i <- lookupInfoTable (coerce stack)
   let st_it = decodeInfoTable . fst $ i
-  print i
-  print st_it
-  bt <- request d (RequestBitmap (getInfoTblPtr (coerce stack)))
+  liftIO $ print i
+  liftIO $ print st_it
+  bt <- request (RequestBitmap (getInfoTblPtr (coerce stack)))
   let decoded_stack = decodeStack stack st_it bt
-  print decoded_stack
+  liftIO $ print decoded_stack
   return decoded_stack
 
-dereferenceConDesc :: Debuggee -> ClosurePtr -> IO ConstrDesc
-dereferenceConDesc d i = do
-  request d (RequestConstrDesc i)
+dereferenceConDesc :: ClosurePtr -> DebuggeeAction ConstrDesc
+dereferenceConDesc i = request (RequestConstrDesc i)
 
 
-fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
-fullTraversal d c = do
-  dc <- dereferenceClosure d c
-  print dc
-  MkFix1 <$> tritraverse (dereferenceConDesc d) (fullStackTraversal d) (fullTraversal d)  dc
+fullTraversal :: ClosurePtr -> DebuggeeAction UClosure
+fullTraversal c = do
+  dc <- dereferenceClosure c
+  liftIO $ print dc
+  MkFix1 <$> tritraverse dereferenceConDesc fullStackTraversal fullTraversal  dc
 
-fullStackTraversal :: Debuggee -> StackCont -> IO UStack
-fullStackTraversal d sc = do
-  ds <- dereferenceStack d sc
-  print ds
-  MkFix2 <$> traverse (fullTraversal d) ds
+fullStackTraversal :: StackCont -> DebuggeeAction UStack
+fullStackTraversal sc = do
+  ds <- dereferenceStack sc
+  liftIO $ print ds
+  MkFix2 <$> traverse fullTraversal ds
 
 -- | Print a warning if source file (first argument) is newer than the binary (second argument)
 warnIfNewer :: FilePath -> FilePath -> IO ()
@@ -228,3 +259,7 @@ warnIfNewer fpSrc fpBin = do
           fpSrc fpBin
     else
       return ()
+
+-- | Return the current frame number
+getCurrentFrame :: DebuggeeAction Word32
+getCurrentFrame = gets debuggeeFrame
