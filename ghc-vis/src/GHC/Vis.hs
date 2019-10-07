@@ -475,8 +475,9 @@ react dbg window canvas = do
 
 derefBox :: Debuggee -> DerefFunction
 derefBox dbg cp = do
-  c <- dereferenceClosure dbg cp
-  tritraverse (dereferenceConDesc dbg) pure pure c
+  let apply = applyDebuggeeAction dbg
+  c <- apply $ dereferenceClosure cp
+  tritraverse (\x -> apply $ dereferenceConDesc x) pure pure c
 
 runCorrect :: MonadIO m => (View -> f) -> m f
 runCorrect f = do
