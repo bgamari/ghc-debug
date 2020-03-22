@@ -10,12 +10,28 @@ import Control.Concurrent
 import Data.Bitraversable
 import GHC.Vis
 
-prog = "/home/sven/src/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.11.0/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
-prog2 = "/home/sven/src/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-8.11.0.20200126/dyepack-test-0.1.0.0/x/dyepack-test/build/dyepack-test/dyepack-test"
+import Data.List.Extra (trim)
+import System.Process
 
---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
-main = withDebuggee prog "/tmp/ghc-debug" p11
---main = withDebuggee "/tmp/ghc-debug" prog p15
+debugTestPath :: IO FilePath
+debugTestPath = testProgPath "debug-test"
+
+dyePackTestPath :: IO FilePath
+dyePackTestPath = testProgPath "dyepack-test"
+
+testProgPath :: String -> IO FilePath
+testProgPath progName = do
+  path <- readCreateProcess shellCmd []
+  return $ trim path
+  where
+    shellCmd = shell $ "which " ++ progName
+
+---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
+main :: IO ()
+main = do
+  prog <- debugTestPath -- Or @dyePackTestPath@
+  print prog
+  withDebuggee prog "/tmp/ghc-debug" p12
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -118,7 +134,7 @@ p11 d = do
   let itb = getInfoTblPtr c
   case lookupDwarf d itb of
     Just r -> showFileSnippet d r
-    Nothing -> return ()
+    Nothing -> print "No Dwarf!"
 
 p12 d = do
   request d RequestPoll
