@@ -3,25 +3,16 @@ module SystemTest where
 import Test.Hspec
 
 import System.Process
-import GHC.IO.Handle
-
 import GHC.Debug.Client
-
-import Control.Monad
-import Debug.Trace
-import Control.Exception
-import Control.Concurrent
-import Data.Bitraversable
-
-import System.Directory
-import System.IO.Extra hiding (map)
-import Data.List.Extra hiding (map)
-import Data.Text hiding (map)
+import System.IO.Extra
+import Data.List.Extra (trim)
+import Data.Text (unpack)
 
 import Data.Dwarf.ADT
 
 import Server
 
+spec :: SpecWith ()
 spec = do
   describe "debuggeeDwarf" $ do
     it "should return Dwarf of the executeable" $ do
