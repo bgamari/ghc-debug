@@ -8,8 +8,6 @@ import Control.Concurrent
 
 withServer :: String -> FilePath -> Bool -> (Handle -> Handle -> ProcessHandle -> IO a) -> IO a
 withServer serverExe socketName logStdErr f = do
-  -- TODO Probably should just change runServer to accept
-  -- separate command and arguments
   let cmd:args = words serverExe
   let p = (proc cmd args) {
         std_in = CreatePipe,
