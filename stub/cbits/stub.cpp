@@ -15,31 +15,15 @@
 
 #include <Rts.h>
 #include "socket.h"
+#include "trace.h"
 #include "parser.h"
 #include <stdarg.h>
 #include <stdio.h>
 
 #define MAX_CMD_SIZE 4096
 
-
 #define WORD_SIZE sizeof(unsigned long)
 #define INFO_TABLE_SIZE sizeof(StgInfoTable)
-
-#ifdef TRACE
-void trace(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-}
-#else
-void trace(const char * fmt, ...){
-  (void) fmt;
-}
-#endif
-
-
-
 
 /*
  * Wire format:
