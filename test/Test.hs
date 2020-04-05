@@ -13,6 +13,9 @@ import GHC.Vis
 import Data.List.Extra (trim)
 import System.Process
 
+saveOnePath :: IO FilePath
+saveOnePath = testProgPath "save-one"
+
 debugTestPath :: IO FilePath
 debugTestPath = testProgPath "debug-test"
 
@@ -27,7 +30,6 @@ testProgPath progName = do
     shellCmd = shell $ "which " ++ progName
 
 ---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
-main :: IO ()
 main = do
   prog <- debugTestPath -- Or @dyePackTestPath@
   print prog
