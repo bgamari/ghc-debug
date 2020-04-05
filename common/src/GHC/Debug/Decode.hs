@@ -82,8 +82,8 @@ data Ptr' a = Ptr' a
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
-decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) -> Closure
-decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
+decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO Closure
+decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = do
     allocate itbl $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)

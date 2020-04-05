@@ -185,7 +185,7 @@ dereferenceClosures d cs = do
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
-    return $ map (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
+    mapM (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
 
 dereferenceStack :: Debuggee -> StackCont -> IO Stack
 dereferenceStack d (StackCont stack) = do
