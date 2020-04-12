@@ -50,7 +50,9 @@ test-suite system-test
       , Server
   default-language: Haskell2010
   ghc-options:         -threaded -debug -g3
-  build-tool-depends: ghc-debug-stub:debug-test, ghc-debugger:save-one
+  build-tool-depends: ghc-debug-stub:debug-test
+                    , ghc-debugger:save-one
+                    , ghc-debugger:clock
 
 executable save-one
   main-is:             SaveOne.hs
@@ -65,6 +67,15 @@ executable save-one
                      , containers
                      , extra
                      , process
+                     , ghc-debug-stub
+  default-language:    Haskell2010
+
+executable clock
+  main-is:             Clock.hs
+  hs-source-dirs:
+      test-progs
+  ghc-options:         -threaded -debug -g3 -O0
+  build-depends:       base
                      , ghc-debug-stub
   default-language:    Haskell2010
 
