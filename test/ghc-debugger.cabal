@@ -38,6 +38,8 @@ test-suite system-test
     , hspec ==2.*
     , process
     , ghc-debug-client
+    , ghc-debug-common
+    , ghc-vis
     , directory
     , async
     , extra

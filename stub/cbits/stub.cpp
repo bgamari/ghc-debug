@@ -530,6 +530,7 @@ StgWord saveClosures(StgWord n, HsStablePtr *sps)
     struct savedObjectsState *ps = &g_savedObjectState;
     StgWord i;
 
+    // TODO Use a constant to communicate relationship with size(savedObjectsState.objects)
     if(n > 20)
         return 20;
 

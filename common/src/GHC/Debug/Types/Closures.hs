@@ -70,6 +70,8 @@ type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
 
 type Stack = DebugStackFrame ClosurePtr
 
+-- TODO looks like a copy of ghc-lib-parser:GHC.Exts.Heap
+
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
 --

@@ -3,6 +3,8 @@ module SystemTest where
 import Test.Hspec
 
 import GHC.Debug.Client
+import GHC.Debug.Types.Graph
+import GHC.Vis
 import Data.Text (unpack)
 import System.IO
 import Data.Dwarf.ADT
@@ -42,21 +44,15 @@ spec = do
       it "should return saved object" $
         withStartedDebuggeeAndHandles "save-one" $ \ h d -> do
           waitForSync $ Server.stdout h
-          let errSinkThread = forever $ do
-                l <- hGetLine (Server.stdout h)
-                print l
-          withAsync errSinkThread $ \_ -> do
-            -- TODO Get rid of the `threadDelay`. `save-one` should signal that the GC has finished.
+          withAsync (pipeStreamThread (Server.stdout h)) $ \_ -> do
+            -- TODO Get rid of the `threadDelay`.
+            -- `save-one` should signal that the GC has finished.
             threadDelay 5000000
             request d RequestPause
-            ss@(s:_) <- request d RequestSavedObjects
-            length ss `shouldBe` 1
-            sos <- request d (RequestFindPtr s)
-            print $ "sos : " ++ show sos
-            length sos `shouldBe` 1
-            dcs <- dereferenceClosures d sos
-            mapM_ print dcs
-            length dcs `shouldBe` 1
+            os@(o:_) <- request d RequestSavedObjects
+            length os `shouldBe` 1
+            hg <- buildHeapGraph (derefBox d) 20 () o
+            ppHeapGraph hg `shouldBe` "I# 1"
 
 waitForSync :: Handle -> IO ()
 waitForSync h = do
@@ -69,6 +65,11 @@ waitForSync h = do
     waitForSync h
 -- TODO There should be some exit condition.
 --    error "Can not sync!"
+
+pipeStreamThread :: Handle -> IO ()
+pipeStreamThread h = forever $ do
+        l <- hGetLine h
+        print l
 
 shouldContainCuName :: Dwarf -> String -> Expectation
 shouldContainCuName dwarf name = allCuNames `shouldContain` [name]
