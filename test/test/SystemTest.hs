@@ -92,6 +92,16 @@ spec = do
           cd <- request d $ RequestConstrDesc s
           cd `shouldBe` ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "I#"}
 
+    describe "RequestFindPtr" $
+      it "should return ClosurePtrs that can be dereferenced" $
+        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+          waitForSync $ Server.stdout h
+          request d RequestPoll
+          (s:_) <- request d RequestSavedObjects
+          ptrs <- request d $ RequestFindPtr s
+          closures <- dereferenceClosures d ptrs
+          closures `shouldSatisfy` (\ cs -> notNull cs)
+
     describe "RequestResume" $
       it "should resume a paused debugee" $
         withStartedDebuggeeAndHandles "clock" $ \ h d -> do
