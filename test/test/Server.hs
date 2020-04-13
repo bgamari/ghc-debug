@@ -10,8 +10,19 @@ import System.IO.Extra
 
 import GHC.Debug.Client
 
-withServer :: String -> FilePath -> Bool -> (Handle -> Handle -> ProcessHandle -> IO a) -> IO a
-withServer serverExe socketName logStdErr f = do
+data Handles = Handles {
+  stdin :: Handle,
+  stdout :: Handle,
+  process :: ProcessHandle
+}
+
+type TestFunction a = (Handle -> Handle -> ProcessHandle -> IO a)
+
+withServer :: String  -- ^ executable name
+           -> FilePath -- ^ socket name
+           -> TestFunction a -- ^ test code
+           -> IO a
+withServer serverExe socketName f = do
   let cmd:args = words serverExe
   let p = (proc cmd args) {
         std_in = CreatePipe,
@@ -19,39 +30,38 @@ withServer serverExe socketName logStdErr f = do
         std_err = CreatePipe,
         env = Just [("GHC_DEBUG_SOCKET",socketName)]
         }
--- TODO pattern match case where one or more handles are not available (-> error with message)
-  withCreateProcess p $ \(Just serverIn) (Just serverOut) (Just serverErr) serverProc -> do
-    -- Need to continuously consume to stderr else it gets blocked
-    -- Can't pass NoStream either to std_err
-    hSetBuffering serverErr NoBuffering
-    hSetBinaryMode serverErr True
-    let errSinkThread = forever $ hGetLine serverErr >>= when logStdErr . putStrLn
-    withAsync errSinkThread $ \_ -> f serverIn serverOut serverProc
+  withCreateProcess p $ runTestFunction f
 
+runTestFunction :: TestFunction a -- ^ test code
+                -> Maybe Handle -- ^ stdin
+                -> Maybe Handle -- ^ stdout
+                -> Maybe Handle -- ^ stderr
+                -> ProcessHandle
+                -> IO a
+runTestFunction f (Just serverIn) (Just serverOut) (Just serverErr) serverProc = do
+  hSetBuffering serverErr NoBuffering
+  hSetBinaryMode serverErr True
+  let errSinkThread = forever $ hGetLine serverErr >>= putStrLn
+  withAsync errSinkThread $ \_ -> f serverIn serverOut serverProc
+runTestFunction _ _ _ _ _ = error "Starting the process failed"
 
 withStartedDebuggee :: String  -- ^ executable name
              -> (Debuggee -> IO a) -- ^ action
              -> IO a
 withStartedDebuggee exeName action = withTempDir $ \ tempDirPath -> do
   let socketName = tempDirPath ++ "/ghc-debug"
-  withServer exeName socketName True $ \serverIn serverOut serverProc -> do
+  withServer exeName socketName $ \serverIn serverOut serverProc -> do
     prog <- readCreateProcess serverExePathCmd []
     withDebuggee (trim prog) socketName action
   where
     serverExePathCmd = shell $ "which " ++ exeName
-
-data Handles = Handles {
-  stdin :: Handle,
-  stdout :: Handle,
-  process :: ProcessHandle
-                       }
 
 withStartedDebuggeeAndHandles :: String  -- ^ executable name
              -> (Handles -> Debuggee -> IO a) -- ^ action
              -> IO a
 withStartedDebuggeeAndHandles exeName action = withTempDir $ \ tempDirPath -> do
   let socketName = tempDirPath ++ "/ghc-debug"
-  withServer exeName socketName True $ \serverIn serverOut serverProc -> do
+  withServer exeName socketName $ \serverIn serverOut serverProc -> do
     prog <- readCreateProcess serverExePathCmd []
     let handles = Handles serverIn serverOut serverProc
     withDebuggee (trim prog) socketName (action handles)
