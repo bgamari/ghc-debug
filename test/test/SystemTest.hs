@@ -70,6 +70,18 @@ spec = do
             hg <- buildHeapGraph (derefBox d) 20 () o
             ppHeapGraph hg `shouldBe` "I# 1"
 
+    describe "RequestInfoTables" $
+      it "should return decodable RawInfoTables" $
+        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+          waitForSync $ Server.stdout h
+          request d RequestPoll
+          sos <- request d RequestSavedObjects
+          closures <- request d $ RequestClosures sos
+          let itptrs = map getInfoTblPtr closures
+          its <- request d $ RequestInfoTables itptrs
+          let stgits = map decodeInfoTable its
+          length stgits `shouldBe` 1
+
     describe "RequestResume" $
       it "should resume a paused debugee" $
         withStartedDebuggeeAndHandles "clock" $ \ h d -> do
@@ -99,14 +111,12 @@ spec = do
               assertNewClockTime :: IORef [ClockTime] -> Expectation
               assertNewClockTime ref = do
                 now <- getMonotonicTimeNSec
-                print $ "now2 : " ++ show now
                 result <- timeout fiveSecondsInMicros $ whileM $ do
                   threadDelay 5000
                   (t:_) <- readIORef ref
                   return $ t < now
 
                 result `shouldBe` Just ()
-
 
 waitForSync :: Handle -> IO ()
 waitForSync h = do
