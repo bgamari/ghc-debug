@@ -84,7 +84,7 @@ spec = do
           length stgits `shouldBe` 1
 
     describe "RequestConstrDesc" $
-      it "should return decodable RawInfoTables" $
+      it "should return ConstrDesc of saved value (I# 1)" $
         withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
           waitForSync $ Server.stdout h
           request d RequestPoll
@@ -132,7 +132,6 @@ waitForSync :: Handle -> IO ()
 waitForSync h = do
   hSetBuffering h LineBuffering
   l <- hGetLine h
-  traceIO $ "line " ++ l
   if l == "\"sync\"" then
     return ()
   else
