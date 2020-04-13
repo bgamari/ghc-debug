@@ -22,4 +22,4 @@ main = do
   performGC
   saveClosures [Box v]
   loop
-  print $ v
+  print v

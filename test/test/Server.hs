@@ -1,10 +1,14 @@
-module Server (withServer, withStartedDebuggee, withStartedDebuggeeAndHandles, Handles(..)) where
+module Server
+  ( withServer
+  , withStartedDebuggee
+  , withStartedDebuggeeAndHandles
+  , Handles(..)
+  ) where
 
 import Control.Concurrent.Async
 import Control.Monad
 import System.IO
 import System.Process
-import Control.Concurrent
 import Data.List.Extra (trim)
 import System.IO.Extra
 

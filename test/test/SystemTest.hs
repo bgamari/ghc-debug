@@ -12,7 +12,6 @@ import Data.Dwarf.ADT
 
 import Server
 
-import Debug.Trace
 import Control.Monad
 
 import Control.Concurrent.Async
@@ -46,7 +45,7 @@ spec = do
         withStartedDebuggee "debug-test" $ \ d -> do
           request d RequestPause
           roots <- request d RequestRoots
-          roots `shouldSatisfy` (\ cs -> notNull cs)
+          roots `shouldSatisfy` notNull
 
     describe "RequestClosures" $
       it "should return a non-empty result" $
@@ -54,7 +53,7 @@ spec = do
           request d RequestPause
           roots <- request d RequestRoots
           closures <- request d $ RequestClosures roots
-          closures `shouldSatisfy` (\ cs -> notNull cs)
+          closures `shouldSatisfy` notNull
 
     describe "RequestSavedObjects" $
       it "should return saved object" $
@@ -96,7 +95,7 @@ spec = do
           (s:_) <- request d RequestSavedObjects
           ptrs <- request d $ RequestFindPtr s
           closures <- dereferenceClosures d ptrs
-          closures `shouldSatisfy` (\ cs -> notNull cs)
+          closures `shouldSatisfy` notNull
 
     describe "RequestResume" $
       it "should resume a paused debugee" $
@@ -138,13 +137,13 @@ fiveSecondsInMicros = 5000000
 
 waitForSync :: Handle -> IO ()
 waitForSync h = do
-  result <- (timeout fiveSecondsInMicros $ do
+  result <- timeout fiveSecondsInMicros $ do
     hSetBuffering h LineBuffering
     l <- hGetLine h
     if l == "\"sync\"" then
       return ()
     else
-      waitForSync h)
+      waitForSync h
 
   case result of
     Nothing -> error "Can not sync!"
@@ -161,10 +160,10 @@ pipeStreamToListThread :: IORef [ClockTime] -> Handle -> IO ()
 pipeStreamToListThread ref h = forever $ do
   l <- hGetLine h
   timesList <- readIORef ref
-  writeIORef ref $ (toClockTime l) : timesList
+  writeIORef ref $ toClockTime l : timesList
   where
     toClockTime :: String -> ClockTime
-    toClockTime s = read . trim $ s
+    toClockTime = read . trim
 
 shouldContainCuName :: Dwarf -> String -> Expectation
 shouldContainCuName dwarf name = allCuNames `shouldContain` [name]
