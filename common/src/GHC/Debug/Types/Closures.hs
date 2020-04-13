@@ -310,7 +310,7 @@ data ConstrDesc = ConstrDesc {
           pkg        :: !String         -- ^ Package name
         , modl       :: !String         -- ^ Module name
         , name       :: !String         -- ^ Constructor name
-        } deriving Show
+        } deriving (Show, Eq)
 
 
 -- Copied from ghc-heap

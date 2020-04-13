@@ -4,6 +4,7 @@ import Test.Hspec
 
 import GHC.Debug.Client
 import GHC.Debug.Types.Graph
+import GHC.Debug.Types.Closures
 import GHC.Vis
 import Data.Text (unpack)
 import System.IO
@@ -81,6 +82,15 @@ spec = do
           its <- request d $ RequestInfoTables itptrs
           let stgits = map decodeInfoTable its
           length stgits `shouldBe` 1
+
+    describe "RequestConstrDesc" $
+      it "should return decodable RawInfoTables" $
+        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+          waitForSync $ Server.stdout h
+          request d RequestPoll
+          (s:_) <- request d RequestSavedObjects
+          cd <- request d $ RequestConstrDesc s
+          cd `shouldBe` ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "I#"}
 
     describe "RequestResume" $
       it "should resume a paused debugee" $
