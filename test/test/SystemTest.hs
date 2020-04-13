@@ -48,6 +48,14 @@ spec = do
           roots <- request d RequestRoots
           roots `shouldNotBe` []
 
+    describe "RequestClosures" $
+      it "should return a non-empty result" $
+        withStartedDebuggee "debug-test" $ \ d -> do
+          request d RequestPause
+          roots <- request d RequestRoots
+          closures <- request d $ RequestClosures roots
+          closures `shouldNotBe` []
+
     describe "RequestSavedObjects" $
       it "should return saved object" $
         withStartedDebuggeeAndHandles "save-one" $ \ h d -> do
