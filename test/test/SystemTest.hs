@@ -25,7 +25,6 @@ import GHC.Clock
 import System.Timeout
 import Data.List.Extra
 
--- TODO use timeout for tests
 spec :: SpecWith ()
 spec = do
   describe "debuggeeDwarf" $
@@ -47,7 +46,7 @@ spec = do
         withStartedDebuggee "debug-test" $ \ d -> do
           request d RequestPause
           roots <- request d RequestRoots
-          roots `shouldNotBe` []
+          roots `shouldSatisfy` (\ cs -> notNull cs)
 
     describe "RequestClosures" $
       it "should return a non-empty result" $
@@ -55,17 +54,14 @@ spec = do
           request d RequestPause
           roots <- request d RequestRoots
           closures <- request d $ RequestClosures roots
-          closures `shouldNotBe` []
+          closures `shouldSatisfy` (\ cs -> notNull cs)
 
     describe "RequestSavedObjects" $
       it "should return saved object" $
-        withStartedDebuggeeAndHandles "save-one" $ \ h d -> do
+        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
           waitForSync $ Server.stdout h
           withAsync (pipeStreamThread (Server.stdout h)) $ \_ -> do
-            -- TODO Get rid of the `threadDelay`.
-            -- `save-one` should signal that the GC has finished.
-            threadDelay 5000000
-            request d RequestPause
+            request d RequestPoll
             os@(o:_) <- request d RequestSavedObjects
             length os `shouldBe` 1
             hg <- buildHeapGraph (derefBox d) 20 () o
@@ -117,7 +113,6 @@ spec = do
             assertNewClockTime ref
             where
               oneSecondInMicros = 1000000
-              fiveSecondsInMicros = 5000000
 
               assertNoNewClockTimes :: IORef [ClockTime] -> ClockTime -> Expectation
               assertNoNewClockTimes ref t0 = do
@@ -138,16 +133,22 @@ spec = do
 
                 result `shouldBe` Just ()
 
+fiveSecondsInMicros :: Int
+fiveSecondsInMicros = 5000000
+
 waitForSync :: Handle -> IO ()
 waitForSync h = do
-  hSetBuffering h LineBuffering
-  l <- hGetLine h
-  if l == "\"sync\"" then
-    return ()
-  else
-    waitForSync h
--- TODO There should be some exit condition.
---    error "Can not sync!"
+  result <- (timeout fiveSecondsInMicros $ do
+    hSetBuffering h LineBuffering
+    l <- hGetLine h
+    if l == "\"sync\"" then
+      return ()
+    else
+      waitForSync h)
+
+  case result of
+    Nothing -> error "Can not sync!"
+    _ -> return ()
 
 pipeStreamThread :: Handle -> IO ()
 pipeStreamThread h = forever $ do
