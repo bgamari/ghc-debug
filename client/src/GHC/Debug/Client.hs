@@ -1,5 +1,5 @@
 module GHC.Debug.Client
-  ( Debuggee
+  ( Debuggee(..)
   , withDebuggee
   , withDebuggeeSocket
   , pauseDebuggee
@@ -69,17 +69,17 @@ debuggeeProcess exe sockName = do
 
 -- | Open a debuggee, this will also read the DWARF information
 withDebuggee :: FilePath  -- ^ path to executable
+             -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
              -> (Debuggee -> IO a)
              -> IO a
-withDebuggee exeName action = do
-    let sockName = "/tmp/ghc-debug2"
+withDebuggee exeName socketName action = do
     -- Read DWARF information from the executable
     -- Start the process we want to debug
-    cp <- debuggeeProcess exeName sockName
+    cp <- debuggeeProcess exeName socketName
     withCreateProcess cp $ \_ _ _ _ -> do
       dwarf <- getDwarfInfo exeName
     -- Now connect to the socket the debuggeeProcess just started
-      withDebuggeeSocket exeName sockName (Just dwarf) action
+      withDebuggeeSocket exeName socketName (Just dwarf) action
 
 
 -- | Open a debuggee's socket directly
@@ -185,7 +185,7 @@ dereferenceClosures d cs = do
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
-    return $ map (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
+    mapM (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
 
 dereferenceStack :: Debuggee -> StackCont -> IO Stack
 dereferenceStack d (StackCont stack) = do
