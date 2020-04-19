@@ -79,9 +79,11 @@ void findPtrCb(FindPtrCb , void* , P_);
 void findPtr(P_, int);
 }
 
+const int maxSavedObjects = 20;
+
 static struct savedObjectsState {
     StgWord n_objects;
-    StgStablePtr objects[20];
+    StgStablePtr objects[maxSavedObjects];
 } g_savedObjectState;
 
 class Response {
@@ -530,9 +532,8 @@ StgWord saveClosures(StgWord n, HsStablePtr *sps)
     struct savedObjectsState *ps = &g_savedObjectState;
     StgWord i;
 
-    // TODO Use a constant to communicate relationship with size(savedObjectsState.objects)
-    if(n > 20)
-        return 20;
+    if(n > maxSavedObjects)
+        return maxSavedObjects;
 
     for (i = 0; i < n; i++) {
         ps->objects[i] = sps[i];
