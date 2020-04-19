@@ -97,7 +97,7 @@ withDebuggeeSocket exeName sockName mdwarf action = do
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
 request :: Debuggee -> Request resp -> IO resp
-request d req = doRequest (debuggeeHdl d) req
+request d = doRequest (debuggeeHdl d)
 
 lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
 lookupInfoTable d rc = do
@@ -150,11 +150,12 @@ lookupDwarfLine :: Word64
                 -> Maybe (FilePath, Int, Int)
                 -> (Dwarf.DW_LNE, Dwarf.DW_LNE)
                 -> Maybe (FilePath, Int, Int)
-lookupDwarfLine w Nothing (d, nd) = do
+lookupDwarfLine w Nothing (d, nd) =
   if lnmAddress d <= w && w <= lnmAddress nd
     then do
       let (LNEFile file _ _ _) = lnmFiles nd !! (fromIntegral (lnmFile nd) - 1)
-      Just (T.unpack file, fromIntegral (lnmLine nd), fromIntegral (lnmColumn nd))
+      Just
+        (T.unpack file, fromIntegral (lnmLine nd), fromIntegral (lnmColumn nd))
     else Nothing
 lookupDwarfLine _ (Just r) _ =  Just r
 
@@ -168,7 +169,7 @@ showFileSnippet d (fps, l, c) = go fps
       if not exists
         then go fps
         else do
-          fp `warnIfNewer` (debuggeeFilename d)
+          fp `warnIfNewer` debuggeeFilename d
           src <- zip [1..] . lines <$> readFile fp
           let ctx = take 10 (drop (max (l - 5) 0) src)
           putStrLn (fp <> ":" <> show l <> ":" <> show c)
@@ -185,7 +186,7 @@ dereferenceClosures d cs = do
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
-    mapM (uncurry decodeClosure) (zip raw_its (zip cs raw_cs))
+    zipWithM decodeClosure raw_its (zip cs raw_cs)
 
 dereferenceStack :: Debuggee -> StackCont -> IO Stack
 dereferenceStack d (StackCont stack) = do
@@ -200,9 +201,7 @@ dereferenceStack d (StackCont stack) = do
   return decoded_stack
 
 dereferenceConDesc :: Debuggee -> ClosurePtr -> IO ConstrDesc
-dereferenceConDesc d i = do
-  request d (RequestConstrDesc i)
-
+dereferenceConDesc d i = request d (RequestConstrDesc i)
 
 fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
 fullTraversal d c = do
@@ -221,10 +220,9 @@ warnIfNewer :: FilePath -> FilePath -> IO ()
 warnIfNewer fpSrc fpBin = do
     modTimeSource <- getModificationTime fpSrc
     modTimeBinary <- getModificationTime fpBin
-    if modTimeSource > modTimeBinary
-    then 
+
+    when (modTimeSource > modTimeBinary) $
       hPutStrLn stderr $
         printf "Warning: %s is newer than %s. Code snippets might be wrong!"
-          fpSrc fpBin
-    else
-      return ()
+        fpSrc
+        fpBin
