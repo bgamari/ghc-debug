@@ -4,26 +4,16 @@
 
 module GHC.Debug.Types.Ptr where
 
-import Control.Applicative
-import Control.Exception
-import Control.Monad
-import qualified Data.Array.Unboxed as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import Data.Hashable
 import Data.Word
-import System.IO
-import System.IO.Unsafe
 
 import Data.Binary
-import Data.Binary.Put
 import Data.Binary.Get
 import System.Endian
 
-import Debug.Trace
-
 import Numeric (showHex)
-
 
 prettyPrint :: BS.ByteString -> String
 prettyPrint = concatMap (flip showHex "") . BS.unpack
