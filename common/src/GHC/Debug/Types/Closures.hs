@@ -70,8 +70,6 @@ type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
 
 type Stack = DebugStackFrame ClosurePtr
 
--- TODO looks like a copy of ghc-lib-parser:GHC.Exts.Heap
-
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
 --
@@ -325,7 +323,7 @@ parseConstrDesc input =
         = (intercalate "." $ reverse modWords, occWord)
         where
         (modWords, occWord) =
-            if length rest1 < 1 --  XXXXXXXXx YUKX
+            if null rest1 --  XXXXXXXXx YUKX
                 --then error "getConDescAddress:parse:length rest1 < 1"
                 then parseModOcc [] []
                 else parseModOcc [] (tail rest1)
@@ -406,21 +404,21 @@ instance Bifoldable DebugClosure where
 
 -- | For generic code, this function returns all referenced closures.
 allClosures :: DebugClosure str sta b -> [b]
-allClosures (ConstrClosure {..}) = ptrArgs
-allClosures (ThunkClosure {..}) = ptrArgs
-allClosures (SelectorClosure {..}) = [selectee]
-allClosures (IndClosure {..}) = [indirectee]
-allClosures (BlackholeClosure {..}) = [indirectee]
-allClosures (APClosure {..}) = fun:payload
-allClosures (PAPClosure {..}) = fun:payload
-allClosures (APStackClosure {..}) = fun:payload
-allClosures (BCOClosure {..}) = [instrs,literals,bcoptrs]
-allClosures (ArrWordsClosure {}) = []
-allClosures (MutArrClosure {..}) = mccPayload
-allClosures (SmallMutArrClosure {..}) = mccPayload
-allClosures (MutVarClosure {..}) = [var]
-allClosures (MVarClosure {..}) = [queueHead,queueTail,value]
-allClosures (FunClosure {..}) = ptrArgs
-allClosures (BlockingQueueClosure {..}) = [link, blackHole, owner, queue]
-allClosures (OtherClosure {..}) = hvalues
+allClosures ConstrClosure {..} = ptrArgs
+allClosures ThunkClosure {..} = ptrArgs
+allClosures SelectorClosure {..} = [selectee]
+allClosures IndClosure {..} = [indirectee]
+allClosures BlackholeClosure {..} = [indirectee]
+allClosures APClosure {..} = fun:payload
+allClosures PAPClosure {..} = fun:payload
+allClosures APStackClosure {..} = fun:payload
+allClosures BCOClosure {..} = [instrs,literals,bcoptrs]
+allClosures ArrWordsClosure {} = []
+allClosures MutArrClosure {..} = mccPayload
+allClosures SmallMutArrClosure {..} = mccPayload
+allClosures MutVarClosure {..} = [var]
+allClosures MVarClosure {..} = [queueHead,queueTail,value]
+allClosures FunClosure {..} = ptrArgs
+allClosures BlockingQueueClosure {..} = [link, blackHole, owner, queue]
+allClosures OtherClosure {..} = hvalues
 allClosures _ = []
