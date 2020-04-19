@@ -1,6 +1,4 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -99,7 +97,7 @@ cmdRequestConstrDesc = CommandId 11
 
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
-    putWord32be $ fromIntegral $ (4 + BSL.length body')
+    putWord32be $ fromIntegral (4 + BSL.length body')
     put c
     putLazyByteString body'
   where
@@ -119,15 +117,13 @@ putRequest (RequestInfoTables ts) =
     putWord16be $ fromIntegral (length ts)
     foldMap put ts
 putRequest (RequestBitmap info)       =
-  putCommand cmdRequestBitmap $ do
-    put info
+  putCommand cmdRequestBitmap $ put info
 putRequest (RequestConstrDesc info) =
   putCommand cmdRequestConstrDesc $ put info
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 putRequest (RequestFindPtr c)       =
-  putCommand cmdRequestFindPtr $ do
-    put c
+  putCommand cmdRequestFindPtr $ put c
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -150,7 +146,7 @@ getConstrDesc = do
 getPtrBitmap :: Get PtrBitmap
 getPtrBitmap = do
   len <- getWord32be
-  bits <- replicateM (fromIntegral (len)) getWord8
+  bits <- replicateM (fromIntegral len) getWord8
   let arr = A.listArray (0, fromIntegral len-1) (map (==1) bits)
   return $ PtrBitmap arr
 
@@ -181,8 +177,8 @@ data ResponseCode = Okay
 getResponseCode :: Get ResponseCode
 getResponseCode = getWord16be >>= f
   where
-    f 0x0   = pure $ Okay
-    f 0x1   = pure $ OkayContinues
+    f 0x0   = pure Okay
+    f 0x1   = pure OkayContinues
     f 0x100 = pure $ Error BadCommand
     f 0x101 = pure $ Error AlreadyPaused
     f 0x102 = pure $ Error NotPaused
