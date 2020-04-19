@@ -1,4 +1,4 @@
-This set of libraries is progress towards implementing an way to interact
+This set of libraries is a progress towards implementing a way to interact
 with Haskell's RTS from another Haskell program.
 
 For example, you could use this library to
@@ -19,7 +19,7 @@ and inspect the RTS. The requests API is specified as follows:
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
     -- | Request protocol version
-    RequestVersion :: Request Word64
+    RequestVersion :: Request Word32
     -- | Pause the debuggee.
     RequestPause :: Request ()
     -- | Resume the debuggee.
@@ -27,16 +27,23 @@ data Request a where
     -- | Request the debuggee's root pointers.
     RequestRoots :: Request [ClosurePtr]
     -- | Request a set of closures.
-    RequestClosures :: [ClosurePtr] -> Request [GenClosure InfoTablePtr ClosurePtr]
+    RequestClosures :: [ClosurePtr] -> Request [RawClosure]
     -- | Request a set of info tables.
-    RequestInfoTables :: [InfoTablePtr] -> Request [StgInfoTable]
+    RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
+    -- | Wait for the debuggee to pause itself and then
+    -- execute an action. It currently impossible to resume after
+    -- a pause caused by a poll.
+    RequestPoll :: Request ()
+    -- | A client can save objects by calling a special RTS method
+    -- This function returns the closures it saved.
+    RequestSavedObjects :: Request [ClosurePtr]
+    -- | Calls the debugging `findPtr` function and returns the retainers
+    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
+    -- | Request the pointer bitmap for an info table.
+    RequestBitmap :: InfoTablePtr -> Request PtrBitmap
+    -- | Request the description for an info table.
+    RequestConstrDesc :: ClosurePtr -> Request ConstrDesc
 ```
-
-So far only the version, pause and resume functions are tested (and work).
-
-We will add some more functions to this interface, for example, a request to
-call `findPtr` and also a way to mark objects of interest so we can retrieve their
-addresses in the same manner as `RequestRoots`.
 
 # How do I use it?
 
@@ -57,5 +64,13 @@ test the library.
 `test-debug` is an interruptable program which prints out an incrementing
 counter each second. `debugger` starts and immediately attaches to `test-debug`
 and makes some requests. So the way to test the library is to first start `test-debug`
-and then start `debugger`. There are lots of helpeful traces to see what's going
+and then start `debugger`. There are lots of helpful traces to see what's going
 on with each process.
+
+### Automated Testing
+
+There are `hspec` tests, that can be run with `cabal`:
+
+```
+cabal new-build all && cabal new-test all
+```
