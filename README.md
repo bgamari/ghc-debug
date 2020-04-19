@@ -1,4 +1,4 @@
-This set of libraries is a progress towards implementing a way to interact
+This set of libraries is progress towards implementing a way to interact
 with Haskell's RTS from another Haskell program.
 
 For example, you could use this library to
