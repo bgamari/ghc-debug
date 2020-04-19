@@ -2,9 +2,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 module GHC.Debug.Types.Graph where
 
-
-
-
 import Data.Char
 import Data.List
 import Data.Maybe       ( catMaybes )
@@ -41,7 +38,7 @@ type HeapGraphIndex = Int
 newtype HeapGraph a = HeapGraph (M.IntMap (HeapGraphEntry a))
     deriving (Show)
 
-lookupHeapGraph :: HeapGraphIndex -> (HeapGraph a) -> Maybe (HeapGraphEntry a)
+lookupHeapGraph :: HeapGraphIndex -> HeapGraph a -> Maybe (HeapGraphEntry a)
 lookupHeapGraph i (HeapGraph m) = M.lookup i m
 
 heapGraphRoot :: HeapGraphIndex
@@ -294,7 +291,7 @@ isTup _ = Nothing
 -- The parameter gives the precedendence, to avoid avoidable parenthesises.
 ppClosure :: (Int -> c -> String) -> Int -> DebugClosure ConstrDesc s c -> String
 ppClosure showBox prec c = case c of
-    _ | Just ch <- isChar c -> app $
+    _ | Just ch <- isChar c -> app
         ["C#", show ch]
     _ | Just (h,t) <- isCons c -> addBraces (5 <= prec) $
         showBox 5 h ++ " : " ++ showBox 4 t
@@ -323,10 +320,10 @@ ppClosure showBox prec c = case c of
     MutArrClosure {..} -> app
         --["toMutArray", "("++show (length mccPayload) ++ " ptrs)",  intercalate "," (shorten (map (showBox 10) mccPayload))]
         ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]
-    MutVarClosure {..} -> app $
-        ["_mutVar", (showBox 10) var]
-    MVarClosure {..} -> app $
-        ["MVar", (showBox 10) value]
+    MutVarClosure {..} -> app
+        ["_mutVar", showBox 10 var]
+    MVarClosure {..} -> app
+        ["MVar", showBox 10 value]
     FunClosure {..} ->
         "_fun" ++ braceize (map (showBox 0) ptrArgs ++ map show dataArgs)
     BlockingQueueClosure {..} ->
@@ -351,6 +348,6 @@ ppClosure showBox prec c = case c of
         "_unsupported"
   where
     app [a] = a  ++ "()"
-    app xs = addBraces (10 <= prec) (intercalate " " xs)
+    app xs = addBraces (10 <= prec) (unwords xs)
 
     shorten xs = if length xs > 20 then take 20 xs ++ ["(and more)"] else xs
