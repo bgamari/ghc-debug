@@ -26,9 +26,9 @@ decodeStack (RawStack closure) itbl bitmap =
 getStack :: PtrBitmap
          -> StgInfoTable
          -> Get Stack
-getStack bitmap itbl = do
+getStack bitmap itbl =
     case tipe itbl of
-      RET_BCO -> do
+      RET_BCO ->
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
         error "getStack: RET_BCO"
       _ -> do
