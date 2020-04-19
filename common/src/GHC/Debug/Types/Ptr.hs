@@ -1,6 +1,3 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DerivingVia #-}
@@ -98,5 +95,4 @@ newtype RawStack = RawStack BS.ByteString
 
 getInfoTblPtr :: RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = InfoTablePtr (runGet getWord64be (BSL.take 8 (BSL.fromStrict bs)))
-
 
