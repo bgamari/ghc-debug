@@ -28,5 +28,6 @@ in
                                np.cabal-install
                                np.zlib
                                np.elfutils
+                               np.git
                               ];
               }
