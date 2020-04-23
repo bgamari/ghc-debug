@@ -4,8 +4,8 @@ let
   np = import (_np.fetchFromGitHub {
     owner  = "NixOS";
     repo   = "nixpkgs";
-    rev    = "541d9cce8af7a490fb9085305939569567cb58e6";
-    sha256 = "0jgz72hhzkd5vyq5v69vpljjlnf0lqaz7fh327bvb3cvmwbfxrja";
+    rev    = "6d445f8398d2d585d20d9acacf00fd9d15081b3b";
+    sha256 = "1ajd0zr31iny3g9hp0pc1y2pxcm3nakdv6260lnvyn0k4vygync2";
   }) {};
 
   mkGhc = (import (np.fetchFromGitHub {
@@ -30,4 +30,8 @@ in
                                np.elfutils
                                np.git
                               ];
+
+                # Export the location of the SSL CA bundle
+                SSL_CERT_FILE = "${np.cacert}/etc/ssl/certs/ca-bundle.crt";
+                NIX_SSL_CERT_FILE = "${np.cacert}/etc/ssl/certs/ca-bundle.crt";
               }
