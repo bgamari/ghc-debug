@@ -28,7 +28,7 @@ spec :: SpecWith ()
 spec = do
   describe "debuggeeDwarf" $
     it "should return Dwarf of the executeable" $
-      withStartedDebuggee "debug-test" $ \ d ->
+      withStartedDebuggee "debug-test" $ \ _ d ->
         case debuggeeDwarf d of
               Just dwarf -> dwarf `shouldContainCuName` "Test.hs"
               Nothing -> error "No Dwarf"
@@ -36,20 +36,20 @@ spec = do
   describe "request" $ do
     describe "RequestVersion" $
       it "should return the correct version" $
-        withStartedDebuggee "debug-test" $ \ d -> do
+        withStartedDebuggee "debug-test" $ \ _ d -> do
           version <- request d RequestVersion
           version `shouldBe` 0
 
     describe "RequestRoots" $
       it "should return a non-empty result" $
-        withStartedDebuggee "debug-test" $ \ d -> do
+        withStartedDebuggee "debug-test" $ \ _ d -> do
           request d RequestPause
           roots <- request d RequestRoots
           roots `shouldSatisfy` notNull
 
     describe "RequestClosures" $
       it "should return a non-empty result" $
-        withStartedDebuggee "debug-test" $ \ d -> do
+        withStartedDebuggee "debug-test" $ \ _ d -> do
           request d RequestPause
           roots <- request d RequestRoots
           closures <- request d $ RequestClosures roots
@@ -57,7 +57,7 @@ spec = do
 
     describe "RequestSavedObjects" $
       it "should return saved object" $
-        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+        withStartedDebuggee "save-one-pause" $ \ h d -> do
           waitForSync $ Server.stdout h
           withAsync (pipeStreamThread (Server.stdout h)) $ \_ -> do
             request d RequestPoll
@@ -68,7 +68,7 @@ spec = do
 
     describe "RequestInfoTables" $
       it "should return decodable RawInfoTables" $
-        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+        withStartedDebuggee "save-one-pause" $ \ h d -> do
           waitForSync $ Server.stdout h
           request d RequestPoll
           sos <- request d RequestSavedObjects
@@ -80,7 +80,7 @@ spec = do
 
     describe "RequestConstrDesc" $
       it "should return ConstrDesc of saved value (I# 1)" $
-        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+        withStartedDebuggee "save-one-pause" $ \ h d -> do
           waitForSync $ Server.stdout h
           request d RequestPoll
           (s:_) <- request d RequestSavedObjects
@@ -89,7 +89,7 @@ spec = do
 
     describe "RequestFindPtr" $
       it "should return ClosurePtrs that can be dereferenced" $
-        withStartedDebuggeeAndHandles "save-one-pause" $ \ h d -> do
+        withStartedDebuggee "save-one-pause" $ \ h d -> do
           waitForSync $ Server.stdout h
           request d RequestPoll
           (s:_) <- request d RequestSavedObjects
@@ -99,7 +99,7 @@ spec = do
 
     describe "RequestResume" $
       it "should resume a paused debugee" $
-        withStartedDebuggeeAndHandles "clock" $ \ h d -> do
+        withStartedDebuggee "clock" $ \ h d -> do
           waitForSync $ Server.stdout h
           ref <- newIORef []
           withAsync (pipeStreamToListThread ref (Server.stdout h)) $ \_ -> do
