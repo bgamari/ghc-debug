@@ -5,6 +5,7 @@ module Server
   , Handles(..)
   ) where
 
+import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Monad
 import System.IO
@@ -49,6 +50,7 @@ runTestFunction f (Just serverIn) (Just serverOut) (Just serverErr) serverProc =
   withAsync errSinkThread $ \_ -> f serverIn serverOut serverProc
 runTestFunction _ _ _ _ _ = error "Starting the process failed"
 
+-- TODO much duplication with withStartedDebuggeeAndHandles
 withStartedDebuggee :: String  -- ^ executable name
              -> (Debuggee -> IO a) -- ^ action
              -> IO a
@@ -56,7 +58,12 @@ withStartedDebuggee exeName action = withTempDir $ \ tempDirPath -> do
   let socketName = tempDirPath ++ "/ghc-debug"
   withServer exeName socketName $ \serverIn serverOut serverProc -> do
     prog <- readCreateProcess serverExePathCmd []
-    withDebuggee (trim prog) socketName action
+
+    -- TODO wait (programmatically) for the socket to appear
+    threadDelay 500000
+
+    dwarf <- getDwarfInfo $ trim prog
+    withDebuggeeSocket (trim prog) socketName (Just dwarf) action
   where
     serverExePathCmd = shell $ "which " ++ exeName
 
@@ -68,6 +75,11 @@ withStartedDebuggeeAndHandles exeName action = withTempDir $ \ tempDirPath -> do
   withServer exeName socketName $ \serverIn serverOut serverProc -> do
     prog <- readCreateProcess serverExePathCmd []
     let handles = Handles serverIn serverOut serverProc
-    withDebuggee (trim prog) socketName (action handles)
+
+    -- TODO wait (programmatically) for the socket to appear
+    threadDelay 500000
+
+    dwarf <- getDwarfInfo $ trim prog
+    withDebuggeeSocket (trim prog) socketName (Just dwarf) (action handles)
   where
     serverExePathCmd = shell $ "which " ++ exeName
