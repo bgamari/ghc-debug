@@ -1,6 +1,6 @@
 module SystemTest where
 
-import Test.Hspec
+import Test.Tasty.Hspec
 
 import GHC.Debug.Client
 import GHC.Debug.Types.Graph
