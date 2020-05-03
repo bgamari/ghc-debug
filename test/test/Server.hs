@@ -1,7 +1,6 @@
 module Server
   ( withServer
   , withStartedDebuggee
-  , withStartedDebuggeeAndHandles
   , Handles(..)
   ) where
 
@@ -50,27 +49,10 @@ runTestFunction f (Just serverIn) (Just serverOut) (Just serverErr) serverProc =
   withAsync errSinkThread $ \_ -> f serverIn serverOut serverProc
 runTestFunction _ _ _ _ _ = error "Starting the process failed"
 
--- TODO much duplication with withStartedDebuggeeAndHandles
 withStartedDebuggee :: String  -- ^ executable name
-             -> (Debuggee -> IO a) -- ^ action
-             -> IO a
-withStartedDebuggee exeName action = withTempDir $ \ tempDirPath -> do
-  let socketName = tempDirPath ++ "/ghc-debug"
-  withServer exeName socketName $ \serverIn serverOut serverProc -> do
-    prog <- readCreateProcess serverExePathCmd []
-
-    -- TODO wait (programmatically) for the socket to appear
-    threadDelay 500000
-
-    dwarf <- getDwarfInfo $ trim prog
-    withDebuggeeSocket (trim prog) socketName (Just dwarf) action
-  where
-    serverExePathCmd = shell $ "which " ++ exeName
-
-withStartedDebuggeeAndHandles :: String  -- ^ executable name
              -> (Handles -> Debuggee -> IO a) -- ^ action
              -> IO a
-withStartedDebuggeeAndHandles exeName action = withTempDir $ \ tempDirPath -> do
+withStartedDebuggee exeName action = withTempDir $ \ tempDirPath -> do
   let socketName = tempDirPath ++ "/ghc-debug"
   withServer exeName socketName $ \serverIn serverOut serverProc -> do
     prog <- readCreateProcess serverExePathCmd []
