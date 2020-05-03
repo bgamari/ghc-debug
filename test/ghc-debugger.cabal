@@ -35,7 +35,8 @@ test-suite system-test
   ghc-options: -Wall
   build-depends:
       base
-    , hspec ==2.*
+    , tasty
+    , tasty-hspec
     , process
     , ghc-debug-client
     , ghc-debug-common

@@ -1,7 +1,11 @@
 module Main where
 
-import Test.Hspec
+import Test.Tasty
+import Test.Tasty.Hspec
 import SystemTest
 
 main :: IO ()
-main = hspec spec
+main = do
+  tree <- testSpec "hspec tests" $ parallel spec
+  defaultMain tree
+
