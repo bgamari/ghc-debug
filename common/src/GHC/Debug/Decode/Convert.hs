@@ -31,7 +31,7 @@ convertClosure  g =
     GHC.MVarClosure a1 a2 a3 a4         -> MVarClosure a1 a2 a3 a4
     GHC.MutVarClosure a1 a2             -> MutVarClosure a1 a2
     GHC.BlockingQueueClosure a1 a2 a3 a4 a5 -> BlockingQueueClosure a1 a2 a3 a4 a5
-    GHC.TSOClosure a1 a2 a3 a4 a5 a6 a7 -> TSOClosure a1 a2 a3 a4 a5 a6 a7
+    GHC.TSOClosure a1 a2 a3 a4 a5 a6 a7 a8 a9 -> TSOClosure a1 a2 a3 a4 a5 a6 a7 a8 a9
     GHC.StackClosure a1 a2 a3 a4 a5     -> StackClosure a1 a2 a3 a4 a5
     GHC.IntClosure a1 a2                -> IntClosure a1 a2
     GHC.WordClosure a1 a2               -> WordClosure a1 a2
