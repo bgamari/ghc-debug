@@ -224,14 +224,22 @@ data DebugClosure string s b
 
   | TSOClosure
       { info :: !StgInfoTable
+      -- pointers
       , _link :: !b
       , global_link :: !b
       , tsoStack :: !b -- ^ stackobj from StgTSO
       , trec :: !b
       , blocked_exceptions :: !b
       , bq :: !b
+      -- values
+      , what_next :: Word16
+      , why_blocked :: Word16
+      , flags :: Word32
       , threadId :: Word64
+      , saved_errno :: Word32
+      , dirty:: Word32
       , alloc_limit :: Int64
+      , tot_stack_size :: Word32
       }
 
   | StackClosure
@@ -384,8 +392,8 @@ instance Tritraversable DebugClosure where
       MutVarClosure a1 b -> MutVarClosure a1 <$> g b
       BlockingQueueClosure a1 b1 b2 b3 b4 ->
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
-      TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 ->
-        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
+      TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 ->
+        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
       StackClosure a1 a2 a3 s1 ss -> StackClosure a1 a2 a3 <$> f s1 <*> pure ss
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
