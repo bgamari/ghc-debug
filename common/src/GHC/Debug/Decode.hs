@@ -120,4 +120,3 @@ decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
   print itbl
   allocate itbl $ \itblPtr -> do
     peekItbl itblPtr
-
