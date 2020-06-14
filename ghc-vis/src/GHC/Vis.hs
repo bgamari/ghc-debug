@@ -209,7 +209,7 @@ setup dbg window = do
 
 setupGUI :: Debuggee -> Window -> Element -> UI.Canvas -> UI ()
 setupGUI dbg window body canvas = do
-  on UI.mousemove canvas $ \(fromIntegral -> x, fromIntegral -> y) -> do
+  on UI.mousemove canvas $ \(x, y) -> do
     do
       state <- liftIO $ readIORef visState
       liftIO $ modifyIORef visState (\s -> s {mousePos = (x, y)})
