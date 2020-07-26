@@ -36,6 +36,7 @@ import Prelude -- See note [Why do we import Prelude here?]
 --import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 import GHC.Exts.Heap.InfoTable
 import qualified GHC.Exts.Heap as GHC
+import GHC.Exts.Heap.ProfInfo.Types as ProfTypes
 
 
 import Data.Functor.Identity
@@ -240,6 +241,7 @@ data DebugClosure string s b
       , dirty:: Word32
       , alloc_limit :: Int64
       , tot_stack_size :: Word32
+      , prof :: Maybe ProfTypes.StgTSOProfInfo
       }
 
   | StackClosure
@@ -393,8 +395,8 @@ instance Tritraversable DebugClosure where
       MutVarClosure a1 b -> MutVarClosure a1 <$> g b
       BlockingQueueClosure a1 b1 b2 b3 b4 ->
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
-      TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 ->
-        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
+      TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
+        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
       StackClosure a1 a2 a3 a4 s1 ss -> StackClosure a1 a2 a3 a4 <$> f s1 <*> pure ss
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
