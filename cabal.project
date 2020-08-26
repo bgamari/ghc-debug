@@ -1,4 +1,4 @@
-packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test
+packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test, test, /home/sven/src/head.hackage/packages/io-streams-1.5.1.0
 
 allow-newer: all
 
@@ -16,8 +16,3 @@ source-repository-package
   type: git
   location: https://github.com/mpickering/threepenny-utils.git
   tag: 75edf621ce69f09b7c04de4569d9737e54f8e636
-
-source-repository-package
-  type: git
-  location: https://github.com/supersven/extra.git
-  tag: 8ce7c55cf88dcd869af719f77dbe569290468532
