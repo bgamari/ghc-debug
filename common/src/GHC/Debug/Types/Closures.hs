@@ -233,9 +233,9 @@ data DebugClosure string s b
       , blocked_exceptions :: !b
       , bq :: !b
       -- values
-      , what_next :: Word16
-      , why_blocked :: Word16
-      , flags :: Word32
+      , what_next :: GHC.WhatNext
+      , why_blocked :: GHC.WhyBlocked
+      , flags :: [GHC.TsoFlags]
       , threadId :: Word64
       , saved_errno :: Word32
       , dirty:: Word32
