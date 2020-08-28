@@ -19,8 +19,8 @@ let
   # If this fails, please update url and hash for the lastest successful build
   # of wip/ghc-debug.
   ghc = mkGhc
-        { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/401867/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
-          hash = "0682i88znps8kk1ljjpzhg00z7lrp7g920ra9zc3hlbrg8x0n6rh";
+        { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/427334/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
+          hash = "116dm1hqi7bmz4zh65miyhw2rzlv2ajlhrv6namfhgrdcj048gal";
         };
 
 in
