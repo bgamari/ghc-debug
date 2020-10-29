@@ -49,23 +49,34 @@ data Request a where
 
 In short, you don't, yet.
 
-The project needs to built with a development version of GHC from [this](https://gitlab.haskell.org/ghc/ghc/tree/wip/ghc-debug) branch.
+The project needs to built with a development version of GHC from
+[this](https://gitlab.haskell.org/ghc/ghc/tree/wip/ghc-debug) branch. Then you
+can use normal cabal commands to build this library. The easiest way to do this
+is with nix. The nix shell uses the development version of GHC so you don't have to build it yourself.
 
-Then you can use normal cabal commands to build this library.
+```
+$ nix-shell
+> cabal new-build all
+```
 
 In order to make a process debuggable it needs to call the socket initialisation
-function `start`, see the `test-debug` executable for exactly how to do this.
+function `start`, see the `debug-test` executable for exactly how to do this.
+See `test/Test.hs` for an example of how to run and debug the `debug-test`
+executable.
 
-## Testing
+## Manual Testing / Examples
 
-There are two test executables `test-debug` and `debugger` which are used to
-test the library.
+There are two test executables `debug-test` and `debugger` which are used to
+test the library (manually). Run the test with:
 
-`test-debug` is an interruptable program which prints out an incrementing
-counter each second. `debugger` starts and immediately attaches to `test-debug`
-and makes some requests. So the way to test the library is to first start `test-debug`
-and then start `debugger`. There are lots of helpful traces to see what's going
-on with each process.
+```
+$ cabal new-run -- debugger
+```
+
+`debugger` starts and immediately attaches to `debug-test` and makes some
+requests.  There are lots of helpful traces to see what's going on with each
+process. `debug-test` is the program we're debugging. It prints out an
+incrementing counter each second.
 
 ### Automated Testing
 

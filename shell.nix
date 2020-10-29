@@ -1,7 +1,5 @@
 let
-  _np = import <nixpkgs> { };
-
-  np = import (_np.fetchFromGitHub {
+  np = import ((import <nixpkgs> { }).fetchFromGitHub {
     owner  = "NixOS";
     repo   = "nixpkgs";
     rev    = "5272327b81ed355bbed5659b8d303cf2979b6953";
@@ -24,8 +22,9 @@ let
         };
 
 in
-  _np.mkShell { buildInputs = [ ghc
+  np.mkShell { buildInputs = [ ghc
                                np.ncurses
+                               np.wget  # Used by cabal-install for https support when communicating with head.hackage
                                np.cabal-install
                                np.zlib.dev
                                np.zlib.out
@@ -42,7 +41,7 @@ in
                 SSL_CERT_FILE = "${np.cacert}/etc/ssl/certs/ca-bundle.crt";
                 NIX_SSL_CERT_FILE = "${np.cacert}/etc/ssl/certs/ca-bundle.crt";
                 shellHook = ''
-                  export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${_np.lib.makeLibraryPath [np.numactl np.gmp]}";
+                  export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${np.lib.makeLibraryPath [np.numactl np.gmp]}";
                   unset LD
 
                   echo 'Please build with --extra-include-dirs=${np.zlib.dev}/include/, e.g.:'

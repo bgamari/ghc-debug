@@ -31,9 +31,13 @@ testProgPath progName = do
 
 ---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
 main = do
+  -- Get the path to the "debug-test" executable
   prog <- debugTestPath -- Or @dyePackTestPath@
   print prog
-  withDebuggee prog "/tmp/ghc-debug" p12
+
+  -- Start the program and do some debugging
+  let someDebuggingAction = p12
+  withDebuggee prog "/tmp/ghc-debug" someDebuggingAction
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
