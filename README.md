@@ -85,3 +85,9 @@ There are `hspec` tests, that can be run with `cabal`:
 ```
 cabal new-build all && cabal new-test all
 ```
+
+### Unexpected Build Failures
+
+If you encounter dependencies failing to build but there's a patch for
+the library in head.hackage then you may need to delete `~/.cabal/packages/head.hackage.org`
+so that the fresh patch is visible. This is probably a bug in cabal!
