@@ -29,7 +29,8 @@ main = do
   let !y = Data.Sequence.fromList [1..5]
   -- let !y = [1..5]
   performGC
-  saveClosures [Box y]
+--  saveClosures [Box y]
+  saveClosures [Box (id ())]
   print "start"
   loop
   print y

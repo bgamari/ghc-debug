@@ -32,11 +32,12 @@ testProgPath progName = do
 ---main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
 main = do
   -- Get the path to the "debug-test" executable
-  prog <- debugTestPath -- Or @dyePackTestPath@
-  print prog
+--  prog <- debugTestPath -- Or @dyePackTestPath@
+--  print prog
+  let prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-9.1.0.20201105/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
   -- Start the program and do some debugging
-  let someDebuggingAction = p12
+  let someDebuggingAction = p17
   withDebuggee prog "/tmp/ghc-debug" someDebuggingAction
 
 -- Test pause/resume
@@ -116,7 +117,7 @@ p7 d = do
 p8 d = do
   request d RequestPause
   sos <- request d RequestSavedObjects
-  dereferenceClosures d sos
+  print =<< dereferenceClosures d sos
 
 -- Using findPtr
 {-
@@ -207,3 +208,13 @@ p16 d = do
   [so] <- request d RequestSavedObjects
   hg <- buildHeapGraph (derefBox d) 20 () so
   putStrLn $ ppHeapGraph hg
+
+-- Testing IPE
+p17 d = do
+  request d RequestPause
+  [so] <- request d RequestSavedObjects
+  [c] <- request d (RequestClosures [so])
+  let it = getInfoTblPtr c
+  print c
+  print it
+  print =<< request d (RequestSourceInfo it)

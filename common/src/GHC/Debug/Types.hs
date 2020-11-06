@@ -19,6 +19,7 @@ import System.IO.Unsafe
 import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
+import Debug.Trace
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
@@ -51,6 +52,8 @@ data Request a where
     RequestBitmap :: InfoTablePtr -> Request PtrBitmap
     -- | Request the description for an info table.
     RequestConstrDesc :: ClosurePtr -> Request ConstrDesc
+    -- | Lookup source information of an info table
+    RequestSourceInfo :: InfoTablePtr -> Request [String]
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
 newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
@@ -95,6 +98,9 @@ cmdRequestSavedObjects = CommandId 9
 cmdRequestConstrDesc :: CommandId
 cmdRequestConstrDesc = CommandId 11
 
+cmdRequestSourceInfo :: CommandId
+cmdRequestSourceInfo = CommandId 12
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral (4 + BSL.length body')
@@ -124,6 +130,7 @@ putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 --putRequest (RequestFindPtr c)       =
 --  putCommand cmdRequestFindPtr $ put c
+putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -137,11 +144,23 @@ getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
 --getResponse (RequestFindPtr _c)  = many get
+getResponse (RequestSourceInfo _c) = getIPE
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do
   len <- getInt32be
   parseConstrDesc . C8.unpack <$> getByteString (fromIntegral len)
+
+getIPE :: Get [String]
+getIPE = do
+  num <- getInt32be
+  replicateM (fromIntegral num) getOne
+  where
+    getOne = do
+      len <- getInt32be
+      res <- C8.unpack <$> getByteString (fromIntegral len)
+      return res
+
 
 getPtrBitmap :: Get PtrBitmap
 getPtrBitmap = do

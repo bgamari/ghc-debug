@@ -53,7 +53,8 @@ enum commands {
     CMD_POLL = 8,
     CMD_SAVED_OBJECTS = 9,
     CMD_FIND_PTR = 10,
-    CMD_CON_DESCR = 11
+    CMD_CON_DESCR = 11,
+    CMD_SOURCE_INFO = 12
 };
 
 enum response_code {
@@ -170,6 +171,8 @@ class Response {
         trace("FINISH: %d\n", status);
         this->flush(status);
     }
+
+    Response(Response &x) = delete;
 };
 
 static bool paused = false;
@@ -245,6 +248,18 @@ static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, Stg
             resp.write((uint8_t) !(bitmap & 1));
             bitmap = bitmap >> 1;
         }
+    }
+}
+
+static void write_string(Response& resp, const char * s){
+    uint32_t len_payload;
+    len_payload=htonl(strlen(s));
+    resp.write(len_payload);
+    trace("SIZE: %d", strlen(s));
+    uint32_t i;
+    trace("WRITING: %s\n", s);
+    for (i = 0; i < strlen(s); i++){
+      resp.write(s[i]);
     }
 }
 
@@ -440,15 +455,42 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         trace("CON_DESC2 %p\n", ptr_end);
         const char * con_desc = GET_CON_DESC(get_con_itbl(UNTAG_CLOSURE(ptr_end)));
         trace("CON_DESC: %p %lu\n", con_desc, strlen(con_desc));
-        uint32_t len_payload;
-        len_payload=htonl(strlen(con_desc));
-        resp.write(len_payload);
-        for (i = 0; i < strlen(con_desc); i++){
-          resp.write(con_desc[i]);
-        }
+        write_string(resp, con_desc);
         resp.finish(RESP_OKAY);
         break;
         }
+      case CMD_SOURCE_INFO:
+        {
+        trace("SOURCE_INFO\n");
+        StgInfoTable *info_table = (StgInfoTable *) p.get<uint64_t>();
+        trace("INFO: %p\n", info_table);
+        InfoProvEnt * elt = lookupIPE(info_table);
+        trace("ELT: %p\n", info_table);
+        uint32_t len_payload;
+        if (!elt){
+          trace("NOT FOUND\n");
+          resp.write((uint32_t) 0);
+        }
+        else {
+          InfoProv ip = elt->prov;
+          trace("FOUND\n");
+
+          size_t len = 6;
+          uint32_t len_payload = htonl(len);
+          resp.write(len_payload);
+
+        //  Using the function just produces garbage.. no idea why
+        write_string(resp, ip.table_name);
+        write_string(resp, ip.closure_desc);
+        write_string(resp, ip.ty_desc);
+        write_string(resp, ip.label);
+        write_string(resp, ip.module);
+        write_string(resp, ip.srcloc);
+        }
+        resp.finish(RESP_OKAY);
+        break;
+    }
+
 
 
       default:
