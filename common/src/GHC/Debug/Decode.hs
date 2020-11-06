@@ -35,23 +35,13 @@ import System.Endian
 foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
               Any -> (# Addr#, ByteArray#, ByteArray# #)
 
-getBoxedClosureDataW :: Box -> IO (GenClosure Word)
-getBoxedClosureDataW (Box x) =
-  getClosureDataX (getClosureRawW . unsafeCoerce#) x
-
-getClosureRawW :: a -> IO (Ptr StgInfoTable, [Word], [Word])
-getClosureRawW x = do
-  case unpackClosureWords# (unsafeCoerce# x) of
-     (# iptr, dat, pointers #) -> do
-         let nelems = (I# (sizeofByteArray# dat)) `div` 8
-             end = fromIntegral nelems - 1
-             rawWds = [W# (indexWordArray# dat i) | I# i <- [0.. end] ]
-
-         let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
-             end_ptrs = fromIntegral nelems_ptrs - 1
-             rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
-         pure (Ptr iptr, rawWds, rawPtrs)
-
+getClosureRaw :: Box -> IO (GenClosure Word)
+getClosureRaw (Box a) = do
+  let (# infoTablePtr, datArr, pointers #) = unpackClosureWords# a
+  let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
+      end_ptrs = fromIntegral nelems_ptrs - 1
+      rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
+  getClosureDataFromHeapRep True datArr (Ptr infoTablePtr) rawPtrs
 
 
 -- | Allocate a bytestring directly into memory and return a pointer to the
@@ -97,7 +87,7 @@ decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = do
         -- process
         --print ("Closure", closPtr)
         --print ("itbl", itblPtr)
-        r <- getBoxedClosureDataW (ptrToBox closPtr)
+        r <- getClosureRaw (ptrToBox closPtr)
         --print ("Decoded", r)
         return $ trimap (const ptr) stackCont  ClosurePtr . convertClosure
           $ fmap (\(W# w) -> toBE64 (W64# w)) r

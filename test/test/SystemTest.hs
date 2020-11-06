@@ -87,6 +87,7 @@ spec = do
           cd <- request d $ RequestConstrDesc s
           cd `shouldBe` ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "I#"}
 
+{-
     describe "RequestFindPtr" $
       it "should return ClosurePtrs that can be dereferenced" $
         withStartedDebuggee "save-one-pause" $ \ h d -> do
@@ -96,6 +97,7 @@ spec = do
           ptrs <- request d $ RequestFindPtr s
           closures <- dereferenceClosures d ptrs
           closures `shouldSatisfy` notNull
+          -}
 
     describe "RequestResume" $
       it "should resume a paused debugee" $

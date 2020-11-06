@@ -70,13 +70,13 @@ enum response_code {
 // FIXME: These need to be made not private in GHC.
 extern "C" {
 typedef void (*evac_fn)(void *user, StgClosure **root);
-typedef void (*FindPtrCb)(void *user, StgClosure *);
+//typedef void (*FindPtrCb)(void *user, StgClosure *);
 void threadStableNameTable ( evac_fn evac, void *user );
 void threadStablePtrTable ( evac_fn evac, void *user );
 void stopAllCapabilities (Capability **pCap, Task *task);
 void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
-void findPtrCb(FindPtrCb , void* , P_);
-void findPtr(P_, int);
+//void findPtrCb(FindPtrCb , void* , P_);
+//void findPtr(P_, int);
 }
 
 const int maxSavedObjects = 20;
@@ -173,7 +173,7 @@ class Response {
 };
 
 static bool paused = false;
-static RtsPaused r_paused;
+static Capability * r_paused;
 static Response * r_poll_pause_resp = NULL;
 
 static StgStablePtr rts_saved_closure = NULL;
@@ -189,8 +189,8 @@ void pause_mutator() {
 
 extern "C"
 void resume_mutator() {
-  trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
-  rts_unpause(r_paused);
+  //trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  rts_resume(r_paused);
   paused = false;
 }
 
@@ -227,10 +227,10 @@ void collect_misc_callback(void *user, StgClosure * clos){
   ((Response *) user)->write((uint64_t) clos);
 }
 
-void inform_callback(void *user, RtsPaused p){
+void inform_callback(void *user, Capability * p){
   ((Response *) user)->finish(RESP_OKAY);
   r_paused = p;
-  trace("Informed %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  //trace("Informed %p %p\n", r_paused.pausing_task, r_paused.capabilities);
   paused = true;
 }
 
@@ -423,15 +423,15 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         resp.finish(RESP_OKAY);
         break;
 
-      case CMD_FIND_PTR:
-        trace("FIND_PTR\n");
-        StgClosure *ptr;
-        ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-        trace("FIND_PTR %p\n", ptr);
-        trace("FIND_PTR_SIZE %u\n", closure_sizeW(ptr));
-        findPtrCb(&collect_misc_callback, &resp, (P_) ptr);
-        resp.finish(RESP_OKAY);
-        break;
+      //case CMD_FIND_PTR:
+      //  trace("FIND_PTR\n");
+      //  StgClosure *ptr;
+      //  ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
+      //  trace("FIND_PTR %p\n", ptr);
+      //  trace("FIND_PTR_SIZE %u\n", closure_sizeW(ptr));
+      //  findPtrCb(&collect_misc_callback, &resp, (P_) ptr);
+      //  resp.finish(RESP_OKAY);
+      //  break;
 
       case CMD_CON_DESCR:
         {

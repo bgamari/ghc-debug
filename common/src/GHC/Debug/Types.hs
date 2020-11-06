@@ -45,8 +45,8 @@ data Request a where
     -- | A client can save objects by calling a special RTS method
     -- This function returns the closures it saved.
     RequestSavedObjects :: Request [ClosurePtr]
-    -- | Calls the debugging `findPtr` function and returns the retainers
-    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
+--    -- | Calls the debugging `findPtr` function and returns the retainers
+--    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
     -- | Request the pointer bitmap for an info table.
     RequestBitmap :: InfoTablePtr -> Request PtrBitmap
     -- | Request the description for an info table.
@@ -89,8 +89,8 @@ cmdRequestPoll = CommandId 8
 cmdRequestSavedObjects :: CommandId
 cmdRequestSavedObjects = CommandId 9
 
-cmdRequestFindPtr :: CommandId
-cmdRequestFindPtr = CommandId 10
+--cmdRequestFindPtr :: CommandId
+--cmdRequestFindPtr = CommandId 10
 
 cmdRequestConstrDesc :: CommandId
 cmdRequestConstrDesc = CommandId 11
@@ -122,8 +122,8 @@ putRequest (RequestConstrDesc info) =
   putCommand cmdRequestConstrDesc $ put info
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
-putRequest (RequestFindPtr c)       =
-  putCommand cmdRequestFindPtr $ put c
+--putRequest (RequestFindPtr c)       =
+--  putCommand cmdRequestFindPtr $ put c
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -136,7 +136,7 @@ getResponse (RequestBitmap _)    = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
-getResponse (RequestFindPtr _c)  = many get
+--getResponse (RequestFindPtr _c)  = many get
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do

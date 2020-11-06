@@ -119,6 +119,7 @@ p8 d = do
   dereferenceClosures d sos
 
 -- Using findPtr
+{-
 p9 d = do
   request d RequestPause
   (s:_) <- request d RequestSavedObjects
@@ -131,6 +132,7 @@ p10 d = do
   request d RequestPause
   (s:_) <- request d RequestRoots
   request d (RequestFindPtr s) >>= print
+  -}
 
 p11 d = do
   threadDelay 10000000
@@ -142,6 +144,7 @@ p11 d = do
     Just r -> showFileSnippet d r
     Nothing -> print "No Dwarf!"
 
+{-
 p12 d = do
   request d RequestPoll
   [ss] <- request d RequestSavedObjects
@@ -170,6 +173,7 @@ p12 d = do
     case lookupDwarf d itb of
       Just r -> showFileSnippet d r
       Nothing -> return ()
+      -}
 
 -- testing stack decoding
 p13 d = do
