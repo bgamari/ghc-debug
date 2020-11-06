@@ -249,8 +249,6 @@ data DebugClosure string s b
      , size :: !Word32 -- ^ stack size in *words*
      , stack_dirty :: !Word8 -- ^ non-zero => dirty
      , stack_marking :: Word8
-     , stackPointer :: !s -- ^ current stack pointer
-     , stack :: [Word]
      }
 
   | WeakClosure
@@ -397,7 +395,7 @@ instance Tritraversable DebugClosure where
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
       TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
         (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
-      StackClosure a1 a2 a3 a4 s1 ss -> StackClosure a1 a2 a3 a4 <$> f s1 <*> pure ss
+      StackClosure a1 a2 a3 a4 -> pure (StackClosure a1 a2 a3 a4)
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
       IntClosure p i -> pure (IntClosure p i)
