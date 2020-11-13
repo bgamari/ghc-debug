@@ -8,7 +8,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 #endif
 
-module GHC.Debug.Decode (decodeClosure, decodeInfoTable) where
+module GHC.Debug.Decode (decodeClosure, decodeClosureWithSize, decodeInfoTable) where
 
 import GHC.Ptr (Ptr(..), plusPtr, castPtr)
 import GHC.Exts -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
@@ -71,6 +71,12 @@ data Ptr' a = Ptr' a
 
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
+
+decodeClosureWithSize :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO SizedClosure
+decodeClosureWithSize rit (ptr, rc) = do
+    let size = rawClosureSize rc
+    DCS . WithSize size <$> decodeClosure rit (ptr, rc)
+
 
 decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO Closure
 decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = do

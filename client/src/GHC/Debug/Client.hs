@@ -196,15 +196,18 @@ showFileSnippet d (fps, l, c) = go fps
            in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
 
 dereferenceClosure :: Debuggee -> ClosurePtr -> IO Closure
-dereferenceClosure d c = head <$> dereferenceClosures d [c]
+dereferenceClosure d c = forgetSize . unDCS . head <$> dereferenceClosures d [c]
 
-dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [Closure]
+dereferenceSizedClosure :: Debuggee -> ClosurePtr -> IO SizedClosure
+dereferenceSizedClosure d c = head <$> dereferenceClosures d [c]
+
+dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [SizedClosure]
 dereferenceClosures d cs = do
     raw_cs <- request d (RequestClosures cs)
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
     raw_its <- request d (RequestInfoTables its)
-    zipWithM decodeClosure raw_its (zip cs raw_cs)
+    zipWithM decodeClosureWithSize raw_its (zip cs raw_cs)
 
 dereferenceStack :: Debuggee -> StackCont -> IO Stack
 dereferenceStack d (StackCont sp) = do
@@ -221,7 +224,7 @@ dereferenceConDesc d i = request d (RequestConstrDesc i)
 fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
 fullTraversal d c = do
 --  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
-  dc <- dereferenceClosure d c
+  dc <- dereferenceSizedClosure d c
 --  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
   MkFix1 <$> tritraverse (dereferenceConDesc d) (fullStackTraversal d) (fullTraversal d)  dc
 

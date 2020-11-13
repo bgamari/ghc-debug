@@ -14,7 +14,11 @@
 module GHC.Debug.Types.Closures (
     -- * Closures
       Closure
+    , SizedClosure
     , DebugClosure(..)
+    , DebugClosureWithSize(..)
+    , noSize
+    , WithSize(..)
     , StgInfoTable(..)
     , FieldValue(..)
     , DebugStackFrame(..)
@@ -31,6 +35,7 @@ module GHC.Debug.Types.Closures (
     , Tritraversable(..)
     , trimap
     , countNodes
+    , treeSize
     , ConstrDesc(..)
     , parseConstrDesc
     ) where
@@ -69,8 +74,8 @@ instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
-type UClosure = Fix1 ConstrDesc GenStack DebugClosure
-type UStack   = Fix2 ConstrDesc GenStack DebugClosure
+type UClosure = Fix1 ConstrDesc GenStack DebugClosureWithSize
+type UStack   = Fix2 ConstrDesc GenStack DebugClosureWithSize
 
 foldFix1 :: (Functor f, Tritraversable g)
          => (string -> r)
@@ -97,10 +102,51 @@ countNodes =
     go x = Const x
     add = mappend (Sum 1)
 
+-- | Calculate the total in-memory size of a closure
+treeSize :: UClosure -> Int
+treeSize =
+  getSum . foldFix1
+              -- This is probably not right
+              (const (Sum 1))
+              stackSize
+              closSize
+  where
+    stackSize :: GenStack (Sum Int) -> Sum Int
+    stackSize s = Sum (fromIntegral (stack_size s))
+                    `mappend` (getConst (traverse Const s))
+
+    closSize :: DebugClosureWithSize (Sum Int) (Sum Int) (Sum Int) -> Sum Int
+    closSize d = Sum (dcSize d) `mappend` getConst (tritraverse Const Const Const d)
+
+
+
+
+
 ------------------------------------------------------------------------
 -- Closures
 
 type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
+type SizedClosure = DebugClosureWithSize ClosurePtr StackCont ClosurePtr
+
+newtype DebugClosureWithSize string s b = DCS { unDCS :: WithSize (DebugClosure string s b) }
+
+instance (Show string, Show s, Show b) => Show (DebugClosureWithSize string s b) where
+  show (DCS v) = show v
+
+
+noSize :: DebugClosureWithSize string s b -> DebugClosure string s b
+noSize = forgetSize . unDCS
+
+dcSize :: DebugClosureWithSize string s b -> Int
+dcSize = getSize . unDCS
+
+instance Tritraversable DebugClosureWithSize where
+  tritraverse f g h (DCS (WithSize n v)) = DCS . WithSize n <$> tritraverse f g h v
+
+data WithSize a = WithSize { getSize :: Int, forgetSize ::  a }
+      deriving (Functor, Traversable, Foldable, Show, Generic)
+
+
 
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
