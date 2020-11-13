@@ -195,7 +195,7 @@ p13 d = do
       inclusive_counts = map inclusive results
   forM (zip results [0..]) $ \(re@(MkFix1 r), n) -> do
     putStrLn (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
-    print (inclusive re)
+    --print (inclusive re)
   putStrLn ("Total: " ++ show (sum counts))
   traceRequestLog d
 
