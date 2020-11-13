@@ -2,6 +2,7 @@ module Main where
 
 import GHC.Debug.Client
 import GHC.Debug.Types.Graph
+import GHC.Debug.Types.Closures
 
 import Control.Monad
 import Debug.Trace
@@ -9,6 +10,8 @@ import Control.Exception
 import Control.Concurrent
 import Data.Bitraversable
 import GHC.Vis
+import Data.Monoid
+import Control.Applicative
 
 import Data.List.Extra (trim)
 import System.Process
@@ -29,16 +32,18 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
----main = withDebuggeeSocket "/tmp/ghc-debug" Nothing p14
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" Nothing p13
+{-
 main = do
   -- Get the path to the "debug-test" executable
 --  prog <- debugTestPath -- Or @dyePackTestPath@
 --  print prog
-  let prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-9.1.0.20201105/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
+  let prog = "/home/matt/ghc-debug/dist-newstyle/build/x86_64-linux/ghc-9.1.0.20201106/ghc-debug-stub-0.1.0.0/x/debug-test/build/debug-test/debug-test"
 
   -- Start the program and do some debugging
-  let someDebuggingAction = p17
+  let someDebuggingAction = p13
   withDebuggee prog "/tmp/ghc-debug" someDebuggingAction
+  -}
 
 -- Test pause/resume
 p1 d = pauseDebuggee d (void $ getChar)
@@ -180,10 +185,17 @@ p12 d = do
 p13 d = do
   request d RequestPause
   rs <- request d RequestRoots
-  forM_ rs $ \r -> do
-    print r
-    res <- fullTraversal d r
-    print res
+  putStrLn ("NUMBER OF ROOTS = " ++ show (length rs))
+  results <- forM (zip rs [0..]) $ \(r, n) -> do
+              print ("ROOT", n, r)
+              fullTraversal d r
+  putStrLn "Full Traversal complete"
+  putStrLn ("Number of roots traversed: " ++ show (length results))
+  let counts = map countNodes results
+  forM (zip3 results counts [0..]) $ \(MkFix1 r, c, n) ->
+    putStrLn (show n ++ "(" ++ show (tipe (info r)) ++ "): " ++ show c)
+  putStrLn ("Total: " ++ show (sum counts))
+  traceRequestLog d
 
 
 p14 d = do
