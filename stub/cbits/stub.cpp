@@ -146,14 +146,19 @@ class Response {
 
     void write(const char *buf, size_t len) {
         if (len > this->buf_size) {
-            trace("LEN TOO BIG");
+            trace("LEN TOO BIG %d, %d\n", len, this->buf_size);
             this->flush(RESP_OKAY_CONTINUES);
-
-            Header hdr;
-            hdr.len = len;
-            hdr.status = RESP_OKAY_CONTINUES;
-            this->sock.write((const char *) &hdr, sizeof(Header));
+            uint32_t len_payload;
+            uint16_t status_payload;
+            len_payload=htonl(len);
+            status_payload = htons(RESP_OKAY_CONTINUES);
+            // Header is the length
+            this->sock.write((char *) &len_payload, sizeof(uint32_t));
+            // Then status
+            this->sock.write((char *) &status_payload, sizeof(uint16_t));
+            trace("WROTE HEADER\n");
             this->sock.write(buf, len);
+            trace("WRITING BIG CLOSURE\n");
         } else {
             if (this->tail + len >= this->buf + this->buf_size) {
                 trace("FLUSHING: ");
