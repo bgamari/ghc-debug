@@ -74,8 +74,8 @@ aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# a
 
 decodeClosureWithSize :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO SizedClosure
 decodeClosureWithSize rit (ptr, rc) = do
-    let size = rawClosureSize rc
-    DCS . WithSize size <$> decodeClosure rit (ptr, rc)
+    let size = Size (rawClosureSize rc)
+    DCS size <$> decodeClosure rit (ptr, rc)
 
 
 decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO Closure

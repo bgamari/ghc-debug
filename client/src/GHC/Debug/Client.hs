@@ -196,7 +196,7 @@ showFileSnippet d (fps, l, c) = go fps
            in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
 
 dereferenceClosure :: Debuggee -> ClosurePtr -> IO Closure
-dereferenceClosure d c = forgetSize . unDCS . head <$> dereferenceClosures d [c]
+dereferenceClosure d c = noSize . head <$> dereferenceClosures d [c]
 
 dereferenceSizedClosure :: Debuggee -> ClosurePtr -> IO SizedClosure
 dereferenceSizedClosure d c = head <$> dereferenceClosures d [c]

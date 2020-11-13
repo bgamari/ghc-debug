@@ -7,6 +7,8 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
 - additional support for STACK closures which are only possible to decode
 - out of process
@@ -16,9 +18,10 @@ module GHC.Debug.Types.Closures (
       Closure
     , SizedClosure
     , DebugClosure(..)
-    , DebugClosureWithSize(..)
+    , DebugClosureWithSize
+    , Size(..)
+    , DebugClosureWithExtra(..)
     , noSize
-    , WithSize(..)
     , StgInfoTable(..)
     , FieldValue(..)
     , DebugStackFrame(..)
@@ -36,6 +39,7 @@ module GHC.Debug.Types.Closures (
     , trimap
     , countNodes
     , treeSize
+    , inclusive
     , ConstrDesc(..)
     , parseConstrDesc
     ) where
@@ -78,19 +82,19 @@ type UClosure = Fix1 ConstrDesc GenStack DebugClosureWithSize
 type UStack   = Fix2 ConstrDesc GenStack DebugClosureWithSize
 
 foldFix1 :: (Functor f, Tritraversable g)
-         => (string -> r)
-         -> (f r -> r)
-         -> (g r r r -> r)
+         => (string -> r_string)
+         -> (f r_clos -> r_stack)
+         -> (g r_string r_stack r_clos -> r_clos)
          -> Fix1 string f g
-         -> r
+         -> r_clos
 foldFix1 f g h (MkFix1 v) = h (trimap f (foldFix2 f g h) (foldFix1 f g h) v)
 
 foldFix2 :: (Functor f, Tritraversable g)
-         => (s -> r)
-         -> (f r -> r)
-         -> (g r r r -> r)
+         => (s -> r_string)
+         -> (f r_clos -> r_stack)
+         -> (g r_string r_stack r_clos -> r_clos)
          -> Fix2 s f g
-         -> r
+         -> r_stack
 foldFix2 f g h (MkFix2 v) = g (fmap (foldFix1 f g h) v)
 
 countNodes :: UClosure -> Int
@@ -103,21 +107,51 @@ countNodes =
     add = mappend (Sum 1)
 
 -- | Calculate the total in-memory size of a closure
-treeSize :: UClosure -> Int
+treeSize :: UClosure -> Size
 treeSize =
-  getSum . foldFix1
-              -- This is probably not right
-              (const (Sum 1))
+  foldFix1
+              -- This is probably not right, should be something to do with
+              -- length of string
+              (const (Size 1))
               stackSize
               closSize
   where
-    stackSize :: GenStack (Sum Int) -> Sum Int
-    stackSize s = Sum (fromIntegral (stack_size s))
+    stackSize :: GenStack Size -> Size
+    stackSize s = Size (fromIntegral (stack_size s))
                     `mappend` (getConst (traverse Const s))
 
-    closSize :: DebugClosureWithSize (Sum Int) (Sum Int) (Sum Int) -> Sum Int
-    closSize d = Sum (dcSize d) `mappend` getConst (tritraverse Const Const Const d)
+    closSize :: DebugClosureWithSize Size Size Size ->  Size
+    closSize d = (dcSize d) `mappend` getConst (tritraverse Const Const Const d)
 
+fullSize :: UClosure_Inclusive -> InclusiveSize
+fullSize (MkFix1 (DCS (_, i) _)) = i
+
+-- | A tree annotation with inclusive size of subtrees
+type UClosure_Inclusive = Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+
+inclusive :: UClosure -> Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+inclusive =
+  foldFix1 stringSize stackSize closSize
+  where
+    -- TODO
+    stringSize :: ConstrDesc -> ConstrDesc
+    stringSize x = x
+
+    -- No where to put inclusive size on stacks yet
+    stackSize :: GenStack (Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize)))
+              -> Fix2 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+    stackSize s = MkFix2 s
+
+    closSize :: DebugClosureWithSize
+                  ConstrDesc (Fix2 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
+                      -> Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+
+    closSize (DCS s b) =
+      let new_size = coerce s `mappend` getConst (tritraverse (const (Const (InclusiveSize 0))) stack (Const . fullSize) b)
+      in MkFix1 (DCS (s, new_size) b)
+
+      where
+        stack (MkFix2 s) = traverse (Const . fullSize) s
 
 
 
@@ -128,23 +162,31 @@ treeSize =
 type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
 type SizedClosure = DebugClosureWithSize ClosurePtr StackCont ClosurePtr
 
-newtype DebugClosureWithSize string s b = DCS { unDCS :: WithSize (DebugClosure string s b) }
+type DebugClosureWithSize = DebugClosureWithExtra Size
 
-instance (Show string, Show s, Show b) => Show (DebugClosureWithSize string s b) where
-  show (DCS v) = show v
+data DebugClosureWithExtra x string s b = DCS { extraDCS :: x
+                                              , unDCS :: DebugClosure string s b }
+    deriving (Show)
+
+-- | Exclusive size
+newtype Size = Size { getSize :: Int }
+  deriving stock (Show, Generic)
+  deriving (Semigroup, Monoid) via (Sum Int)
+
+newtype InclusiveSize = InclusiveSize { getInclusiveSize :: Int }
+  deriving stock (Show, Generic)
+  deriving (Semigroup, Monoid) via (Sum Int)
+
 
 
 noSize :: DebugClosureWithSize string s b -> DebugClosure string s b
-noSize = forgetSize . unDCS
+noSize = unDCS
 
-dcSize :: DebugClosureWithSize string s b -> Int
-dcSize = getSize . unDCS
+dcSize :: DebugClosureWithSize string s b -> Size
+dcSize = extraDCS
 
-instance Tritraversable DebugClosureWithSize where
-  tritraverse f g h (DCS (WithSize n v)) = DCS . WithSize n <$> tritraverse f g h v
-
-data WithSize a = WithSize { getSize :: Int, forgetSize ::  a }
-      deriving (Functor, Traversable, Foldable, Show, Generic)
+instance Tritraversable (DebugClosureWithExtra x) where
+  tritraverse f g h (DCS x v) = DCS x <$> tritraverse f g h v
 
 
 

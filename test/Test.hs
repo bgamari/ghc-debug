@@ -192,8 +192,10 @@ p13 d = do
   putStrLn "Full Traversal complete"
   putStrLn ("Number of roots traversed: " ++ show (length results))
   let counts = map countNodes results
-  forM (zip results [0..]) $ \(re@(MkFix1 r), n) ->
+      inclusive_counts = map inclusive results
+  forM (zip results [0..]) $ \(re@(MkFix1 r), n) -> do
     putStrLn (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
+    print (inclusive re)
   putStrLn ("Total: " ++ show (sum counts))
   traceRequestLog d
 
