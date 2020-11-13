@@ -51,12 +51,13 @@ import GHC.Generics
 import GHC.Debug.Types.Ptr
 import Data.List
 import Data.Char
+import Data.Kind
 
 import Control.Applicative
 import Data.Monoid
 
 
-data Fix1 (string :: *) (f :: * -> *) (g :: * -> * -> * -> *) =
+data Fix1 (string :: Type) (f :: Type -> Type) (g :: Type -> Type -> Type -> Type) =
   MkFix1 (g string (Fix2 string f g) (Fix1 string f g))
 data Fix2 s f g = MkFix2 (f (Fix1 s f g))
 
@@ -408,7 +409,7 @@ instance Tritraversable DebugClosure where
   tritraverse h f g c =
     case c of
       ConstrClosure a1 bs ds str ->
-        (\cs str -> ConstrClosure a1 cs ds str) <$> traverse g bs <*> h str
+        (\cs cstr -> ConstrClosure a1 cs ds cstr) <$> traverse g bs <*> h str
       FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
       ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b

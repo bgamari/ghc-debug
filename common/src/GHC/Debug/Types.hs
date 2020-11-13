@@ -20,7 +20,6 @@ import System.IO.Unsafe
 import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
-import Debug.Trace
 import Data.Hashable
 
 import GHC.Debug.Types.Closures as T
@@ -146,10 +145,10 @@ putRequest (RequestInfoTables ts) =
   putCommand cmdRequestInfoTables $ do
     putWord16be $ fromIntegral (length ts)
     foldMap put ts
-putRequest (RequestBitmap info)       =
-  putCommand cmdRequestBitmap $ put info
-putRequest (RequestConstrDesc info) =
-  putCommand cmdRequestConstrDesc $ put info
+putRequest (RequestBitmap binfo)       =
+  putCommand cmdRequestBitmap $ put binfo
+putRequest (RequestConstrDesc cinfo) =
+  putCommand cmdRequestConstrDesc $ put cinfo
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 --putRequest (RequestFindPtr c)       =
@@ -267,7 +266,7 @@ concatStream = BSL.fromChunks . throwStream
 doRequest :: Handle -> Request a -> IO a
 doRequest hdl req = do
     BSL.hPutStr hdl $ runPut $ putRequest req
-    frames <- readFrames hdl
-    let x = runGet (getResponse req) (concatStream frames)
+    bframes <- readFrames hdl
+    let x = runGet (getResponse req) (concatStream bframes)
     return x
 
