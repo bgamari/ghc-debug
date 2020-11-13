@@ -23,11 +23,14 @@ module GHC.Debug.Types.Closures (
     , GHC.PrimType(..)
     , allClosures
     , Fix1(..)
+    , foldFix1
     , Fix2(..)
+    , foldFix2
     , UClosure
     , UStack
     , Tritraversable(..)
     , trimap
+    , countNodes
     , ConstrDesc(..)
     , parseConstrDesc
     ) where
@@ -49,6 +52,9 @@ import GHC.Debug.Types.Ptr
 import Data.List
 import Data.Char
 
+import Control.Applicative
+import Data.Monoid
+
 
 data Fix1 (string :: *) (f :: * -> *) (g :: * -> * -> * -> *) =
   MkFix1 (g string (Fix2 string f g) (Fix1 string f g))
@@ -64,6 +70,31 @@ instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
 
 type UClosure = Fix1 ConstrDesc GenStack DebugClosure
 type UStack   = Fix2 ConstrDesc GenStack DebugClosure
+
+foldFix1 :: (Functor f, Tritraversable g)
+         => (string -> r)
+         -> (f r -> r)
+         -> (g r r r -> r)
+         -> Fix1 string f g
+         -> r
+foldFix1 f g h (MkFix1 v) = h (trimap f (foldFix2 f g h) (foldFix1 f g h) v)
+
+foldFix2 :: (Functor f, Tritraversable g)
+         => (s -> r)
+         -> (f r -> r)
+         -> (g r r r -> r)
+         -> Fix2 s f g
+         -> r
+foldFix2 f g h (MkFix2 v) = g (fmap (foldFix1 f g h) v)
+
+countNodes :: UClosure -> Int
+countNodes =
+  getSum . foldFix1 (const (Sum 1))
+                    (add . getConst . traverse go)
+                    (add . getConst . tritraverse go go go)
+  where
+    go x = Const x
+    add = mappend (Sum 1)
 
 ------------------------------------------------------------------------
 -- Closures
