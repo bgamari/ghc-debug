@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 module GHC.Debug.Client
   ( Debuggee(..)
   , withDebuggee
@@ -20,6 +21,7 @@ module GHC.Debug.Client
   , dereferenceConDesc
   , fullTraversal
   , Tritraversable(..)
+  , traceRequestLog
   ) where
 
 import Control.Concurrent
@@ -53,11 +55,24 @@ import System.FilePath
 import System.Directory
 import Text.Printf
 
+
+import Data.IORef
+
+
 data Debuggee = Debuggee { debuggeeHdl :: Handle
                          , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)
                          , debuggeeDwarf :: Maybe Dwarf
                          , debuggeeFilename :: FilePath
+                         -- Keep track of how many of each request we make
+                         , debuggeeRequestCount :: IORef (HM.HashMap CommandId Int)
                          }
+
+
+-- | Add the request to the request count for debugging
+logRequest :: Debuggee -> Request a -> IO ()
+logRequest d r = do
+  let c = requestCommandId r
+  atomicModifyIORef' (debuggeeRequestCount d) ((,()) . HM.alter (Just . maybe 1 (+1)) c)
 
 
 debuggeeProcess :: FilePath -> FilePath -> IO CreateProcess
@@ -92,11 +107,15 @@ withDebuggeeSocket exeName sockName mdwarf action = do
     connect s (SockAddrUnix sockName)
     hdl <- socketToHandle s ReadWriteMode
     infoTableEnv <- newMVar mempty
-    action (Debuggee hdl infoTableEnv mdwarf exeName)
+    requestMap <- newIORef (HM.empty)
+    action (Debuggee hdl infoTableEnv mdwarf exeName requestMap)
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
 request :: Debuggee -> Request resp -> IO resp
-request d = doRequest (debuggeeHdl d)
+request d r = do
+  logRequest d r
+  doRequest (debuggeeHdl d) r
+
 
 lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
 lookupInfoTable d rc = do
@@ -223,3 +242,10 @@ warnIfNewer fpSrc fpBin = do
         printf "Warning: %s is newer than %s. Code snippets might be wrong!"
         fpSrc
         fpBin
+
+
+-- | Print out the number of request made for each request type
+traceRequestLog :: Debuggee -> IO ()
+traceRequestLog d = do
+  hm <- readIORef (debuggeeRequestCount d)
+  HM.foldMapWithKey (\c n -> putStrLn (show c ++ ": " ++ show n)) hm

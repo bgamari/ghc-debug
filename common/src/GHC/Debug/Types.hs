@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types) where
 
@@ -20,6 +21,7 @@ import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
 import Debug.Trace
+import Data.Hashable
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
@@ -57,6 +59,8 @@ data Request a where
     -- | Lookup source information of an info table
     RequestSourceInfo :: InfoTablePtr -> Request [String]
 
+deriving instance Show (Request a)
+
 -- | A bitmap that records whether each field of a stack frame is a pointer.
 newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
 
@@ -65,7 +69,22 @@ traversePtrBitmap f (PtrBitmap arr) = mapM f (A.elems arr)
 
 newtype CommandId = CommandId Word32
                   deriving (Eq, Ord, Show)
-                  deriving newtype (Binary)
+                  deriving newtype (Binary, Hashable)
+
+requestCommandId :: Request a -> CommandId
+requestCommandId r = case r of
+    RequestVersion {} -> cmdRequestVersion
+    RequestPause {}   -> cmdRequestPause
+    RequestResume {}  -> cmdRequestResume
+    RequestRoots {}   -> cmdRequestRoots
+    RequestClosures {}  -> cmdRequestClosures
+    RequestStack {}     -> cmdRequestStack
+    RequestInfoTables {}  -> cmdRequestInfoTables
+    RequestPoll {}         -> cmdRequestPoll
+    RequestSavedObjects {} -> cmdRequestSavedObjects
+    RequestBitmap {}       -> cmdRequestBitmap
+    RequestConstrDesc {}   -> cmdRequestConstrDesc
+    RequestSourceInfo {}   -> cmdRequestSourceInfo
 
 cmdRequestVersion :: CommandId
 cmdRequestVersion = CommandId 1
