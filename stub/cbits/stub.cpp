@@ -335,6 +335,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                 trace("WORD_SIZE %lu\n", WORD_SIZE);
                 trace("CLOSURE_SIZE_PTR %p\n", ptr);
                 trace("CLOSURE_SIZE %u\n", closure_sizeW(ptr));
+                trace("CLOSURE_TYPE %d\n", ptr->header.info->type);
 
                 size_t len = closure_sizeW(ptr) * WORD_SIZE;
                 uint32_t len_payload = htonl(len);
