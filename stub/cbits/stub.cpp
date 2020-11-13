@@ -54,7 +54,8 @@ enum commands {
     CMD_SAVED_OBJECTS = 9,
     CMD_FIND_PTR = 10,
     CMD_CON_DESCR = 11,
-    CMD_SOURCE_INFO = 12
+    CMD_SOURCE_INFO = 12,
+    CMD_GET_STACK = 13
 };
 
 enum response_code {
@@ -336,6 +337,27 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                 resp.write(len_payload);
                 trace("GET_CLOSURE_WRITE2 %d\n", n);
                 resp.write((const char *) ptr, len);
+            }
+            resp.finish(RESP_OKAY);
+        }
+        break;
+
+      case CMD_GET_STACK:
+        {
+        if (!paused) {
+            resp.finish(RESP_NOT_PAUSED);
+        } else {
+            StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
+            trace("STACK_GET %p\n", ptr);
+            trace("STACK_SIZE %u\n", closure_sizeW(ptr));
+            StgStack *s = ((StgStack *) ptr);
+
+
+            size_t len = ((s->stack_size + s->stack) - s->sp) * WORD_SIZE;
+            uint32_t len_payload = htonl(len);
+            trace("GET_CLOSURE_WRITE1 %lu\n", len);
+            resp.write(len_payload);
+            resp.write((const char *) s->sp, len);
             }
             resp.finish(RESP_OKAY);
         }

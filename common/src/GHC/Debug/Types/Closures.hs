@@ -18,6 +18,7 @@ module GHC.Debug.Types.Closures (
     , StgInfoTable(..)
     , FieldValue(..)
     , DebugStackFrame(..)
+    , GenStack(..)
     , Stack
     , GHC.PrimType(..)
     , allClosures
@@ -61,15 +62,13 @@ instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
-type UClosure = Fix1 ConstrDesc DebugStackFrame DebugClosure
-type UStack   = Fix2 ConstrDesc DebugStackFrame DebugClosure
+type UClosure = Fix1 ConstrDesc GenStack DebugClosure
+type UStack   = Fix2 ConstrDesc GenStack DebugClosure
 
 ------------------------------------------------------------------------
 -- Closures
 
 type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
-
-type Stack = DebugStackFrame ClosurePtr
 
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
@@ -228,7 +227,7 @@ data DebugClosure string s b
       -- pointers
       , _link :: !b
       , global_link :: !b
-      , tsoStack :: !b -- ^ stackobj from StgTSO
+      , tsoStack :: !s -- ^ stackobj from StgTSO
       , trec :: !b
       , blocked_exceptions :: !b
       , bq :: !b
@@ -244,12 +243,6 @@ data DebugClosure string s b
       , prof :: Maybe ProfTypes.StgTSOProfInfo
       }
 
-  | StackClosure
-     { info :: !StgInfoTable
-     , size :: !Word32 -- ^ stack size in *words*
-     , stack_dirty :: !Word8 -- ^ non-zero => dirty
-     , stack_marking :: Word8
-     }
 
   | WeakClosure
      { info        :: !StgInfoTable
@@ -313,6 +306,15 @@ data DebugClosure string s b
         { info       :: !StgInfoTable
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
+
+type Stack = GenStack ClosurePtr
+
+data GenStack b = Stack
+     { stack_size :: !Word32 -- ^ stack size in *words*
+     , stack_dirty :: !Word8 -- ^ non-zero => dirty
+     , stack_marking :: Word8
+     , frames :: [DebugStackFrame b]
+     } deriving (Functor, Show, Generic, Foldable, Traversable)
 
 data DebugStackFrame b
   = DebugStackFrame
@@ -394,8 +396,9 @@ instance Tritraversable DebugClosure where
       BlockingQueueClosure a1 b1 b2 b3 b4 ->
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
       TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
-        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
-      StackClosure a1 a2 a3 a4 -> pure (StackClosure a1 a2 a3 a4)
+        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> f b3 <*> g b4 <*> g b5 <*> g b6
+      -- Stack closures are handled specially.. for now.
+      --StackClosure a1 a2 a3 a4 a5 -> StackClosure a1 a2 a3 a4 <$> traverse (traverse g) a5
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
       IntClosure p i -> pure (IntClosure p i)

@@ -46,9 +46,11 @@ newtype ClosurePtr = ClosurePtr Word64
 instance Show ClosurePtr where
   show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
-data StackCont = StackCont RawStack deriving Show
+data StackCont = StackCont StackPtr deriving Show
 
 newtype StackPtr = StackPtr Word64
+                   deriving (Eq, Ord)
+                   deriving newtype (Binary, Hashable)
 
 instance Show StackPtr where
   show (StackPtr p) =  "0x" ++ showHex (fromBE64 p) ""
@@ -66,10 +68,12 @@ subtractStackPtr (StackPtr c) (ClosurePtr c2) =
 rawClosureSize :: RawClosure -> Int
 rawClosureSize (RawClosure s) = BS.length s
 
+{-
 getRawStack :: StackPtr -> ClosurePtr -> RawClosure -> RawStack
 getRawStack sp c (RawClosure s) =
   let k = fromIntegral (subtractStackPtr sp c)
   in RawStack (BS.drop k s)
+  -}
 
 
 newtype RawInfoTable = RawInfoTable BS.ByteString

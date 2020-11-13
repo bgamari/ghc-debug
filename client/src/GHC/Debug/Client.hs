@@ -7,7 +7,6 @@ module GHC.Debug.Client
   , Request(..)
   , getInfoTblPtr
   , decodeClosure
-  , decodeStack
   , FieldValue(..)
   , decodeInfoTable
   , lookupInfoTable
@@ -189,30 +188,28 @@ dereferenceClosures d cs = do
     zipWithM decodeClosure raw_its (zip cs raw_cs)
 
 dereferenceStack :: Debuggee -> StackCont -> IO Stack
-dereferenceStack d (StackCont stack) = do
-  print stack
-  i <- lookupInfoTable d (coerce stack)
-  let st_it = decodeInfoTable . fst $ i
-  print i
-  print st_it
-  bt <- request d (RequestBitmap (getInfoTblPtr (coerce stack)))
-  let decoded_stack = decodeStack stack st_it bt
-  print decoded_stack
+dereferenceStack d (StackCont sp) = do
+  stack <- request d (RequestStack sp)
+  let get_bitmap p = request d (RequestBitmap (getInfoTblPtr p))
+      get_info_table rc =  lookupInfoTable d rc
+  decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
+
 
 dereferenceConDesc :: Debuggee -> ClosurePtr -> IO ConstrDesc
 dereferenceConDesc d i = request d (RequestConstrDesc i)
 
 fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
 fullTraversal d c = do
+--  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
   dc <- dereferenceClosure d c
-  print dc
+--  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
   MkFix1 <$> tritraverse (dereferenceConDesc d) (fullStackTraversal d) (fullTraversal d)  dc
 
 fullStackTraversal :: Debuggee -> StackCont -> IO UStack
 fullStackTraversal d sc = do
   ds <- dereferenceStack d sc
-  print ds
+--  print ("FULL STACK", ds)
   MkFix2 <$> traverse (fullTraversal d) ds
 
 -- | Print a warning if source file (first argument) is newer than the binary (second argument)

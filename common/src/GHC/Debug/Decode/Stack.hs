@@ -1,6 +1,5 @@
 module GHC.Debug.Decode.Stack
-  ( FieldValue(..)
-  , decodeStack
+  ( decodeStack
   ) where
 
 import Data.Word
@@ -15,18 +14,34 @@ import GHC.Exts.Heap.ClosureTypes
 import GHC.Exts.Heap.InfoTable.Types
 import System.Endian
 
+import Data.Coerce
 
-decodeStack :: RawStack
-            -> StgInfoTable
-            -> PtrBitmap
-            -> Stack
-decodeStack (RawStack closure) itbl bitmap =
-  B.runGet (getStack bitmap itbl) (BSL.fromStrict closure)
+import GHC.Debug.Decode
 
-getStack :: PtrBitmap
+decodeStack :: (RawClosure -> IO (RawInfoTable, RawClosure))
+            -> (RawClosure -> IO PtrBitmap)
+            -> RawStack
+            -> IO Stack
+decodeStack getInfoTable getBitmap rs = do
+  frames <- get_frames rs
+  return (Stack 0 0 0 frames)
+  where
+    get_frames rs@(RawStack c) = do
+      (itbl, _) <- getInfoTable (coerce rs)
+      bm <- getBitmap (coerce rs)
+      let st_it = decodeInfoTable itbl
+      let res = B.runGetIncremental (getFrame bm st_it) `pushChunk` c
+      case res of
+        Fail _rem _offset err -> error err
+        Partial _inp -> error "Not enough input"
+        Done more _offset v
+          | BS.null more -> return []
+          | otherwise -> (v:) <$> get_frames (RawStack  more)
+
+getFrame :: PtrBitmap
          -> StgInfoTable
-         -> Get Stack
-getStack bitmap itbl =
+         -> Get (DebugStackFrame ClosurePtr)
+getFrame bitmap itbl =
     case tipe itbl of
       RET_BCO ->
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO

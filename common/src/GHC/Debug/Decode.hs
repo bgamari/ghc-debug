@@ -85,15 +85,17 @@ decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = do
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
         -- process
-        --print ("Closure", closPtr)
-        --print ("itbl", itblPtr)
+        -- Printing this return value can lead to segfaults because the
+        -- pointer for constrDesc won't point to a string after being
+        -- decoded.
         r <- getClosureRaw (ptrToBox closPtr)
-        --print ("Decoded", r)
+        -- print ("DECODED", r)
         return $ trimap (const ptr) stackCont  ClosurePtr . convertClosure
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont
-    stackCont sp =  StackCont (getRawStack (StackPtr sp) ptr rc)
+    stackCont sp =  StackCont (StackPtr sp)
+      --(getRawStack (StackPtr sp) ptr rc)
 
 
 fixTNTC :: Ptr a -> Ptr StgInfoTable
@@ -107,6 +109,5 @@ fixTNTC ptr
 
 decodeInfoTable :: RawInfoTable -> StgInfoTable
 decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
-  print itbl
   allocate itbl $ \itblPtr -> do
     peekItbl itblPtr

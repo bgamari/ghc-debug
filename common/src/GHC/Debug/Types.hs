@@ -37,6 +37,8 @@ data Request a where
     RequestRoots :: Request [ClosurePtr]
     -- | Request a set of closures.
     RequestClosures :: [ClosurePtr] -> Request [RawClosure]
+    -- | Request a stack
+    RequestStack :: StackPtr -> Request RawStack
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
     -- | Wait for the debuggee to pause itself and then
@@ -101,6 +103,9 @@ cmdRequestConstrDesc = CommandId 11
 cmdRequestSourceInfo :: CommandId
 cmdRequestSourceInfo = CommandId 12
 
+cmdRequestStack :: CommandId
+cmdRequestStack = CommandId 13
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral (4 + BSL.length body')
@@ -131,6 +136,7 @@ putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 --putRequest (RequestFindPtr c)       =
 --  putCommand cmdRequestFindPtr $ put c
 putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
+putRequest (RequestStack sp) = putCommand cmdRequestStack $ put sp
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -145,6 +151,7 @@ getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
 --getResponse (RequestFindPtr _c)  = many get
 getResponse (RequestSourceInfo _c) = getIPE
+getResponse (RequestStack _)       = getRawStack
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do
@@ -173,6 +180,12 @@ getRawClosure :: Get RawClosure
 getRawClosure = do
   len <- getInt32be
   RawClosure <$> getByteString (fromIntegral len)
+
+-- The raw stack is sp to the end of stack
+getRawStack :: Get RawStack
+getRawStack = do
+  len <- getInt32be
+  RawStack <$> getByteString (fromIntegral len)
 
 getRawInfoTable :: Get RawInfoTable
 getRawInfoTable = do
