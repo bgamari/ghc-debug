@@ -14,7 +14,7 @@ extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     GHC.Debug.Client
+  exposed-modules:     GHC.Debug.Client, GHC.Debug.Client.Monad
   build-depends:       base >=4.12 && <4.14,
                        network >=2.6 && <2.7,
                        unordered-containers,
