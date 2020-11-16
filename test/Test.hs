@@ -188,14 +188,15 @@ p13 e = pauseThen e $ do
   results <- forM (zip rs [0..]) $ \(r, n) -> do
               traceWrite ("ROOT", n, r)
               fullTraversal r
-  traceWrite "Full Traversal complete"
-  traceWrite ("Number of roots traversed: " ++ show (length results))
+  return results
+  traceMsg "Full Traversal complete"
+  traceMsg ("Number of roots traversed: " ++ show (length results))
   let counts = map countNodes results
       inclusive_counts = map inclusive results
   forM (zip results [0..]) $ \(re@(MkFix1 r), n) -> do
-    traceWrite (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
+    traceMsg (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
     --print (inclusive re)
-  traceWrite ("Total: " ++ show (sum counts))
+  traceMsg ("Total: " ++ show (sum counts))
 
 
 p14 e = pauseThen e $ do

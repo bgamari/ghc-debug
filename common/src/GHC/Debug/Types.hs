@@ -61,6 +61,7 @@ data Request a where
 
 deriving instance Show (Request a)
 deriving instance Eq (Request a)
+deriving instance Ord (Request a)
 
 instance Hashable (Request a) where
   hashWithSalt s r = case r of

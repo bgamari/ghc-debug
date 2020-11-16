@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 module GHC.Debug.Client.Monad
   ( Debuggee(..)
   , withDebuggee
@@ -17,6 +18,7 @@ module GHC.Debug.Client.Monad
   , runTrace
   , Env(..)
   , traceWrite
+  , traceMsg
   ) where
 
 import Control.Concurrent
@@ -77,6 +79,9 @@ runTrace e act = do
 traceWrite :: Show a => a -> GenHaxl u String ()
 traceWrite = tellWrite . show
 
+traceMsg :: String -> GenHaxl u String ()
+traceMsg = tellWrite
+
 
 -- | Add the request to the request count for debugging
 logRequest :: Debuggee -> Request a -> IO ()
@@ -127,8 +132,8 @@ withDebuggeeSocket exeName sockName mdwarf action = do
     requestMap <- newIORef HM.empty
     let ss = stateSet (RequestState hdl) stateEmpty
     new_env <- initEnv ss (Debuggee hdl infoTableEnv mdwarf exeName requestMap)
-    -- Turn on data fetch stats
-    let new_flags = defaultFlags { report = 5 }
+    -- Turn on data fetch stats with report = 3
+    let new_flags = defaultFlags { report = 0 }
     action (new_env { Haxl.Core.flags = new_flags })
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
@@ -144,12 +149,61 @@ instance DataSourceName Request where
 instance ShowP Request where
   showp = show
 
+-- | Group together RequestClosures and RequestInfoTables to avoid
+-- some context switching.
+groupFetches :: Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [RawInfoTable])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
+groupFetches h cs is todo [] = dispatch h cs is (reverse todo)
+groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
+  case r of
+    RequestInfoTables is' -> groupFetches h cs ((is', resp):is) todo bs
+    RequestClosures cs' -> groupFetches h ((cs', resp):cs) is todo bs
+    _ -> groupFetches h cs is (b:todo) bs
+
+dispatch :: Handle
+         -> [([ClosurePtr], ResultVar [RawClosure])]
+         -> [([InfoTablePtr], ResultVar [RawInfoTable])]
+         -> [BlockedFetch Request]
+         -> IO ()
+dispatch h cs its other = do
+  mapM_ do_one other
+  -- These can be used to inspect how much batching is happening
+--  print (length cs, map fst cs)
+--  print (length its, map fst its)
+  do_many RequestClosures cs
+  do_many RequestInfoTables its
+  where
+    do_one (BlockedFetch req resp) = do
+      res <- doRequest h req
+      putSuccess resp res
+
+    do_many :: ([a] -> Request [b]) -> [([a], ResultVar [b])] -> IO ()
+    do_many mk_req ms = do
+      let req = mk_req (concatMap fst ms)
+      results <- doRequest h req
+      recordResults results ms
+
+
+
+-- | Write the correct number of results to each result var
+recordResults :: [a] -> [([b], ResultVar [a])] -> IO ()
+recordResults [] [] = return ()
+recordResults res ((length -> n, var):xs) =
+  putSuccess var here >> recordResults later xs
+  where
+    (here, later) = splitAt n res
+
+
+_singleFetches :: Handle -> [BlockedFetch Request] -> IO ()
+_singleFetches h bs = mapM_ do_one bs
+      where
+        do_one (BlockedFetch req resp) = do
+          res <- doRequest h req
+          putSuccess resp res
+
 instance DataSource u Request where
-  fetch (RequestState h) fs u = SyncFetch (\rs -> mapM_ do_one rs)
-    where
-      do_one (BlockedFetch req resp) = do
-        case req of
-          RequestInfoTables [] -> putSuccess resp []
-          _ -> do
-            res <- doRequest h req
-            putSuccess resp res
+  fetch (RequestState h) fs u =
+    -- Grouping together fetches only shaves off about 0.01s on the simple
+    -- benchmark
+    SyncFetch (groupFetches h [] [] [])
+    --SyncFetch (_singleFetches h)
+
