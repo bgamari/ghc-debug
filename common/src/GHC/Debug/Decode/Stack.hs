@@ -18,10 +18,11 @@ import Data.Coerce
 
 import GHC.Debug.Decode
 
-decodeStack :: (RawClosure -> IO (RawInfoTable, RawClosure))
-            -> (RawClosure -> IO PtrBitmap)
+decodeStack :: Monad m
+            => (RawClosure -> m (RawInfoTable, RawClosure))
+            -> (RawClosure -> m PtrBitmap)
             -> RawStack
-            -> IO Stack
+            -> m Stack
 decodeStack getInfoTable getBitmap rs = do
   frames <- get_frames rs
   return (Stack 0 0 0 frames)

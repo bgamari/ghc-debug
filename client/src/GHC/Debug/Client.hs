@@ -1,9 +1,13 @@
 {-# LANGUAGE TupleSections #-}
 module GHC.Debug.Client
   ( Debuggee(..)
+  , DebugM
   , withDebuggee
   , withDebuggeeSocket
   , pauseDebuggee
+  , pause
+  , pauseThen
+  , resume
   , request
   , Request(..)
   , getInfoTblPtr
@@ -55,14 +59,23 @@ import System.Directory
 import Text.Printf
 
 import GHC.Debug.Client.Monad
+import Haxl.Core hiding (Request)
+import Haxl.Core.Monad (unsafeLiftIO)
 
 
 import Data.IORef
 
 
-lookupInfoTable :: Debuggee -> RawClosure -> IO (RawInfoTable, RawClosure)
-lookupInfoTable d rc = do
+lookupInfoTable :: RawClosure -> DebugM (RawInfoTable, RawClosure)
+lookupInfoTable rc = do
     let ptr = getInfoTblPtr rc
+    [itbl] <- request (RequestInfoTables [ptr])
+    return (itbl, rc)
+
+
+
+{-
+    -- Memoisation taken care of by Haxl
     itblEnv <- readMVar (debuggeeInfoTblEnv d)
     case HM.lookup ptr itblEnv of
       Nothing -> do
@@ -70,10 +83,15 @@ lookupInfoTable d rc = do
         modifyMVar_ (debuggeeInfoTblEnv d) $ return . HM.insert ptr itbl
         return (itbl, rc)
       Just itbl ->  return (itbl, rc)
+-}
 
-pauseDebuggee :: Debuggee -> IO a -> IO a
-pauseDebuggee d =
-    bracket_ (void $ request d RequestPause) (void $ request d RequestResume)
+pause e = runHaxl e (request RequestPause)
+pauseThen e d =
+  pause e >> runTrace e d
+resume e = runHaxl e (request RequestResume)
+
+pauseDebuggee :: Env Debuggee String -> IO a -> IO a
+pauseDebuggee e act = bracket_ (pause e) (resume e)  act
 
 
 lookupDwarf :: Debuggee -> InfoTablePtr -> Maybe ([FilePath], Int, Int)
@@ -132,44 +150,44 @@ showFileSnippet d (fps, l, c) = go fps
            let sn = show n
            in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
 
-dereferenceClosure :: Debuggee -> ClosurePtr -> IO Closure
-dereferenceClosure d c = noSize . head <$> dereferenceClosures d [c]
+dereferenceClosure :: ClosurePtr -> DebugM Closure
+dereferenceClosure c = noSize . head <$> dereferenceClosures [c]
 
-dereferenceSizedClosure :: Debuggee -> ClosurePtr -> IO SizedClosure
-dereferenceSizedClosure d c = head <$> dereferenceClosures d [c]
+dereferenceSizedClosure :: ClosurePtr -> DebugM SizedClosure
+dereferenceSizedClosure c = head <$> dereferenceClosures [c]
 
-dereferenceClosures  :: Debuggee -> [ClosurePtr] -> IO [SizedClosure]
-dereferenceClosures d cs = do
-    raw_cs <- request d (RequestClosures cs)
+dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
+dereferenceClosures cs = do
+    raw_cs <- request (RequestClosures cs)
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
-    raw_its <- request d (RequestInfoTables its)
+    raw_its <- request (RequestInfoTables its)
     return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
 
-dereferenceStack :: Debuggee -> StackCont -> IO Stack
-dereferenceStack d (StackCont sp) = do
-  stack <- request d (RequestStack sp)
-  let get_bitmap p = request d (RequestBitmap (getInfoTblPtr p))
-      get_info_table rc =  lookupInfoTable d rc
+dereferenceStack :: StackCont -> DebugM Stack
+dereferenceStack (StackCont sp) = do
+  stack <- request (RequestStack sp)
+  let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
+      get_info_table rc =  lookupInfoTable rc
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
 
 
-dereferenceConDesc :: Debuggee -> ClosurePtr -> IO ConstrDesc
-dereferenceConDesc d i = request d (RequestConstrDesc i)
+dereferenceConDesc :: ClosurePtr -> DebugM ConstrDesc
+dereferenceConDesc i = request (RequestConstrDesc i)
 
-fullTraversal :: Debuggee -> ClosurePtr -> IO UClosure
-fullTraversal d c = do
+fullTraversal :: ClosurePtr -> DebugM UClosure
+fullTraversal c = do
 --  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
-  dc <- dereferenceSizedClosure d c
+  dc <- dereferenceSizedClosure c
 --  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
-  MkFix1 <$> tritraverse (dereferenceConDesc d) (fullStackTraversal d) (fullTraversal d)  dc
+  MkFix1 <$> tritraverse dereferenceConDesc fullStackTraversal fullTraversal  dc
 
-fullStackTraversal :: Debuggee -> StackCont -> IO UStack
-fullStackTraversal d sc = do
-  ds <- dereferenceStack d sc
+fullStackTraversal :: StackCont -> DebugM UStack
+fullStackTraversal sc = do
+  ds <- dereferenceStack sc
 --  print ("FULL STACK", ds)
-  MkFix2 <$> traverse (fullTraversal d) ds
+  MkFix2 <$> traverse fullTraversal ds
 
 -- | Print a warning if source file (first argument) is newer than the binary (second argument)
 warnIfNewer :: FilePath -> FilePath -> IO ()
@@ -185,7 +203,7 @@ warnIfNewer fpSrc fpBin = do
 
 
 -- | Print out the number of request made for each request type
-traceRequestLog :: Debuggee -> IO ()
+traceRequestLog :: Env u w -> IO ()
 traceRequestLog d = do
-  hm <- readIORef (debuggeeRequestCount d)
-  HM.foldMapWithKey (\c n -> putStrLn (show c ++ ": " ++ show n)) hm
+  s <- readIORef (statsRef d)
+  putStrLn (ppStats s)

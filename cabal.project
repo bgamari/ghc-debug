@@ -1,4 +1,4 @@
-packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test
+packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test, Haxl
 
 repository head.hackage.ghc.haskell.org
    url: https://ghc.gitlab.haskell.org/head.hackage/

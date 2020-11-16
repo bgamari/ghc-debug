@@ -20,9 +20,11 @@ let
         { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/427334/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
           hash = "116dm1hqi7bmz4zh65miyhw2rzlv2ajlhrv6namfhgrdcj048gal";
         };
+  ghc-utils = import ../ghc-utils {};
 
 in
   np.mkShell { buildInputs = [ ghc
+                               ghc-utils
                                np.ncurses
                                np.wget  # Used by cabal-install for https support when communicating with head.hackage
                                np.cabal-install

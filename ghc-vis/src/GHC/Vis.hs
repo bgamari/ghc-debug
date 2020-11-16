@@ -473,10 +473,11 @@ react dbg window canvas = do
   where doSwitch = putStrLn "Cannot switch view: Graph view disabled at build"
 #endif
 
+-- TODO
 derefBox :: Debuggee -> DerefFunction
-derefBox dbg cp = do
-  c <- dereferenceClosure dbg cp
-  tritraverse (dereferenceConDesc dbg) pure pure c
+derefBox dbg cp = undefined $ do
+  c <- dereferenceClosure cp
+  tritraverse dereferenceConDesc pure pure c
 
 runCorrect :: MonadIO m => (View -> f) -> m f
 runCorrect f = do

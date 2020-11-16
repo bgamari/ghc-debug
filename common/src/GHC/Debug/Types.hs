@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types) where
 
@@ -59,6 +60,23 @@ data Request a where
     RequestSourceInfo :: InfoTablePtr -> Request [String]
 
 deriving instance Show (Request a)
+deriving instance Eq (Request a)
+
+instance Hashable (Request a) where
+  hashWithSalt s r = case r of
+    RequestVersion ->  s `hashWithSalt` cmdRequestVersion
+    RequestPause   ->  s `hashWithSalt` cmdRequestPause
+    RequestResume  ->  s `hashWithSalt` cmdRequestResume
+    RequestRoots   -> s `hashWithSalt` cmdRequestRoots
+    RequestClosures cs -> s `hashWithSalt` cmdRequestClosures `hashWithSalt` cs
+    RequestStack sp    -> s `hashWithSalt`  cmdRequestStack `hashWithSalt` sp
+    RequestInfoTables itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
+    RequestPoll           -> s `hashWithSalt` cmdRequestPoll
+    RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
+    RequestBitmap itp      -> s `hashWithSalt` cmdRequestBitmap `hashWithSalt` itp
+    RequestConstrDesc cp   -> s `hashWithSalt` cmdRequestConstrDesc `hashWithSalt` cp
+    RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
+
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
 newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
@@ -243,7 +261,7 @@ readFrames hdl = do
     (respLen, status) <- runGet frameHeader <$> BSL.hGet hdl 6
     respBody <- BS.hGet hdl (fromIntegral respLen)
     case status of
-      OkayContinues -> do rest <- unsafeInterleaveIO $ readFrames hdl
+      OkayContinues -> do rest <- readFrames hdl
                           return $ Next respBody rest
       Okay     -> return $ Next respBody (End Nothing)
       Error err-> return $ End (Just err)
@@ -269,4 +287,5 @@ doRequest hdl req = do
     bframes <- readFrames hdl
     let x = runGet (getResponse req) (concatStream bframes)
     return x
+
 

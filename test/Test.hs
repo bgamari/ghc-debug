@@ -1,6 +1,7 @@
 module Main where
 
 import GHC.Debug.Client
+import GHC.Debug.Client.Monad
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
 
@@ -32,7 +33,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" Nothing p13
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" Nothing (\e -> p13 e >> traceRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -46,45 +47,44 @@ main = do
   -}
 
 -- Test pause/resume
-p1 d = pauseDebuggee d (void $ getChar)
+p1 e = pauseDebuggee e ((void $ getChar))
 
 
 -- Testing error codes
-p2 d = do
-  request d RequestPause
-  print "req1"
-  request d RequestPause
-  request d RequestPause
-  request d RequestPause
+p2 e = runTrace e $ do
+  request RequestPause
+  traceWrite "req1"
+  request RequestPause
+  request RequestPause
+  request RequestPause
 
 -- Testing get version
-p3 d = do
-  request d RequestVersion >>= print
-  request d RequestPause
-  request d RequestResume
+p3 e = runTrace e $ do
+  ver <- request RequestVersion
+  request RequestPause
+  request RequestResume
+  return ver
+
 
 -- Testing get roots
-p4 d = do
-  request d RequestPause
-  request d RequestRoots >>= print
+p4 e = pauseThen e $ do
+  request RequestRoots >>= traceWrite
 
 -- request closures
-p5 d = do
-  request d RequestPause
-  r <- request d RequestRoots
-  print (length r)
+p5 e = pauseThen e $ do
+  r <- request RequestRoots
+  traceWrite (length r)
   forM_ [0..length r - 1] $ \i -> do
     let cs = [r !! i]
-    print cs
-    dereferenceClosures d cs
+    traceWrite cs
+    dereferenceClosures cs
 
 -- request all closures
-p5a d = do
-  request d RequestPause
-  rs <- request d RequestRoots
-  print rs
-  cs <- request d (RequestClosures rs)
-  print cs
+p5a e = pauseThen e $ do
+  rs <- request RequestRoots
+  traceWrite rs
+  cs <- request (RequestClosures rs)
+  traceWrite cs
   {-
   let it = getInfoTblPtr c
   print it
@@ -95,34 +95,33 @@ p5a d = do
   -}
 
 -- request all closures
-p5b d = do
-  request d RequestPause
-  rs <- request d RequestRoots
-  dereferenceClosures d rs
+p5b e = pauseThen e $ do
+  rs <- request RequestRoots
+  dereferenceClosures rs
 
 
 
-p6 d = do
+
+
+p6 e = do
   -- This blocks until a pause
-  request d RequestPoll
-  print "POLL"
+  run e $ request RequestPoll
+  putStrLn "POLL"
   -- Should return already paused
-  request d RequestPause
-  print "PAUSE"
+  pause e
+  putStrLn "PAUSE"
   -- Now unpause
-  request d RequestResume
-  print "RESUME"
+  resume e
+  putStrLn "RESUME"
 
 -- Request saved objects
-p7 d = do
-  request d RequestPause
-  request d RequestSavedObjects >>= print
+p7 e = pauseThen e $ do
+  request RequestSavedObjects >>= traceWrite
 
 -- request saved objects
-p8 d = do
-  request d RequestPause
-  sos <- request d RequestSavedObjects
-  print =<< dereferenceClosures d sos
+p8 e = pauseThen e $ do
+  sos <- request RequestSavedObjects
+  traceWrite =<< dereferenceClosures sos
 
 -- Using findPtr
 {-
@@ -138,17 +137,18 @@ p10 d = do
   request d RequestPause
   (s:_) <- request d RequestRoots
   request d (RequestFindPtr s) >>= print
-  -}
 
-p11 d = do
+p11 e = do
   threadDelay 10000000
-  request d RequestPause
-  ss <- request d RequestSavedObjects
-  [c] <- request d (RequestClosures ss)
-  let itb = getInfoTblPtr c
+  pause e
+  itb <- runTrace e $ do
+    ss <- request d RequestSavedObjects
+    [c] <- request d (RequestClosures ss)
+    return (getInfoTblPtr c)
   case lookupDwarf d itb of
     Just r -> showFileSnippet d r
     Nothing -> print "No Dwarf!"
+  -}
 
 {-
 p12 d = do
@@ -182,32 +182,30 @@ p12 d = do
       -}
 
 -- testing stack decoding
-p13 d = do
-  request d RequestPause
-  rs <- request d RequestRoots
-  putStrLn ("NUMBER OF ROOTS = " ++ show (length rs))
+p13 e = pauseThen e $ do
+  rs <- request RequestRoots
+  traceWrite ("NUMBER OF ROOTS = " ++ show (length rs))
   results <- forM (zip rs [0..]) $ \(r, n) -> do
-              print ("ROOT", n, r)
-              fullTraversal d r
-  putStrLn "Full Traversal complete"
-  putStrLn ("Number of roots traversed: " ++ show (length results))
+              traceWrite ("ROOT", n, r)
+              fullTraversal r
+  traceWrite "Full Traversal complete"
+  traceWrite ("Number of roots traversed: " ++ show (length results))
   let counts = map countNodes results
       inclusive_counts = map inclusive results
   forM (zip results [0..]) $ \(re@(MkFix1 r), n) -> do
-    putStrLn (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
+    traceWrite (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
     --print (inclusive re)
-  putStrLn ("Total: " ++ show (sum counts))
-  traceRequestLog d
+  traceWrite ("Total: " ++ show (sum counts))
 
 
-p14 d = do
-  request d RequestPause
-  rs <- request d RequestSavedObjects
+p14 e = pauseThen e $ do
+  rs <- request RequestSavedObjects
   forM_ rs $ \r -> do
-    print r
-    res <- fullTraversal d r
-    print res
+    traceWrite r
+    res <- fullTraversal r
+    traceWrite res
 
+{-
 -- Testing ghc-vis
 p15 d = do
   request d RequestPause
@@ -217,18 +215,21 @@ p15 d = do
   getChar
 
 -- pretty-print graph
-p16 d = do
-  request d RequestPause
-  [so] <- request d RequestSavedObjects
-  hg <- buildHeapGraph (derefBox d) 20 () so
+p16 e = do
+  pause e
+  hg <- run e $ do
+          so <- request RequestSavedObjects
+          buildHeapGraph derefBox 20 () so
   putStrLn $ ppHeapGraph hg
+  -}
 
 -- Testing IPE
-p17 d = do
-  request d RequestPause
-  [so] <- request d RequestSavedObjects
-  [c] <- request d (RequestClosures [so])
-  let it = getInfoTblPtr c
-  print c
-  print it
-  print =<< request d (RequestSourceInfo it)
+p17 e = do
+  pause e
+  runTrace e $ do
+    [so] <- request RequestSavedObjects
+    [c] <- request (RequestClosures [so])
+    let it = getInfoTblPtr c
+    traceWrite c
+    traceWrite it
+    traceWrite =<< request (RequestSourceInfo it)

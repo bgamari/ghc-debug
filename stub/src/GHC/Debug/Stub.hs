@@ -42,4 +42,3 @@ saveClosures xs = do
   sps   <- mapM (\(Box x) -> castStablePtrToPtr <$> newStablePtr x) xs
   withArray sps $ \sps_arr ->
     c_saveClosures (fromIntegral (length xs)) sps_arr
-
