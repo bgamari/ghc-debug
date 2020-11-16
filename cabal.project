@@ -1,4 +1,4 @@
-packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test, Haxl
+packages: common, stub, client, dwarfadt, dwarf, ghc-vis, test, dyepack-test
 
 repository head.hackage.ghc.haskell.org
    url: https://ghc.gitlab.haskell.org/head.hackage/
@@ -14,6 +14,11 @@ source-repository-package
   type: git
   location: https://github.com/mpickering/threepenny-utils.git
   tag: 75edf621ce69f09b7c04de4569d9737e54f8e636
+
+source-repository-package
+  type: git
+  location: https://github.com/mpickering/haxl.git
+  tag: b6aedf24ff874e18f66160af4c4d3361d3ff4144
 
 allow-newer:
   Cabal,
