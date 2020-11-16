@@ -3,6 +3,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE GHCForeignImportPrim #-}
 {-# LANGUAGE UnliftedFFITypes #-}
+{-# LANGUAGE BangPatterns #-}
 #if !MIN_VERSION_ghc_heap(8,7,0)
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -72,14 +73,15 @@ data Ptr' a = Ptr' a
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
-decodeClosureWithSize :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO SizedClosure
-decodeClosureWithSize rit (ptr, rc) = do
+decodeClosureWithSize :: RawInfoTable -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeClosureWithSize rit (ptr, rc) =
     let size = Size (rawClosureSize rc)
-    DCS size <$> decodeClosure rit (ptr, rc)
+        !c = decodeClosure rit (ptr, rc)
+    in DCS size c
 
 
-decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) -> IO Closure
-decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = do
+decodeClosure :: RawInfoTable -> (ClosurePtr, RawClosure) ->  Closure
+decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate itbl $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
@@ -94,7 +96,7 @@ decodeClosure (RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = do
         -- Printing this return value can lead to segfaults because the
         -- pointer for constrDesc won't point to a string after being
         -- decoded.
-        r <- getClosureRaw (ptrToBox closPtr)
+        !r <- getClosureRaw (ptrToBox closPtr)
         -- print ("DECODED", r)
         return $ trimap (const ptr) stackCont  ClosurePtr . convertClosure
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
