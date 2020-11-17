@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+// This used to be 4096 but that was too small
 #define MAX_CMD_SIZE 10000
 
 #define WORD_SIZE sizeof(unsigned long)
