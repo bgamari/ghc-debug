@@ -329,10 +329,11 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             trace("GET_CLOSURE\n");
             uint16_t n_raw = p.get<uint16_t>();
             uint16_t n = htons(n_raw);
+            uint16_t n_start = n;
             for (; n > 0; n--) {
                 trace("GET_CLOSURE_GET %d\n", n);
                 StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-                trace("GET_CLOSURE_LEN %d\n", n);
+                trace("GET_CLOSURE_LEN %d/%d\n", n, n_start);
                 trace("WORD_SIZE %lu\n", WORD_SIZE);
                 trace("CLOSURE_SIZE_PTR %p\n", ptr);
                 trace("CLOSURE_SIZE %u\n", closure_sizeW(ptr));
@@ -528,7 +529,44 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     return 0;
 }
 
+
+static void handle_connection(const unsigned int sock_fd) {
+    Socket sock(sock_fd);
+    char *buf = new char[MAX_CMD_SIZE];
+    while (true) {
+        uint32_t cmdlen_n, cmdlen;
+
+        sock.read((char *)&cmdlen_n, 4);
+        cmdlen = ntohl(cmdlen_n);
+
+        cmdlen = ntohl(cmdlen_n);
+        char *large_buf = buf;
+        bool use_large_buf = cmdlen > MAX_CMD_SIZE;
+        if (use_large_buf) {
+          large_buf = new char[cmdlen];
+        }
+
+        trace("LEN: %d\n", cmdlen);
+        sock.read(large_buf, cmdlen);
+        trace("CONT:%s\n", buf);
+        try {
+            trace("LEN2: %d\n", cmdlen);
+            handle_command(sock, large_buf, cmdlen);
+        } catch (Parser::EndOfInput e) {
+            barf("error");
+            Response resp(sock);
+            resp.finish(RESP_BAD_COMMAND);
+        }
+
+        if (use_large_buf) {
+          delete[] large_buf;
+        }
+    }
+    delete[] buf;
+}
+
 /* return non-zero on error */
+/*
 static void handle_connection(const unsigned int sock_fd) {
     Socket sock(sock_fd);
     char *buf = new char[MAX_CMD_SIZE];
@@ -552,6 +590,7 @@ static void handle_connection(const unsigned int sock_fd) {
     }
     delete[] buf;
 }
+*/
 
 void serve(void) {
     struct sockaddr_un local, remote;
