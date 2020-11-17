@@ -20,7 +20,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#define MAX_CMD_SIZE 4096
+#define MAX_CMD_SIZE 10000
 
 #define WORD_SIZE sizeof(unsigned long)
 #define INFO_TABLE_SIZE sizeof(StgInfoTable)
