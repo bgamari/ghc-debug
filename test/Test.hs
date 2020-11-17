@@ -33,7 +33,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" Nothing (\e -> p13 e >> traceRequestLog e)
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" Nothing (\e -> p18 e >> traceRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -234,3 +234,15 @@ p17 e = do
     traceWrite c
     traceWrite it
     traceWrite =<< request (RequestSourceInfo it)
+
+
+-- Use with large-thunk
+p18 e = do
+  -- Wait fro the pause
+  run e $ request RequestPoll
+  runTrace e $ do
+    rs <- request RequestSavedObjects
+    forM_ rs $ \r -> do
+      traceWrite r
+      fullTraversal r
+      traceWrite ("DONE", r)
