@@ -203,6 +203,7 @@ instance DataSource Debuggee Request where
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
+  PopulateBlockCache :: BlockCacheRequest Int
 
 
 deriving instance Show (BlockCacheRequest a)
@@ -210,6 +211,7 @@ deriving instance Eq (BlockCacheRequest a)
 
 instance Hashable (BlockCacheRequest a) where
   hashWithSalt s (LookupClosure cpt) = s `hashWithSalt` (1 :: Int) `hashWithSalt` cpt
+  hashWithSalt s PopulateBlockCache  = s `hashWithSalt` (2 :: Int)
 
 instance StateKey BlockCacheRequest where
   data State BlockCacheRequest = BCRequestState (IORef BlockCache) Handle
@@ -232,9 +234,16 @@ instance DataSource u BlockCacheRequest where
         rb <- case mrb of
                 Nothing -> do
                   rb@(RawBlock p _) <- doRequest h (RequestBlock cp)
+                  print ("NEW_BLOCK", bcSize bc, p)
                   atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
                   return rb
                 Just rb -> do
                   return rb
         putSuccess resp (extractFromBlock cp rb)
+      do_one (BlockedFetch PopulateBlockCache resp) = do
+        blocks <- doRequest h RequestAllBlocks
+        print ("CACHING", length blocks)
+        atomicModifyIORef' ref ((,()) . addBlocks blocks)
+        putSuccess resp (length blocks)
+
 

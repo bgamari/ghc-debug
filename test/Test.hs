@@ -33,7 +33,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p18 e  >> traceRequestLog e)
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p22 e  >> traceRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -282,3 +282,14 @@ p21 e = pauseThen e $ do
   forM_ r $ \c -> do
     traceWrite c
     dereferenceClosureFromBlock c
+
+-- Use with large-thunk
+p22 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestSavedObjects
+    forM_ rs $ \r -> do
+      traceWrite r
+      c <- fullTraversalViaBlocks r
+      traceWrite ("DONE", countNodes c)

@@ -23,6 +23,9 @@ addBlock rb@(RawBlock (BlockPtr (fromBE64 -> bp)) _) (BlockCache bc) = BlockCach
   where
     s = rawBlockSize rb
 
+addBlocks :: [RawBlock] -> BlockCache -> BlockCache
+addBlocks bc bs = Prelude.foldr addBlock bs bc
+
 lookupClosure :: ClosurePtr -> BlockCache -> Maybe RawBlock
 lookupClosure (ClosurePtr (fromBE64 -> cp)) (BlockCache b) =
   snd <$> listToMaybe (toAscList (I.containing b cp))

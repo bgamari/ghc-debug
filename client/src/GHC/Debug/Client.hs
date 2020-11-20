@@ -26,6 +26,7 @@ module GHC.Debug.Client
   , fullTraversalViaBlocks
   , Tritraversable(..)
   , traceRequestLog
+  , precacheBlocks
   ) where
 
 import Control.Concurrent
@@ -185,4 +186,7 @@ dereferenceClosureFromBlock cp
       let it = getInfoTblPtr rc
       [raw_it] <- request (RequestInfoTables [it])
       return $ decodeClosureWithSize (it, raw_it) (cp, rc)
+
+precacheBlocks :: DebugM Int
+precacheBlocks = dataFetch PopulateBlockCache
 
