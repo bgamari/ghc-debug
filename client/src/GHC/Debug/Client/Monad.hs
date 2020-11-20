@@ -60,7 +60,10 @@ import Data.IORef
 data Debuggee = Debuggee { debuggeeFilename :: FilePath
                          -- Keep track of how many of each request we make
                          , debuggeeRequestCount :: IORef (HM.HashMap CommandId Int)
+                         , debuggeeBatchMode :: BatchMode
                          }
+
+data BatchMode = Batch | OneByOne deriving (Eq, Show)
 
 type DebugM a = GenHaxl Debuggee String a
 
@@ -117,7 +120,7 @@ withDebuggeeSocket exeName sockName action = do
     requestMap <- newIORef HM.empty
     bc <- newIORef emptyBlockCache
     let ss = stateSet (BCRequestState bc hdl) (stateSet (RequestState hdl) stateEmpty)
-    new_env <- initEnv ss (Debuggee exeName requestMap)
+    new_env <- initEnv ss (Debuggee exeName requestMap Batch)
     -- Turn on data fetch stats with report = 3
     let new_flags = defaultFlags { report = 0 }
     action (new_env { Haxl.Core.flags = new_flags })
@@ -188,12 +191,14 @@ _singleFetches h bs = mapM_ do_one bs
           res <- doRequest h req
           putSuccess resp res
 
-instance DataSource u Request where
+instance DataSource Debuggee Request where
   fetch (RequestState h) fs u =
     -- Grouping together fetches only shaves off about 0.01s on the simple
     -- benchmark
-    SyncFetch (groupFetches h [] [] [])
---    SyncFetch (_singleFetches h)
+    SyncFetch $
+      case debuggeeBatchMode u of
+        Batch -> groupFetches h [] [] []
+        OneByOne -> _singleFetches h
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
