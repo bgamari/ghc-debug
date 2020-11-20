@@ -8,7 +8,6 @@ import GHC.Debug.Types.Closures
 import GHC.Vis
 import Data.Text (unpack)
 import System.IO
-import Data.Dwarf.ADT
 
 import Server
 
@@ -26,13 +25,6 @@ import Data.List.Extra
 
 spec :: SpecWith ()
 spec = do
-  describe "debuggeeDwarf" $
-    it "should return Dwarf of the executeable" $
-      withStartedDebuggee "debug-test" $ \ _ d ->
-        case debuggeeDwarf d of
-              Just dwarf -> dwarf `shouldContainCuName` "Test.hs"
-              Nothing -> error "No Dwarf"
-
   describe "request" $ do
     describe "RequestVersion" $
       it "should return the correct version" $
@@ -166,12 +158,3 @@ pipeStreamToListThread ref h = forever $ do
   where
     toClockTime :: String -> ClockTime
     toClockTime = read . trim
-
-shouldContainCuName :: Dwarf -> String -> Expectation
-shouldContainCuName dwarf name = allCuNames `shouldContain` [name]
-  where
-    allCuNames :: [String]
-    allCuNames =  map (unpack . cuName . bData) boxedCompilationUnits
-
-    boxedCompilationUnits :: [Boxed CompilationUnit]
-    boxedCompilationUnits = dwarfCompilationUnits dwarf

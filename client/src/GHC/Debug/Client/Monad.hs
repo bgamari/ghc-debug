@@ -43,12 +43,6 @@ import Data.Bitraversable
 import Data.Hashable
 
 
-import qualified Data.Dwarf as Dwarf
-import qualified Data.Dwarf.ADT.Pretty as DwarfPretty
-import qualified Data.Dwarf.Elf as Dwarf.Elf
-
-import Data.Dwarf
-import Data.Dwarf.ADT
 import qualified Data.Text  as T
 import Data.List
 import System.Process
@@ -63,10 +57,7 @@ import Data.Typeable
 import Data.IORef
 
 
-data Debuggee = Debuggee { debuggeeHdl :: Handle
-                         , debuggeeInfoTblEnv :: MVar (HM.HashMap InfoTablePtr RawInfoTable)
-                         , debuggeeDwarf :: Maybe Dwarf
-                         , debuggeeFilename :: FilePath
+data Debuggee = Debuggee { debuggeeFilename :: FilePath
                          -- Keep track of how many of each request we make
                          , debuggeeRequestCount :: IORef (HM.HashMap CommandId Int)
                          }
@@ -102,43 +93,31 @@ debuggeeProcess exe sockName = do
   return $
     (proc exe []) { env = Just (("GHC_DEBUG_SOCKET", sockName) : e) }
 
--- | Open a debuggee, this will also read the DWARF information
+-- | Open a debuggee
 withDebuggee :: FilePath  -- ^ path to executable
              -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
              -> (Env Debuggee String -> IO a)
              -> IO a
 withDebuggee exeName socketName action = do
-    -- Read DWARF information from the executable
     -- Start the process we want to debug
     cp <- debuggeeProcess exeName socketName
     withCreateProcess cp $ \_ _ _ _ -> do
-      dwarf <- getDwarfInfo exeName
     -- Now connect to the socket the debuggeeProcess just started
-      withDebuggeeSocket exeName socketName (Just dwarf) action
-
-getDwarfInfo :: FilePath -> IO Dwarf
-getDwarfInfo fn = do
- (dwarf, warnings) <- Dwarf.Elf.parseElfDwarfADT Dwarf.LittleEndian fn
--- mapM_ print warnings
--- print $ DwarfPretty.dwarf dwarf
- return dwarf
-
+      withDebuggeeSocket exeName socketName action
 
 -- | Open a debuggee's socket directly
 withDebuggeeSocket :: FilePath  -- ^ executable name of the debuggee
                    -> FilePath  -- ^ debuggee's socket location
-                   -> Maybe Dwarf
                    -> (Env Debuggee String -> IO a)
                    -> IO a
-withDebuggeeSocket exeName sockName mdwarf action = do
+withDebuggeeSocket exeName sockName action = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix sockName)
     hdl <- socketToHandle s ReadWriteMode
-    infoTableEnv <- newMVar mempty
     requestMap <- newIORef HM.empty
     bc <- newIORef emptyBlockCache
     let ss = stateSet (BCRequestState bc hdl) (stateSet (RequestState hdl) stateEmpty)
-    new_env <- initEnv ss (Debuggee hdl infoTableEnv mdwarf exeName requestMap)
+    new_env <- initEnv ss (Debuggee exeName requestMap)
     -- Turn on data fetch stats with report = 3
     let new_flags = defaultFlags { report = 0 }
     action (new_env { Haxl.Core.flags = new_flags })

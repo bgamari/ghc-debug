@@ -61,7 +61,6 @@ withStartedDebuggee exeName action = withTempDir $ \ tempDirPath -> do
     -- TODO wait (programmatically) for the socket to appear
     threadDelay 500000
 
-    dwarf <- getDwarfInfo $ trim prog
-    withDebuggeeSocket (trim prog) socketName (Just dwarf) (action handles)
+    withDebuggeeSocket (trim prog) socketName (action handles)
   where
     serverExePathCmd = shell $ "which " ++ exeName

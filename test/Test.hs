@@ -33,7 +33,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" Nothing (\e -> p18 e >> traceRequestLog e)
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p18 e  >> traceRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable

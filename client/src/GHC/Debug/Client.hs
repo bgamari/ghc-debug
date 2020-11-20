@@ -15,7 +15,6 @@ module GHC.Debug.Client
   , FieldValue(..)
   , decodeInfoTable
   , lookupInfoTable
-  , lookupDwarf
   , showFileSnippet
   , DebugClosure(..)
   , dereferenceClosures
@@ -45,12 +44,6 @@ import Data.Coerce
 import Data.Bitraversable
 
 
-import qualified Data.Dwarf as Dwarf
-import qualified Data.Dwarf.ADT.Pretty as DwarfPretty
-import qualified Data.Dwarf.Elf as Dwarf.Elf
-
-import Data.Dwarf
-import Data.Dwarf.ADT
 import qualified Data.Text  as T
 import Data.List
 import System.Process
@@ -95,45 +88,6 @@ resume e = runHaxl e (request RequestResume)
 
 pauseDebuggee :: Env Debuggee String -> IO a -> IO a
 pauseDebuggee e act = bracket_ (pause e) (resume e)  act
-
-
-lookupDwarf :: Debuggee -> InfoTablePtr -> Maybe ([FilePath], Int, Int)
-lookupDwarf d (InfoTablePtr w) = do
-  (Dwarf units) <- debuggeeDwarf d
-  asum (map (lookupDwarfUnit (fromBE64 w)) units)
-
-lookupDwarfUnit :: Word64 -> Boxed CompilationUnit -> Maybe ([FilePath], Int, Int)
-lookupDwarfUnit w (Boxed _ cu) = do
-  low <- cuLowPc cu
-  high <- cuHighPc cu
-  guard (low <= w && w <= high)
-  (LNE ds fs ls) <- cuLineNumInfo cu
-  (fp, l, c) <- foldl' (lookupDwarfLine w) Nothing (zip ls (tail ls))
-  let res_fps = if null ds then [T.unpack (cuCompDir cu) </> fp]
-                           else map (\d -> T.unpack (cuCompDir cu) </> T.unpack d </> fp) ds
-  return ( res_fps
-         , l , c)
-
-lookupDwarfSubprogram :: Word64 -> Boxed Def -> Maybe Subprogram
-lookupDwarfSubprogram w (Boxed _ (DefSubprogram s)) = do
-  low <- subprogLowPC s
-  high <- subprogHighPC s
-  guard (low <= w && w <= high)
-  return s
-lookupDwarfSubprogram _ _ = Nothing
-
-lookupDwarfLine :: Word64
-                -> Maybe (FilePath, Int, Int)
-                -> (Dwarf.DW_LNE, Dwarf.DW_LNE)
-                -> Maybe (FilePath, Int, Int)
-lookupDwarfLine w Nothing (d, nd) =
-  if lnmAddress d <= w && w <= lnmAddress nd
-    then do
-      let (LNEFile file _ _ _) = lnmFiles nd !! (fromIntegral (lnmFile nd) - 1)
-      Just
-        (T.unpack file, fromIntegral (lnmLine nd), fromIntegral (lnmColumn nd))
-    else Nothing
-lookupDwarfLine _ (Just r) _ =  Just r
 
 showFileSnippet :: Debuggee -> ([FilePath], Int, Int) -> IO ()
 showFileSnippet d (fps, l, c) = go fps

@@ -45,7 +45,6 @@ test-suite system-test
     , directory
     , async
     , extra
-    , dwarfadt
     , text
   other-modules:
         SystemTest
