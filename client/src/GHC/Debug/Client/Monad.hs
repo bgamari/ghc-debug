@@ -168,6 +168,7 @@ dispatch h cs its other = do
       putSuccess resp res
 
     do_many :: ([a] -> Request [b]) -> [([a], ResultVar [b])] -> IO ()
+    do_many _ [] = return ()
     do_many mk_req ms = do
       let req = mk_req (concatMap fst ms)
       results <- doRequest h req
