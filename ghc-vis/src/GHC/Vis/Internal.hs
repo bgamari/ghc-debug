@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP, MagicHash, DeriveDataTypeable, NoMonomorphismRestriction, RankNTypes, RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ViewPatterns #-}
 
 {- |
    Module      : GHC.Vis.Internal
@@ -125,19 +126,19 @@ parseInternal _ (ConstrClosure _ [] [dataArg] (ConstrDesc{modl, name})) =
     _ -> printf "%s %d" (infixFix name) dataArg
   ]
 
-parseInternal _ (ConstrClosure (StgInfoTable { ptrs = 1, nptrs =  3 }) _ [_,0,0] (ConstrDesc _ "Data.ByteString.Internal" "PS"))
+parseInternal _ (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 1, nptrs =  3 }) _ [_,0,0] (ConstrDesc _ "Data.ByteString.Internal" "PS"))
   = return [Unnamed "ByteString 0 0"]
 
-parseInternal _ (ConstrClosure (StgInfoTable { ptrs = 1, nptrs = 3}) [bPtr] [_,start,end] (ConstrDesc _ "Data.ByteString.Internal" "PS"))
+parseInternal _ (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 1, nptrs = 3}) [bPtr] [_,start,end] (ConstrDesc _ "Data.ByteString.Internal" "PS"))
   = do cPtr  <- liftM mbParens $ contParse bPtr
        return $ Unnamed (printf "ByteString %d %d " start end) : cPtr
 
-parseInternal _ (ConstrClosure (StgInfoTable { ptrs = 2, nptrs = 3}) [bPtr1,bPtr2] [_,start,end] (ConstrDesc _ "Data.ByteString.Lazy.Internal" "Chunk"))
+parseInternal _ (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 2, nptrs = 3}) [bPtr1,bPtr2] [_,start,end] (ConstrDesc _ "Data.ByteString.Lazy.Internal" "Chunk"))
   = do cPtr1 <- liftM mbParens $ contParse bPtr1
        cPtr2 <- liftM mbParens $ contParse bPtr2
        return $ Unnamed (printf "Chunk %d %d " start end) : cPtr1 ++ [Unnamed " "] ++ cPtr2
 
-parseInternal _ (ConstrClosure (StgInfoTable { ptrs = 2, nptrs=0}) [bHead,bTail] [] (ConstrDesc _ "GHC.Types" ":"))
+parseInternal _ (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 2, nptrs=0}) [bHead,bTail] [] (ConstrDesc _ "GHC.Types" ":"))
   = do cHead <- liftM mbParens $ contParse bHead
        cTail <- liftM mbParens $ contParse bTail
        return $ cHead ++ [Unnamed ":"] ++ cTail
@@ -163,10 +164,10 @@ parseInternal _ (BlackholeClosure _ b)
 parseInternal _ BlockingQueueClosure{}
   = return [Unnamed "BlockingQueue"]
 
-parseInternal _ (OtherClosure (StgInfoTable {tipe = cTipe}) _ _)
+parseInternal _ (OtherClosure (decodedTable -> StgInfoTable {tipe = cTipe}) _ _)
   = return [Unnamed $ show cTipe]
 
-parseInternal _ (UnsupportedClosure (StgInfoTable { tipe = cTipe }))
+parseInternal _ (UnsupportedClosure (decodedTable -> StgInfoTable { tipe = cTipe }))
   = return [Unnamed $ show cTipe]
 
 -- Reversed order of ptrs
@@ -325,7 +326,7 @@ showClosureFields (ConstrClosure _ _ [dataArg] (ConstrDesc{modl, name})) =
     -- :view b
     _ -> [name, show dataArg]
 
-showClosureFields (ConstrClosure (StgInfoTable { ptrs = 1
+showClosureFields (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 1
                                                , nptrs = 3
                                                , srtlen = 0})
                                                 _
@@ -333,10 +334,10 @@ showClosureFields (ConstrClosure (StgInfoTable { ptrs = 1
                                                 (ConstrDesc _ "Data.ByteString.Internal" "PS"))
   = ["ByteString","0","0"]
 
-showClosureFields (ConstrClosure (StgInfoTable { ptrs = 1, nptrs = 3, srtlen = 0}) [_] [_,start,end] (ConstrDesc _ "Data.ByteString.Internal" "PS"))
+showClosureFields (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 1, nptrs = 3, srtlen = 0}) [_] [_,start,end] (ConstrDesc _ "Data.ByteString.Internal" "PS"))
   = ["ByteString",printf "%d" start,printf "%d" end]
 
-showClosureFields (ConstrClosure (StgInfoTable { ptrs = 2, nptrs = 3,  srtlen = 1}) [_,_] [_,start,end] (ConstrDesc _ "Data.ByteString.Lazy.Internal" "Chunk"))
+showClosureFields (ConstrClosure (decodedTable -> StgInfoTable { ptrs = 2, nptrs = 3,  srtlen = 1}) [_,_] [_,start,end] (ConstrDesc _ "Data.ByteString.Lazy.Internal" "Chunk"))
   = ["Chunk",printf "%d" start,printf "%d" end]
 
 showClosureFields (ConstrClosure _ _ dArgs (ConstrDesc _ _ name))
@@ -386,10 +387,10 @@ showClosureFields FunClosure{}
 showClosureFields BlockingQueueClosure{}
   = ["BlockingQueue"]
 
-showClosureFields (OtherClosure (StgInfoTable { tipe = cTipe }) _ _)
+showClosureFields (OtherClosure (decodedTable -> StgInfoTable { tipe = cTipe }) _ _)
   = [show cTipe]
 
-showClosureFields (UnsupportedClosure (StgInfoTable { tipe = cTipe}))
+showClosureFields (UnsupportedClosure (decodedTable -> StgInfoTable { tipe = cTipe}))
   = [show cTipe]
 
 --showClosure c = "Missing pattern for " ++ show c

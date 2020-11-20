@@ -29,14 +29,21 @@ data HeapGraphEntry a = HeapGraphEntry {
         hgeClosure :: DebugClosure ConstrDesc StackCont (Maybe HeapGraphIndex),
         hgeLive :: Bool,
         hgeData :: a}
-    deriving (Show, Functor)
+    deriving (Show, Functor, Foldable, Traversable)
 type HeapGraphIndex = Int
 
 -- | The whole graph. The suggested interface is to only use 'lookupHeapGraph',
 -- as the internal representation may change. Nevertheless, we export it here:
 -- Sometimes the user knows better what he needs than we do.
 newtype HeapGraph a = HeapGraph (M.IntMap (HeapGraphEntry a))
-    deriving (Show)
+    deriving (Show, Foldable, Traversable, Functor)
+
+traverseHeapGraph :: Applicative m =>
+                    (HeapGraphEntry a -> m (HeapGraphEntry b))
+                  -> HeapGraph a
+                  -> m (HeapGraph b)
+traverseHeapGraph f (HeapGraph im) = HeapGraph <$> traverse f im
+
 
 lookupHeapGraph :: HeapGraphIndex -> HeapGraph a -> Maybe (HeapGraphEntry a)
 lookupHeapGraph i (HeapGraph m) = M.lookup i m
@@ -47,16 +54,16 @@ heapGraphRoot = 0
 -- | Creates a 'HeapGraph' for the value in the box, but not recursing further
 -- than the given limit. The initial value has index 'heapGraphRoot'.
 buildHeapGraph
-   :: Monoid a
-   => DerefFunction
+   :: (Monad m, Monoid a)
+   => DerefFunction m
    -> Int -- ^ Search limit
    -> a -- ^ Data value for the root
    -> ClosurePtr -- ^ The value to start with
-   -> IO (HeapGraph a)
+   -> m (HeapGraph a)
 buildHeapGraph deref limit rootD initialBox =
     fst <$> multiBuildHeapGraph deref limit [(rootD, initialBox)]
 
-type DerefFunction = ClosurePtr -> IO (DebugClosure ConstrDesc StackCont ClosurePtr)
+type DerefFunction m = ClosurePtr -> m (DebugClosure ConstrDesc StackCont ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
@@ -65,26 +72,26 @@ type DerefFunction = ClosurePtr -> IO (DebugClosure ConstrDesc StackCont Closure
 --   type @a@ can be used to make the connection between the input and the
 --   resulting list of indices, and to store additional data.
 multiBuildHeapGraph
-    :: Monoid a
-    => DerefFunction
+    :: (Monad m, Monoid a)
+    => DerefFunction m
     -> Int -- ^ Search limit
     -> [(a, ClosurePtr)] -- ^ Starting values with associated data entry
-    -> IO (HeapGraph a, [(a, HeapGraphIndex)])
+    -> m (HeapGraph a, [(a, HeapGraphIndex)])
 multiBuildHeapGraph deref limit = generalBuildHeapGraph deref limit (HeapGraph M.empty)
 
 -- | Adds an entry to an existing 'HeapGraph'.
 --
 --   Returns the updated 'HeapGraph' and the index of the added value.
 addHeapGraph
-    :: Monoid a
-    => DerefFunction
+    :: (Monoid a, Monad m)
+    => DerefFunction m
     -> Int -- ^ Search limit
     -> a -- ^ Data to be stored with the added value
     -> ClosurePtr -- ^ Value to add to the graph
     -> HeapGraph a -- ^ Graph to extend
-    -> IO (HeapGraphIndex, HeapGraph a)
+    -> m (HeapGraphIndex, HeapGraph a)
 addHeapGraph deref limit d box hg = do
-    (hg', [(_,i)]) <- generalBuildHeapGraph deref limit hg [(d,box)]
+    (hg', (head -> (_,i))) <- generalBuildHeapGraph deref limit hg [(d,box)]
     return (i, hg')
 
 -- | Adds the given annotation to the entry at the given index, using the
@@ -95,12 +102,12 @@ annotateHeapGraph d i (HeapGraph hg) = HeapGraph $ M.update go i hg
     go hge = Just $ hge { hgeData = hgeData hge <> d }
 
 generalBuildHeapGraph
-    :: Monoid a
-    => DerefFunction
+    :: (Monoid a, Monad m)
+    => DerefFunction m
     -> Int
     -> HeapGraph a
     -> [(a,ClosurePtr)]
-    -> IO (HeapGraph a, [(a, HeapGraphIndex)])
+    -> m (HeapGraph a, [(a, HeapGraphIndex)])
 generalBuildHeapGraph deref limit _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
 generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
     -- First collect all boxes from the existing heap graph
@@ -121,14 +128,14 @@ generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
         lift $ tell hg -- Start with the initial map
         forM addBoxes $ \(d, b) -> do
             -- Cannot fail, as limit is not zero here
-            Just i <- add limit b
+            i <- fromJust <$> (add limit b)
             return (d, i)
 
     add 0  _ = return Nothing
     add n b = do
         -- If the box is in the map, return the index
         (existing,_,_) <- get
-        mbI <- liftIO $ findM (return . (== b) . fst) existing
+        mbI <- lift $ lift $ findM (return . (== b) . fst) existing
         case mbI of
             Just (_,i) -> return $ Just i
             Nothing -> do
@@ -137,7 +144,7 @@ generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
                 -- And register it
                 modify (\(x,y,z) -> ((b,i):x, y, z))
                 -- Look up the closure
-                c <- liftIO $ deref b
+                c <- lift $ lift $ deref b
                 -- Find indicies for all boxes contained in the map
                 c' <- T.mapM (add (n-1)) c
                 -- Add add the resulting closure to the map
@@ -157,15 +164,18 @@ generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
 --    and newly referenced closures are, up to the given depth, added to the graph.
 --  * A map mapping previous indicies to the corresponding new indicies is returned as well.
 --  * The closure at 'heapGraphRoot' stays at 'heapGraphRoot'
-updateHeapGraph :: Monoid a => DerefFunction -> Int -> HeapGraph a -> IO (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
+updateHeapGraph :: (Monad m, Monoid a) => DerefFunction m -> Int -> HeapGraph a -> m (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
 updateHeapGraph deref limit (HeapGraph startHG) = do
     (hg', indexMap) <- runWriterT $ foldM go (HeapGraph M.empty) (M.toList startHG)
     return (hg', (M.!) indexMap)
   where
     go hg (i, hge) = do
-        (j, hg') <- liftIO $ addHeapGraph deref limit (hgeData hge) (hgeClosurePtr hge) hg
+        (j, hg') <- liftH $ addHeapGraph deref limit (hgeData hge) (hgeClosurePtr hge) hg
         tell (M.singleton i j)
         return hg'
+
+liftH :: (Monad m, Monoid w) => m a -> WriterT w m a
+liftH = lift
 
 -- | Pretty-prints a HeapGraph. The resulting string contains newlines. Example
 -- for @let s = \"Ki\" in (s, s, cycle \"Ho\")@:
@@ -173,8 +183,8 @@ updateHeapGraph deref limit (HeapGraph startHG) = do
 -- >let x1 = "Ki"
 -- >    x6 = C# 'H' : C# 'o' : x6
 -- >in (x1,x1,x6)
-ppHeapGraph :: HeapGraph a -> String
-ppHeapGraph (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
+ppHeapGraph :: (a -> String) -> HeapGraph a -> String
+ppHeapGraph printData (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
   where
     -- All variables occuring more than once
     bindings = boundMultipleTimes (HeapGraph m) [heapGraphRoot]
@@ -205,7 +215,7 @@ ppHeapGraph (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
     ppEntry prec hge
         | Just s <- isString hge = show s
         | Just l <- isList hge   = "[" ++ intercalate "," (map (ppRef 0) l) ++ "]"
-        | otherwise = ppClosure ppRef prec (hgeClosure hge)
+        | otherwise = ppClosure (printData (hgeData hge)) ppRef prec (hgeClosure hge)
       where
         app [a] = a  ++ "()"
         app xs = addBraces (10 <= prec) (unwords xs)
@@ -248,7 +258,7 @@ boundMultipleTimes (HeapGraph m) roots = map head $ filter (not.null) $ map tail
 
 -- Utilities
 
-findM :: (a -> IO Bool) -> [a] -> IO (Maybe a)
+findM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
 findM _p [] = return Nothing
 findM p (x:xs) = do
     b <- p x
@@ -289,8 +299,8 @@ isTup _ = Nothing
 -- using 'Data.Foldable.map' or, if you need to do IO, 'Data.Foldable.mapM'.
 --
 -- The parameter gives the precedendence, to avoid avoidable parenthesises.
-ppClosure :: (Int -> c -> String) -> Int -> DebugClosure ConstrDesc s c -> String
-ppClosure showBox prec c = case c of
+ppClosure :: String -> (Int -> c -> String) -> Int -> DebugClosure ConstrDesc s c -> String
+ppClosure herald showBox prec c = case c of
     _ | Just ch <- isChar c -> app
         ["C#", show ch]
     _ | Just (h,t) <- isCons c -> addBraces (5 <= prec) $
@@ -300,7 +310,7 @@ ppClosure showBox prec c = case c of
     ConstrClosure {..} -> app $
         name constrDesc : map (showBox 10) ptrArgs ++ map show dataArgs
     ThunkClosure {..} -> app $
-        "_thunk" : map (showBox 10) ptrArgs ++ map show dataArgs
+        "_thunk(" : herald : ")" : map (showBox 10) ptrArgs ++ map show dataArgs
     SelectorClosure {..} -> app
         ["_sel", showBox 10 selectee]
     IndClosure {..} -> app

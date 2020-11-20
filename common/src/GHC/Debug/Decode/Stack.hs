@@ -30,7 +30,7 @@ decodeStack getInfoTable getBitmap rs = do
     get_frames rs@(RawStack c) = do
       (itbl, _) <- getInfoTable (coerce rs)
       bm <- getBitmap (coerce rs)
-      let st_it = decodeInfoTable itbl
+      let st_it = StgInfoTableWithPtr (getInfoTblPtr (coerce rs)) (decodeInfoTable itbl)
       let res = B.runGetIncremental (getFrame bm st_it) `pushChunk` c
       case res of
         Fail _rem _offset err -> error err
@@ -40,10 +40,10 @@ decodeStack getInfoTable getBitmap rs = do
           | otherwise -> (v:) <$> get_frames (RawStack  more)
 
 getFrame :: PtrBitmap
-         -> StgInfoTable
+         -> StgInfoTableWithPtr
          -> Get (DebugStackFrame ClosurePtr)
 getFrame bitmap itbl =
-    case tipe itbl of
+    case tipe (decodedTable itbl) of
       RET_BCO ->
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
         error "getStack: RET_BCO"

@@ -23,6 +23,7 @@ module GHC.Debug.Types.Closures (
     , DebugClosureWithExtra(..)
     , noSize
     , StgInfoTable(..)
+    , StgInfoTableWithPtr(..)
     , FieldValue(..)
     , DebugStackFrame(..)
     , GenStack(..)
@@ -188,6 +189,10 @@ dcSize = extraDCS
 instance Tritraversable (DebugClosureWithExtra x) where
   tritraverse f g h (DCS x v) = DCS x <$> tritraverse f g h v
 
+data StgInfoTableWithPtr = StgInfoTableWithPtr {
+                              tableId :: InfoTablePtr
+                            , decodedTable :: StgInfoTable
+                            } deriving (Show)
 
 
 -- | This is the representation of a Haskell value on the heap. It reflects
@@ -207,7 +212,7 @@ instance Tritraversable (DebugClosureWithExtra x) where
 data DebugClosure string s b
   = -- | A data constructor
     ConstrClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
         , constrDesc :: !string
@@ -215,28 +220,28 @@ data DebugClosure string s b
 
     -- | A function
   | FunClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
         }
 
     -- | A thunk, an expression not obviously in head normal form
   | ThunkClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
         }
 
     -- | A thunk which performs a simple selection operation
   | SelectorClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , selectee   :: !b              -- ^ Pointer to the object being
                                         --   selected from
         }
 
     -- | An unsaturated function application
   | PAPClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , arity      :: !HalfWord       -- ^ Arity of the partial application
         , n_args     :: !HalfWord       -- ^ Size of the payload in words
         , fun        :: !b              -- ^ Pointer to a 'FunClosure'
@@ -250,7 +255,7 @@ data DebugClosure string s b
     -- base_GHCziBase_zpzp_closure" and yields the same address (up to tags)
     -- | A function application
   | APClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , arity      :: !HalfWord       -- ^ Always 0
         , n_args     :: !HalfWord       -- ^ Size of payload in words
         , fun        :: !b              -- ^ Pointer to a 'FunClosure'
@@ -260,7 +265,7 @@ data DebugClosure string s b
 
     -- | A suspended thunk evaluation
   | APStackClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , fun        :: !b              -- ^ Function closure
         , payload    :: ![b]            -- ^ Stack right before suspension
         }
@@ -268,14 +273,14 @@ data DebugClosure string s b
     -- | A pointer to another closure, introduced when a thunk is updated
     -- to point at its value
   | IndClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , indirectee :: !b              -- ^ Target closure
         }
 
    -- | A byte-code object (BCO) which can be interpreted by GHC's byte-code
    -- interpreter (e.g. as used by GHCi)
   | BCOClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , instrs     :: !b              -- ^ A pointer to an ArrWords
                                         --   of instructions
         , literals   :: !b              -- ^ A pointer to an ArrWords
@@ -290,20 +295,20 @@ data DebugClosure string s b
 
     -- | A thunk under evaluation by another thread
   | BlackholeClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , indirectee :: !b              -- ^ The target closure
         }
 
     -- | A @ByteArray#@
   | ArrWordsClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , bytes      :: !Word           -- ^ Size of array in bytes
         , arrWords   :: ![Word]         -- ^ Array payload
         }
 
     -- | A @MutableByteArray#@
   | MutArrClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , mccPtrs    :: !Word           -- ^ Number of pointers
         , mccSize    :: !Word           -- ^ ?? Closures.h vs ClosureMacros.h
         , mccPayload :: ![b]            -- ^ Array payload
@@ -314,14 +319,14 @@ data DebugClosure string s b
     --
     -- @since 8.10.1
   | SmallMutArrClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , mccPtrs    :: !Word           -- ^ Number of pointers
         , mccPayload :: ![b]            -- ^ Array payload
         }
 
     -- | An @MVar#@, with a queue of thread state objects blocking on them
   | MVarClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , queueHead  :: !b              -- ^ Pointer to head of queue
         , queueTail  :: !b              -- ^ Pointer to tail of queue
         , value      :: !b              -- ^ Pointer to closure
@@ -329,13 +334,13 @@ data DebugClosure string s b
 
     -- | A @MutVar#@
   | MutVarClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , var        :: !b              -- ^ Pointer to contents
         }
 
     -- | An STM blocking queue.
   | BlockingQueueClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , link       :: !b              -- ^ ?? Here so it looks like an IND
         , blackHole  :: !b              -- ^ The blackhole closure
         , owner      :: !b              -- ^ The owning thread state object
@@ -343,7 +348,7 @@ data DebugClosure string s b
         }
 
   | TSOClosure
-      { info :: !StgInfoTable
+      { info :: !StgInfoTableWithPtr
       -- pointers
       , _link :: !b
       , global_link :: !b
@@ -365,7 +370,7 @@ data DebugClosure string s b
 
 
   | WeakClosure
-     { info        :: !StgInfoTable
+     { info        :: !StgInfoTableWithPtr
      , cfinalizers :: !b
      , key         :: !b
      , value       :: !b
@@ -417,13 +422,13 @@ data DebugClosure string s b
 
     -- | Another kind of closure
   | OtherClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         , hvalues    :: ![b]
         , rawWords   :: ![Word]
         }
 
   | UnsupportedClosure
-        { info       :: !StgInfoTable
+        { info       :: !StgInfoTableWithPtr
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
@@ -438,7 +443,7 @@ data GenStack b = Stack
 
 data DebugStackFrame b
   = DebugStackFrame
-        { frame_info :: !StgInfoTable
+        { frame_info :: !StgInfoTableWithPtr
         , values     :: [FieldValue b]
         } deriving (Traversable, Functor, Foldable, Show)
 

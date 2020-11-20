@@ -162,7 +162,7 @@ dereferenceClosures cs = do
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
     raw_its <- request (RequestInfoTables its)
-    return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
+    return $ zipWith decodeClosureWithSize (zip its raw_its) (zip cs raw_cs)
 
 dereferenceStack :: StackCont -> DebugM Stack
 dereferenceStack (StackCont sp) = do

@@ -474,7 +474,7 @@ react dbg window canvas = do
 #endif
 
 -- TODO
-derefBox :: Debuggee -> DerefFunction
+derefBox :: Debuggee -> DerefFunction IO
 derefBox dbg cp = undefined $ do
   c <- dereferenceClosure cp
   tritraverse dereferenceConDesc pure pure c

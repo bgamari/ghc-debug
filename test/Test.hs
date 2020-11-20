@@ -194,7 +194,7 @@ p13 e = pauseThen e $ do
   let counts = map countNodes results
       inclusive_counts = map inclusive results
   forM (zip results [0..]) $ \(re@(MkFix1 r), n) -> do
-    traceMsg (show n ++ "(" ++ show (tipe (info (noSize r))) ++ "): " ++ show (treeSize re))
+    traceMsg (show n ++ "(" ++ show (tipe (decodedTable (info (noSize r)))) ++ "): " ++ show (treeSize re))
     --print (inclusive re)
   traceMsg ("Total: " ++ show (sum counts))
 
@@ -206,23 +206,23 @@ p14 e = pauseThen e $ do
     res <- fullTraversal r
     traceWrite res
 
-{-
 -- Testing ghc-vis
+{-
 p15 d = do
   request d RequestPause
   (r:_) <- request d RequestSavedObjects
   vis d
   view r "saved"
   getChar
+  -}
 
 -- pretty-print graph
 p16 e = do
   pause e
   hg <- run e $ do
-          so <- request RequestSavedObjects
-          buildHeapGraph derefBox 20 () so
-  putStrLn $ ppHeapGraph hg
-  -}
+          (so:_) <- request RequestSavedObjects
+          buildHeapGraph derefFuncM 20 () so
+  putStrLn $ ppHeapGraph (const "") hg
 
 -- Testing IPE
 p17 e = do
@@ -246,3 +246,27 @@ p18 e = do
       traceWrite r
       fullTraversal r
       traceWrite ("DONE", r)
+
+derefFunc e c = run e $ derefFuncM c
+
+derefFuncM c = do
+  c <- dereferenceClosure c
+  tritraverse dereferenceConDesc pure pure c
+
+-- Use with large-thunk
+p19 e = do
+  run e $ request RequestPoll
+  hg <- run e $ do
+          (so:_) <- request RequestSavedObjects
+          hg <- buildHeapGraph derefFuncM 10 () so
+          annotateWithSource hg
+  putStrLn $ ppHeapGraph (maybe "" concat) hg
+
+-- | Lookup the source location of THUNKs
+annotateWithSource :: HeapGraph a -> DebugM (HeapGraph (Maybe [String]))
+annotateWithSource hg = traverseHeapGraph go2 hg
+  where
+    go2 (HeapGraphEntry a1 a2 a3 a4) = HeapGraphEntry a1 a2 a3 <$> go a2
+    go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = do
+      Just <$> request (RequestSourceInfo i)
+    go _ = return Nothing
