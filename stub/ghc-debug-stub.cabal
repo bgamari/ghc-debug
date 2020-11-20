@@ -24,7 +24,7 @@ library
   build-depends:       base >=4.12 && <4.14, ghc-prim
   default-language:    Haskell2010
   cxx-sources:         cbits/stub.cpp, cbits/socket.cpp, cbits/trace.cpp
-  cxx-options:         -std=gnu++11
+  cxx-options:         -std=gnu++11 -O3 -g3
   ghc-options:         -threaded
   extra-libraries:     stdc++
   if flag(trace)

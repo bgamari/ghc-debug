@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 executable debugger
   main-is:             Test.hs
-  ghc-options:         -threaded -debug -g3
+  ghc-options:         -threaded -g3 -rtsopts
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common

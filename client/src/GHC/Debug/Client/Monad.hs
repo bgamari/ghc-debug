@@ -4,6 +4,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GADTs #-}
 module GHC.Debug.Client.Monad
   ( Debuggee(..)
   , withDebuggee
@@ -19,6 +21,8 @@ module GHC.Debug.Client.Monad
   , Env(..)
   , traceWrite
   , traceMsg
+
+  , BlockCacheRequest(..)
   ) where
 
 import Control.Concurrent
@@ -36,6 +40,7 @@ import System.Endian
 import Data.Foldable
 import Data.Coerce
 import Data.Bitraversable
+import Data.Hashable
 
 
 import qualified Data.Dwarf as Dwarf
@@ -50,6 +55,7 @@ import System.Process
 import System.Environment
 import System.FilePath
 import System.Directory
+import GHC.Debug.Client.BlockCache
 
 import Haxl.Core hiding (Request, env)
 import Data.Typeable
@@ -130,7 +136,8 @@ withDebuggeeSocket exeName sockName mdwarf action = do
     hdl <- socketToHandle s ReadWriteMode
     infoTableEnv <- newMVar mempty
     requestMap <- newIORef HM.empty
-    let ss = stateSet (RequestState hdl) stateEmpty
+    bc <- newIORef emptyBlockCache
+    let ss = stateSet (BCRequestState bc hdl) (stateSet (RequestState hdl) stateEmpty)
     new_env <- initEnv ss (Debuggee hdl infoTableEnv mdwarf exeName requestMap)
     -- Turn on data fetch stats with report = 3
     let new_flags = defaultFlags { report = 0 }
@@ -140,6 +147,7 @@ withDebuggeeSocket exeName sockName mdwarf action = do
 request :: (Show resp, Typeable resp) => Request resp -> DebugM resp
 request = dataFetch
 
+
 instance StateKey Request where
   data State Request = RequestState Handle
 
@@ -148,6 +156,7 @@ instance DataSourceName Request where
 
 instance ShowP Request where
   showp = show
+
 
 -- | Group together RequestClosures and RequestInfoTables to avoid
 -- some context switching.
@@ -167,7 +176,7 @@ dispatch :: Handle
 dispatch h cs its other = do
   mapM_ do_one other
   -- These can be used to inspect how much batching is happening
---  print (length cs, map fst cs)
+--  print ("BATCHED_CLOSURES", length cs, map fst cs)
 --  print (length its, map fst its)
   do_many RequestClosures cs
   do_many RequestInfoTables its
@@ -204,6 +213,43 @@ instance DataSource u Request where
   fetch (RequestState h) fs u =
     -- Grouping together fetches only shaves off about 0.01s on the simple
     -- benchmark
-    SyncFetch (groupFetches h [] [] [])
-    --SyncFetch (_singleFetches h)
+--    SyncFetch (groupFetches h [] [] [])
+    SyncFetch (_singleFetches h)
+
+data BlockCacheRequest a where
+  LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
+
+
+deriving instance Show (BlockCacheRequest a)
+deriving instance Eq (BlockCacheRequest a)
+
+instance Hashable (BlockCacheRequest a) where
+  hashWithSalt s (LookupClosure cpt) = s `hashWithSalt` (1 :: Int) `hashWithSalt` cpt
+
+instance StateKey BlockCacheRequest where
+  data State BlockCacheRequest = BCRequestState (IORef BlockCache) Handle
+
+instance DataSourceName BlockCacheRequest where
+  dataSourceName Proxy = "block-cache"
+
+instance ShowP BlockCacheRequest where
+  showp = show
+
+
+instance DataSource u BlockCacheRequest where
+  fetch (BCRequestState ref h) fs u =
+    SyncFetch (mapM_ do_one)
+    where
+      do_one :: BlockedFetch BlockCacheRequest -> IO ()
+      do_one (BlockedFetch (LookupClosure cp) resp) = do
+        bc <- readIORef ref
+        let mrb = lookupClosure cp bc
+        rb <- case mrb of
+                Nothing -> do
+                  rb@(RawBlock p _) <- doRequest h (RequestBlock cp)
+                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
+                  return rb
+                Just rb -> do
+                  return rb
+        putSuccess resp (extractFromBlock cp rb)
 

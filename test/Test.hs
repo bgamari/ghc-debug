@@ -270,3 +270,15 @@ annotateWithSource hg = traverseHeapGraph go2 hg
     go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = do
       Just <$> request (RequestSourceInfo i)
     go _ = return Nothing
+
+p20 e = do
+  res <- pauseThen e $ request RequestAllBlocks
+  print (length res)
+
+-- request closures, using blocks
+p21 e = pauseThen e $ do
+  r <- request RequestRoots
+  traceWrite (length r)
+  forM_ r $ \c -> do
+    traceWrite c
+    dereferenceClosureFromBlock c

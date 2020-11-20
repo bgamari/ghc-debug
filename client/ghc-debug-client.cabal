@@ -14,13 +14,13 @@ extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     GHC.Debug.Client, GHC.Debug.Client.Monad
+  exposed-modules:     GHC.Debug.Client, GHC.Debug.Client.Monad, GHC.Debug.Client.BlockCache
   build-depends:       base >=4.12 && <4.14,
                        network >=2.6 && <2.7,
                        unordered-containers,
                        ghc-debug-common, cpu,
                        dwarfadt, dwarf-el, text, process, filepath, directory,
-                       haxl
+                       haxl, IntervalMap, hashable
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions: ApplicativeDo

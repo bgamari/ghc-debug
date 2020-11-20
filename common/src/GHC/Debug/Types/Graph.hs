@@ -1,10 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 module GHC.Debug.Types.Graph where
 
 import Data.Char
 import Data.List
-import Data.Maybe       ( catMaybes )
+import Data.Maybe       ( catMaybes, fromJust )
 import Data.Function
 import qualified Data.Traversable as T
 import qualified Data.IntMap as M

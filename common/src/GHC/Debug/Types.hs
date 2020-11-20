@@ -22,9 +22,12 @@ import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
 import Data.Hashable
+import System.Endian
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
+
+import Debug.Trace
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
@@ -58,6 +61,10 @@ data Request a where
     RequestConstrDesc :: ClosurePtr -> Request ConstrDesc
     -- | Lookup source information of an info table
     RequestSourceInfo :: InfoTablePtr -> Request [String]
+    -- | Copy all blocks from the process at once
+    RequestAllBlocks :: Request [RawBlock]
+    -- | Request the block which contains a specific pointer
+    RequestBlock :: ClosurePtr -> Request RawBlock
 
 deriving instance Show (Request a)
 deriving instance Eq (Request a)
@@ -77,6 +84,8 @@ instance Hashable (Request a) where
     RequestBitmap itp      -> s `hashWithSalt` cmdRequestBitmap `hashWithSalt` itp
     RequestConstrDesc cp   -> s `hashWithSalt` cmdRequestConstrDesc `hashWithSalt` cp
     RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
+    RequestAllBlocks       -> s `hashWithSalt` cmdRequestAllBlocks
+    RequestBlock cp        -> s `hashWithSalt` cmdRequestBlock `hashWithSalt` cp
 
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
@@ -103,6 +112,8 @@ requestCommandId r = case r of
     RequestBitmap {}       -> cmdRequestBitmap
     RequestConstrDesc {}   -> cmdRequestConstrDesc
     RequestSourceInfo {}   -> cmdRequestSourceInfo
+    RequestAllBlocks {} -> cmdRequestAllBlocks
+    RequestBlock {} -> cmdRequestBlock
 
 cmdRequestVersion :: CommandId
 cmdRequestVersion = CommandId 1
@@ -143,6 +154,12 @@ cmdRequestSourceInfo = CommandId 12
 cmdRequestStack :: CommandId
 cmdRequestStack = CommandId 13
 
+cmdRequestAllBlocks :: CommandId
+cmdRequestAllBlocks = CommandId 14
+
+cmdRequestBlock :: CommandId
+cmdRequestBlock = CommandId 15
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral (4 + BSL.length body')
@@ -174,6 +191,8 @@ putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 --  putCommand cmdRequestFindPtr $ put c
 putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
 putRequest (RequestStack sp) = putCommand cmdRequestStack $ put sp
+putRequest (RequestAllBlocks) = putCommand cmdRequestAllBlocks $ return ()
+putRequest (RequestBlock cp)  = putCommand cmdRequestBlock $ put cp
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
@@ -189,6 +208,16 @@ getResponse RequestSavedObjects  = many get
 --getResponse (RequestFindPtr _c)  = many get
 getResponse (RequestSourceInfo _c) = getIPE
 getResponse (RequestStack _)       = getRawStack
+getResponse RequestAllBlocks = many getBlock
+getResponse RequestBlock {}  = getBlock
+
+-- Ptr, size then raw block
+getBlock :: Get RawBlock
+getBlock = do
+  bptr <- BlockPtr <$> getWord64be
+  len <- getInt32be
+  rb <- getByteString (fromIntegral len)
+  return (RawBlock bptr rb)
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do
@@ -215,8 +244,10 @@ getPtrBitmap = do
 
 getRawClosure :: Get RawClosure
 getRawClosure = do
-  len <- getInt32be
-  RawClosure <$> getByteString (fromIntegral len)
+  len <- getWord32be
+  -- The copy here is key to ensure alignment, we do some dodgy things by
+  -- just passing around the Addr# which assume it.
+  RawClosure . C8.copy <$> getByteString (fromIntegral len)
 
 -- The raw stack is sp to the end of stack
 getRawStack :: Get RawStack
@@ -227,7 +258,7 @@ getRawStack = do
 getRawInfoTable :: Get RawInfoTable
 getRawInfoTable = do
   len <- getInt32be
-  RawInfoTable <$> getByteString (fromIntegral len)
+  RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
 
 
 data Error = BadCommand

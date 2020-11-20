@@ -20,6 +20,7 @@ module GHC.Debug.Client
   , DebugClosure(..)
   , dereferenceClosures
   , dereferenceClosure
+  , dereferenceClosureFromBlock
   , dereferenceStack
   , dereferenceConDesc
   , fullTraversal
@@ -59,11 +60,13 @@ import System.Directory
 import Text.Printf
 
 import GHC.Debug.Client.Monad
+import GHC.Debug.Client.BlockCache
 import Haxl.Core hiding (Request)
 import Haxl.Core.Monad (unsafeLiftIO)
 
 
 import Data.IORef
+import Debug.Trace
 
 
 lookupInfoTable :: RawClosure -> DebugM (RawInfoTable, RawClosure)
@@ -179,7 +182,8 @@ dereferenceConDesc i = request (RequestConstrDesc i)
 fullTraversal :: ClosurePtr -> DebugM UClosure
 fullTraversal c = do
 --  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
-  dc <- dereferenceSizedClosure c
+--  dc <- dereferenceSizedClosure c
+  dc <- dereferenceClosureFromBlock c
 --  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
   MkFix1 <$> tritraverse dereferenceConDesc fullStackTraversal fullTraversal  dc
 
@@ -207,3 +211,16 @@ traceRequestLog :: Env u w -> IO ()
 traceRequestLog d = do
   s <- readIORef (statsRef d)
   putStrLn (ppStats s)
+
+-- | Consult the BlockCache for the block which contains a specific
+-- closure, if it's not there then try to fetch the right block, if that
+-- fails, call 'dereferenceClosure'
+dereferenceClosureFromBlock :: ClosurePtr -> DebugM SizedClosure
+dereferenceClosureFromBlock cp
+  | not (ptrInBlock cp) = dereferenceSizedClosure cp
+  | otherwise = do
+      rc <-  dataFetch (LookupClosure cp)
+      let it = getInfoTblPtr rc
+      [raw_it] <- request (RequestInfoTables [it])
+      return $ decodeClosureWithSize (it, raw_it) (cp, rc)
+

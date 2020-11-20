@@ -56,7 +56,9 @@ enum commands {
     CMD_FIND_PTR = 10,
     CMD_CON_DESCR = 11,
     CMD_SOURCE_INFO = 12,
-    CMD_GET_STACK = 13
+    CMD_GET_STACK = 13,
+    CMD_BLOCKS = 14,
+    CMD_BLOCK = 15
 };
 
 enum response_code {
@@ -81,6 +83,8 @@ void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
 //void findPtrCb(FindPtrCb , void* , P_);
 //void findPtr(P_, int);
 }
+
+extern "C" Capability **capabilities;
 
 const int maxSavedObjects = 20;
 
@@ -519,8 +523,58 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         }
         resp.finish(RESP_OKAY);
         break;
-    }
+      }
+      case CMD_BLOCKS:
+        {
+        uint32_t g, n;
+        generation * gen;
+        bdescr * bd;
+        CapabilityPublic ** cap;
+        cap = (CapabilityPublic **) capabilities;
+        trace("GENERATIONS %d\n", RtsFlags.GcFlags.generations);
 
+        for (n = 0; n < n_capabilities; n ++){
+          bd = cap[n]->r.rNursery->blocks;
+          for (; bd != NULL; bd = bd->link){
+            trace("BDN: %p\n", bd);
+            resp.write(bd);
+            uint32_t len_payload = htonl(BLOCK_SIZE);
+            resp.write(len_payload);
+            resp.write((const char *) bd, BLOCK_SIZE);
+          }
+
+        }
+
+        for (g = 0; g < RtsFlags.GcFlags.generations; g++) {
+          gen = &generations[g];
+          bd = gen->blocks;
+          trace("BD_START %p", bd);
+          for (; bd != NULL; bd = bd->link){
+            trace("BD: %p\n", bd);
+            resp.write(bd);
+            uint32_t len_payload = htonl(BLOCK_SIZE);
+            resp.write(len_payload);
+            resp.write((const char *) bd, BLOCK_SIZE);
+          }
+
+        }
+        resp.finish(RESP_OKAY);
+        break;
+        }
+
+      case CMD_BLOCK:
+        {
+        StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
+        bdescr * bd = (bdescr *) (((W_) ptr) & ~BLOCK_MASK);
+        trace("BD_ADDR: %p, %p", ptr,bd);
+        resp.write(bd);
+        uint32_t len_payload = htonl(BLOCK_SIZE);
+        resp.write(len_payload);
+        resp.write((const char *) bd, BLOCK_SIZE);
+
+        resp.finish(RESP_OKAY);
+        break;
+        }
 
 
       default:
