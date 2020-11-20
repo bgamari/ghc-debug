@@ -3,6 +3,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE BinaryLiterals #-}
 
 module GHC.Debug.Types.Ptr where
 
@@ -107,7 +108,7 @@ data RawBlock = RawBlock BlockPtr BS.ByteString
 rawBlockSize :: RawBlock -> Int
 rawBlockSize (RawBlock _ bs) = BS.length bs
 
-tAG_MASK = 1
+tAG_MASK = 0b111
 
 untagClosurePtr :: ClosurePtr -> ClosurePtr
 untagClosurePtr (ClosurePtr (fromBE64 -> w)) = ClosurePtr (toBE64 (w .&. complement tAG_MASK))

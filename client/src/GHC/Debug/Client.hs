@@ -179,11 +179,18 @@ dereferenceStack (StackCont sp) = do
 dereferenceConDesc :: ClosurePtr -> DebugM ConstrDesc
 dereferenceConDesc i = request (RequestConstrDesc i)
 
+-- | Do a traversal requesting closures one by one using RequestClosure
 fullTraversal :: ClosurePtr -> DebugM UClosure
-fullTraversal c = do
+fullTraversal = fullTraversalX dereferenceSizedClosure
+
+-- | Do a traversal using the block cache
+fullTraversalViaBlocks :: ClosurePtr -> DebugM UClosure
+fullTraversalViaBlocks = fullTraversalX dereferenceClosureFromBlock
+
+fullTraversalX :: (ClosurePtr -> DebugM SizedClosure) -> ClosurePtr -> DebugM UClosure
+fullTraversalX derefClosure c = do
 --  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
---  dc <- dereferenceSizedClosure c
-  dc <- dereferenceClosureFromBlock c
+  dc <- derefClosure c
 --  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
   MkFix1 <$> tritraverse dereferenceConDesc fullStackTraversal fullTraversal  dc
 

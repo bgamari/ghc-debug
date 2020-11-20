@@ -213,8 +213,8 @@ instance DataSource u Request where
   fetch (RequestState h) fs u =
     -- Grouping together fetches only shaves off about 0.01s on the simple
     -- benchmark
---    SyncFetch (groupFetches h [] [] [])
-    SyncFetch (_singleFetches h)
+    SyncFetch (groupFetches h [] [] [])
+--    SyncFetch (_singleFetches h)
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
