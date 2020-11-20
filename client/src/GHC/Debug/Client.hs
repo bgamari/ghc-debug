@@ -23,6 +23,7 @@ module GHC.Debug.Client
   , dereferenceStack
   , dereferenceConDesc
   , fullTraversal
+  , fullTraversalViaBlocks
   , Tritraversable(..)
   , traceRequestLog
   ) where
@@ -146,13 +147,13 @@ fullTraversalX derefClosure c = do
 --  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
   dc <- derefClosure c
 --  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
-  MkFix1 <$> tritraverse dereferenceConDesc fullStackTraversal fullTraversal  dc
+  MkFix1 <$> tritraverse dereferenceConDesc (fullStackTraversal derefClosure) (fullTraversalX derefClosure) dc
 
-fullStackTraversal :: StackCont -> DebugM UStack
-fullStackTraversal sc = do
+fullStackTraversal :: (ClosurePtr -> DebugM SizedClosure) -> StackCont -> DebugM UStack
+fullStackTraversal k sc = do
   ds <- dereferenceStack sc
 --  print ("FULL STACK", ds)
-  MkFix2 <$> traverse fullTraversal ds
+  MkFix2 <$> traverse (fullTraversalX k) ds
 
 -- | Print a warning if source file (first argument) is newer than the binary (second argument)
 warnIfNewer :: FilePath -> FilePath -> IO ()
