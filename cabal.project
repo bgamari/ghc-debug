@@ -20,7 +20,8 @@ source-repository-package
   location: https://github.com/mpickering/haxl.git
   tag: b6aedf24ff874e18f66160af4c4d3361d3ff4144
 
-debug-info: 3
+-- If you see a Cmm lexical error, then comment out this line
+-- debug-info: 3
 
 allow-newer:
   Cabal,
