@@ -19,7 +19,7 @@ import Data.Coerce
 import GHC.Debug.Decode
 
 decodeStack :: Monad m
-            => (RawClosure -> m (RawInfoTable, RawClosure))
+            => (RawClosure -> m StgInfoTableWithPtr)
             -> (RawClosure -> m PtrBitmap)
             -> RawStack
             -> m Stack
@@ -28,9 +28,8 @@ decodeStack getInfoTable getBitmap rs = do
   return (Stack 0 0 0 frames)
   where
     get_frames rs@(RawStack c) = do
-      (itbl, _) <- getInfoTable (coerce rs)
+      st_it <- getInfoTable (coerce rs)
       bm <- getBitmap (coerce rs)
-      let st_it = StgInfoTableWithPtr (getInfoTblPtr (coerce rs)) (decodeInfoTable itbl)
       let res = B.runGetIncremental (getFrame bm st_it) `pushChunk` c
       case res of
         Fail _rem _offset err -> error err

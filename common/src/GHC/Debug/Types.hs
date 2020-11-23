@@ -26,6 +26,7 @@ import System.Endian
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
+import GHC.Debug.Decode
 
 import Debug.Trace
 
@@ -45,7 +46,7 @@ data Request a where
     -- | Request a stack
     RequestStack :: StackPtr -> Request RawStack
     -- | Request a set of info tables.
-    RequestInfoTables :: [InfoTablePtr] -> Request [RawInfoTable]
+    RequestInfoTables :: [InfoTablePtr] -> Request [StgInfoTableWithPtr]
     -- | Wait for the debuggee to pause itself and then
     -- execute an action. It currently impossible to resume after
     -- a pause caused by a poll.
@@ -200,7 +201,7 @@ getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
-getResponse (RequestInfoTables _) = many getRawInfoTable
+getResponse (RequestInfoTables itps) = zipWith StgInfoTableWithPtr itps <$> many getInfoTable
 getResponse (RequestBitmap _)    = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
@@ -255,10 +256,10 @@ getRawStack = do
   len <- getInt32be
   RawStack <$> getByteString (fromIntegral len)
 
-getRawInfoTable :: Get RawInfoTable
-getRawInfoTable = do
+getInfoTable :: Get StgInfoTable
+getInfoTable = do
   len <- getInt32be
-  RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
+  decodeInfoTable . RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
 
 
 data Error = BadCommand

@@ -74,12 +74,7 @@ enum response_code {
 // RTS signatures
 // FIXME: These need to be made not private in GHC.
 extern "C" {
-typedef void (*evac_fn)(void *user, StgClosure **root);
 //typedef void (*FindPtrCb)(void *user, StgClosure *);
-void threadStableNameTable ( evac_fn evac, void *user );
-void threadStablePtrTable ( evac_fn evac, void *user );
-void stopAllCapabilities (Capability **pCap, Task *task);
-void releaseAllCapabilities(uint32_t n, Capability *cap, Task *task);
 //void findPtrCb(FindPtrCb , void* , P_);
 //void findPtr(P_, int);
 }
@@ -187,7 +182,7 @@ class Response {
 };
 
 static bool paused = false;
-static Capability * r_paused;
+static PauseToken * r_paused;
 static Response * r_poll_pause_resp = NULL;
 
 static StgStablePtr rts_saved_closure = NULL;
@@ -225,14 +220,6 @@ void evac_fn_helper(void *user, StgClosure **root) {
     (*f)(*root);
 }
 
-void collect_stable_names(std::function<void(StgClosure*)> f) {
-    threadStableNameTable((evac_fn) evac_fn_helper, &f);
-}
-
-void collect_stable_ptrs(std::function<void(StgClosure*)> f) {
-    threadStablePtrTable((evac_fn) evac_fn_helper, &f);
-}
-
 void collect_threads_callback(void *user, StgTSO * tso){
   ((Response *) user)->write((uint64_t) tso);
 }
@@ -241,7 +228,7 @@ void collect_misc_callback(void *user, StgClosure * clos){
   ((Response *) user)->write((uint64_t) clos);
 }
 
-void inform_callback(void *user, Capability * p){
+void inform_callback(void *user, PauseToken * p){
   ((Response *) user)->finish(RESP_OKAY);
   r_paused = p;
   //trace("Informed %p %p\n", r_paused.pausing_task, r_paused.capabilities);

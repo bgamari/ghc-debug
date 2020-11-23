@@ -26,6 +26,7 @@ module GHC.Debug.Client
   , fullTraversalViaBlocks
   , Tritraversable(..)
   , traceRequestLog
+  , traceProfile
   , precacheBlocks
   ) where
 
@@ -64,7 +65,7 @@ import Data.IORef
 import Debug.Trace
 
 
-lookupInfoTable :: RawClosure -> DebugM (RawInfoTable, RawClosure)
+lookupInfoTable :: RawClosure -> DebugM (StgInfoTableWithPtr, RawClosure)
 lookupInfoTable rc = do
     let ptr = getInfoTblPtr rc
     [itbl] <- request (RequestInfoTables [ptr])
@@ -121,13 +122,13 @@ dereferenceClosures cs = do
     let its = map getInfoTblPtr raw_cs
     --print $ map (lookupDwarf d) its
     raw_its <- request (RequestInfoTables its)
-    return $ zipWith decodeClosureWithSize (zip its raw_its) (zip cs raw_cs)
+    return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
 
 dereferenceStack :: StackCont -> DebugM Stack
 dereferenceStack (StackCont sp) = do
   stack <- request (RequestStack sp)
   let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
-      get_info_table rc =  lookupInfoTable rc
+      get_info_table rc = fst <$> lookupInfoTable rc
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
 
@@ -175,6 +176,11 @@ traceRequestLog d = do
   s <- readIORef (statsRef d)
   putStrLn (ppStats s)
 
+traceProfile :: Env u w -> IO ()
+traceProfile e = do
+  p <- readIORef (profRef e)
+  print (profile p)
+
 -- | Consult the BlockCache for the block which contains a specific
 -- closure, if it's not there then try to fetch the right block, if that
 -- fails, call 'dereferenceClosure'
@@ -184,8 +190,8 @@ dereferenceClosureFromBlock cp
   | otherwise = do
       rc <-  dataFetch (LookupClosure cp)
       let it = getInfoTblPtr rc
-      [raw_it] <- request (RequestInfoTables [it])
-      return $ decodeClosureWithSize (it, raw_it) (cp, rc)
+      [st_it] <- request (RequestInfoTables [it])
+      return $ decodeClosureWithSize st_it (cp, rc)
 
 precacheBlocks :: DebugM Int
 precacheBlocks = dataFetch PopulateBlockCache

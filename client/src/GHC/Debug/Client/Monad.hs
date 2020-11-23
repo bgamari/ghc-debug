@@ -122,7 +122,7 @@ withDebuggeeSocket exeName sockName action = do
     let ss = stateSet (BCRequestState bc hdl) (stateSet (RequestState hdl) stateEmpty)
     new_env <- initEnv ss (Debuggee exeName requestMap Batch)
     -- Turn on data fetch stats with report = 3
-    let new_flags = defaultFlags { report = 0 }
+    let new_flags = defaultFlags { report = 4 }
     action (new_env { Haxl.Core.flags = new_flags })
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
@@ -142,7 +142,7 @@ instance ShowP Request where
 
 -- | Group together RequestClosures and RequestInfoTables to avoid
 -- some context switching.
-groupFetches :: Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [RawInfoTable])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
+groupFetches :: Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [StgInfoTableWithPtr])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
 groupFetches h cs is todo [] = dispatch h cs is (reverse todo)
 groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
   case r of
@@ -152,7 +152,7 @@ groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
 
 dispatch :: Handle
          -> [([ClosurePtr], ResultVar [RawClosure])]
-         -> [([InfoTablePtr], ResultVar [RawInfoTable])]
+         -> [([InfoTablePtr], ResultVar [StgInfoTableWithPtr])]
          -> [BlockedFetch Request]
          -> IO ()
 dispatch h cs its other = do

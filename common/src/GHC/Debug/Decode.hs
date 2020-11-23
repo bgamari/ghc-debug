@@ -27,7 +27,8 @@ import GHC.Exts.Heap hiding (Closure)
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
-import GHC.Debug.Types
+import GHC.Debug.Types.Ptr
+import GHC.Debug.Types.Closures
 import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
@@ -43,13 +44,16 @@ import Debug.Trace
 foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
               Any -> (# Addr#, ByteArray#, ByteArray# #)
 
-getClosureRaw :: Box -> IO (GenClosure Word)
-getClosureRaw (Box a) = do
+--getClosureDataFromHeapRepPrim :: IO (String, String, String) -> StgInfoTable -> Bool -> ByteArray# -> b -> c
+--getClosureDataFromHeapRepPrim = undefined
+
+getClosureRaw :: StgInfoTable -> Box -> IO (GenClosure Word)
+getClosureRaw itb (Box a) = do
   let (# infoTablePtr, datArr, pointers #) = unpackClosureWords# a
   let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
       end_ptrs = fromIntegral nelems_ptrs - 1
       rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
-  getClosureDataFromHeapRep True datArr (Ptr infoTablePtr) rawPtrs
+  getClosureDataFromHeapRepPrim (return ("", "", "")) itb datArr  rawPtrs
 
 -- | Allow access directly to the chunk of memory used by a bytestring
 allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
@@ -102,16 +106,15 @@ data Ptr' a = Ptr' a
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
-decodeClosureWithSize :: (InfoTablePtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
-decodeClosureWithSize rit (ptr, rc) =
+decodeClosureWithSize :: StgInfoTableWithPtr -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeClosureWithSize itb (ptr, rc) =
     let size = Size (rawClosureSize rc)
-        !c = decodeClosure rit (ptr, rc)
+        !c = decodeClosure itb (ptr, rc)
     in DCS size c
 
 
-decodeClosure :: (InfoTablePtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  Closure
-decodeClosure (itp, RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
-    allocate itbl $ \itblPtr -> do
+decodeClosure :: StgInfoTableWithPtr -> (ClosurePtr, RawClosure) ->  Closure
+decodeClosure itb (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
             ptr_to_itbl_ptr = castPtr closPtr
@@ -121,20 +124,20 @@ decodeClosure (itp, RawInfoTable itbl) (ptr, rc@(RawClosure clos)) = unsafePerfo
         --print (itblPtr, closPtr)
         -- Save the old value of itbl_ptr so we can put it back if we're in
         -- the no copying mode (allocateByPtr)
-        old_itbl <- peek ptr_to_itbl_ptr
-        poke ptr_to_itbl_ptr (fixTNTC itblPtr)
+--        old_itbl <- peek ptr_to_itbl_ptr
+--        poke ptr_to_itbl_ptr (fixTNTC itblPtr)
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
         -- process
         -- Printing this return value can lead to segfaults because the
         -- pointer for constrDesc won't point to a string after being
         -- decoded.
-        !r <- getClosureRaw (ptrToBox closPtr)
+        !r <- getClosureRaw (decodedTable itb) (ptrToBox closPtr)
         -- Mutate back the ByteArray as if we attempt to use it again then
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
-        poke ptr_to_itbl_ptr old_itbl
-        return $ trimap (const ptr) stackCont  ClosurePtr . (convertClosure itp)
+--        poke ptr_to_itbl_ptr old_itbl
+        return $ trimap (const ptr) stackCont  ClosurePtr . (convertClosure itb)
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont
@@ -155,6 +158,7 @@ decodeInfoTable :: RawInfoTable -> StgInfoTable
 decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
   allocate itbl $ \itblPtr -> do
     peekItbl itblPtr
+
 
 
 -- | Invariant: ClosurePtr is within the range of the block
