@@ -44,8 +44,6 @@ import Debug.Trace
 foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
               Any -> (# Addr#, ByteArray#, ByteArray# #)
 
---getClosureDataFromHeapRepPrim :: IO (String, String, String) -> StgInfoTable -> Bool -> ByteArray# -> b -> c
---getClosureDataFromHeapRepPrim = undefined
 
 getClosureRaw :: StgInfoTable -> Box -> IO (GenClosure Word)
 getClosureRaw itb (Box a) = do
