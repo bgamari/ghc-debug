@@ -46,7 +46,7 @@ data Request a where
     -- | Request a stack
     RequestStack :: StackPtr -> Request RawStack
     -- | Request a set of info tables.
-    RequestInfoTables :: [InfoTablePtr] -> Request [StgInfoTableWithPtr]
+    RequestInfoTables :: [InfoTablePtr] -> Request [(StgInfoTableWithPtr, RawInfoTable)]
     -- | Wait for the debuggee to pause itself and then
     -- execute an action. It currently impossible to resume after
     -- a pause caused by a poll.
@@ -201,7 +201,8 @@ getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
-getResponse (RequestInfoTables itps) = zipWith StgInfoTableWithPtr itps <$> many getInfoTable
+getResponse (RequestInfoTables itps) =
+    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps <$> many getInfoTable
 getResponse (RequestBitmap _)    = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
@@ -256,10 +257,11 @@ getRawStack = do
   len <- getInt32be
   RawStack <$> getByteString (fromIntegral len)
 
-getInfoTable :: Get StgInfoTable
+getInfoTable :: Get (StgInfoTable, RawInfoTable)
 getInfoTable = do
   len <- getInt32be
-  decodeInfoTable . RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
+  r <- RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
+  return (decodeInfoTable r, r)
 
 
 data Error = BadCommand

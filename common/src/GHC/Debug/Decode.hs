@@ -106,15 +106,16 @@ data Ptr' a = Ptr' a
 aToWord# :: Any -> Word#
 aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
 
-decodeClosureWithSize :: StgInfoTableWithPtr -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeClosureWithSize itb (ptr, rc) =
     let size = Size (rawClosureSize rc)
         !c = decodeClosure itb (ptr, rc)
     in DCS size c
 
 
-decodeClosure :: StgInfoTableWithPtr -> (ClosurePtr, RawClosure) ->  Closure
-decodeClosure itb (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
+decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  Closure
+decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
+    allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
             ptr_to_itbl_ptr = castPtr closPtr
@@ -124,8 +125,8 @@ decodeClosure itb (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
         --print (itblPtr, closPtr)
         -- Save the old value of itbl_ptr so we can put it back if we're in
         -- the no copying mode (allocateByPtr)
---        old_itbl <- peek ptr_to_itbl_ptr
---        poke ptr_to_itbl_ptr (fixTNTC itblPtr)
+        old_itbl <- peek ptr_to_itbl_ptr
+        poke ptr_to_itbl_ptr (fixTNTC itblPtr)
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
         -- process
@@ -136,8 +137,7 @@ decodeClosure itb (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
         -- Mutate back the ByteArray as if we attempt to use it again then
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
---        poke ptr_to_itbl_ptr old_itbl
-        return $ trimap (const ptr) stackCont  ClosurePtr . (convertClosure itb)
+        poke ptr_to_itbl_ptr old_itbl
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont

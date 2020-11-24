@@ -142,7 +142,7 @@ instance ShowP Request where
 
 -- | Group together RequestClosures and RequestInfoTables to avoid
 -- some context switching.
-groupFetches :: Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [StgInfoTableWithPtr])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
+groupFetches :: Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [(StgInfoTableWithPtr, RawInfoTable)])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
 groupFetches h cs is todo [] = dispatch h cs is (reverse todo)
 groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
   case r of
@@ -152,7 +152,7 @@ groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
 
 dispatch :: Handle
          -> [([ClosurePtr], ResultVar [RawClosure])]
-         -> [([InfoTablePtr], ResultVar [StgInfoTableWithPtr])]
+         -> [([InfoTablePtr], ResultVar [(StgInfoTableWithPtr, RawInfoTable)])]
          -> [BlockedFetch Request]
          -> IO ()
 dispatch h cs its other = do

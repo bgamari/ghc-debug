@@ -65,11 +65,11 @@ import Data.IORef
 import Debug.Trace
 
 
-lookupInfoTable :: RawClosure -> DebugM (StgInfoTableWithPtr, RawClosure)
+lookupInfoTable :: RawClosure -> DebugM (StgInfoTableWithPtr, RawInfoTable, RawClosure)
 lookupInfoTable rc = do
     let ptr = getInfoTblPtr rc
-    [itbl] <- request (RequestInfoTables [ptr])
-    return (itbl, rc)
+    [(itbl, rit)] <- request (RequestInfoTables [ptr])
+    return (itbl,rit, rc)
 
 
 
@@ -128,7 +128,7 @@ dereferenceStack :: StackCont -> DebugM Stack
 dereferenceStack (StackCont sp) = do
   stack <- request (RequestStack sp)
   let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
-      get_info_table rc = fst <$> lookupInfoTable rc
+      get_info_table rc = (\(a, b, c) -> a) <$> lookupInfoTable rc
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
 
