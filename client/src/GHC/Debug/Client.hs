@@ -133,8 +133,13 @@ dereferenceStack (StackCont sp) = do
   return decoded_stack
 
 
-dereferenceConDesc :: ClosurePtr -> DebugM ConstrDesc
+dereferenceConDesc :: ConstrDescCont -> DebugM ConstrDesc
 dereferenceConDesc i = request (RequestConstrDesc i)
+
+noConDesc :: ConstrDescCont -> DebugM ConstrDesc
+noConDesc c = traceShow c (return emptyConDesc)
+
+emptyConDesc = ConstrDesc "" "" ""
 
 -- | Do a traversal requesting closures one by one using RequestClosure
 fullTraversal :: ClosurePtr -> DebugM UClosure

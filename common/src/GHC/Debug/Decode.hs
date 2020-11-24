@@ -138,6 +138,7 @@ decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerfor
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
         poke ptr_to_itbl_ptr old_itbl
+        return $ trimap (\itb -> PayloadWithKey itb ptr) stackCont  ClosurePtr . (convertClosure itb)
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont

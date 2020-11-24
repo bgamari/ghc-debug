@@ -42,6 +42,7 @@ module GHC.Debug.Types.Closures (
     , treeSize
     , inclusive
     , ConstrDesc(..)
+    , ConstrDescCont
     , parseConstrDesc
     ) where
 
@@ -160,8 +161,11 @@ inclusive =
 ------------------------------------------------------------------------
 -- Closures
 
-type Closure = DebugClosure ClosurePtr StackCont ClosurePtr
-type SizedClosure = DebugClosureWithSize ClosurePtr StackCont ClosurePtr
+
+type Closure = DebugClosure ConstrDescCont StackCont ClosurePtr
+type SizedClosure = DebugClosureWithSize ConstrDescCont StackCont ClosurePtr
+
+type ConstrDescCont = PayloadWithKey InfoTablePtr ClosurePtr
 
 type DebugClosureWithSize = DebugClosureWithExtra Size
 

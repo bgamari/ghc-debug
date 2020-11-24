@@ -116,3 +116,12 @@ untagClosurePtr (ClosurePtr (fromBE64 -> w)) = ClosurePtr (toBE64 (w .&. complem
 getInfoTblPtr :: RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = InfoTablePtr (runGet getWord64be (BSL.take 8 (BSL.fromStrict bs)))
 
+-- A value, but with a different value used for testing equality.
+data PayloadWithKey k a = PayloadWithKey k a deriving Show
+
+
+instance Eq k => Eq (PayloadWithKey k a) where
+  (PayloadWithKey k1 _) == (PayloadWithKey k2 _) = k1 == k2
+
+instance Hashable k => Hashable (PayloadWithKey k a) where
+  hashWithSalt s (PayloadWithKey k _) = hashWithSalt s k

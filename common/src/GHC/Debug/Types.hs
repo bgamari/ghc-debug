@@ -59,7 +59,8 @@ data Request a where
     -- | Request the pointer bitmap for an info table.
     RequestBitmap :: InfoTablePtr -> Request PtrBitmap
     -- | Request the description for an info table.
-    RequestConstrDesc :: ClosurePtr -> Request ConstrDesc
+    -- The `InfoTablePtr` is just used for the equality
+    RequestConstrDesc :: PayloadWithKey InfoTablePtr ClosurePtr -> Request ConstrDesc
     -- | Lookup source information of an info table
     RequestSourceInfo :: InfoTablePtr -> Request [String]
     -- | Copy all blocks from the process at once
@@ -67,9 +68,10 @@ data Request a where
     -- | Request the block which contains a specific pointer
     RequestBlock :: ClosurePtr -> Request RawBlock
 
+
 deriving instance Show (Request a)
 deriving instance Eq (Request a)
-deriving instance Ord (Request a)
+--deriving instance Ord (Request a)
 
 instance Hashable (Request a) where
   hashWithSalt s r = case r of
@@ -184,7 +186,7 @@ putRequest (RequestInfoTables ts) =
     foldMap put ts
 putRequest (RequestBitmap binfo)       =
   putCommand cmdRequestBitmap $ put binfo
-putRequest (RequestConstrDesc cinfo) =
+putRequest (RequestConstrDesc (PayloadWithKey _ cinfo)) =
   putCommand cmdRequestConstrDesc $ put cinfo
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty

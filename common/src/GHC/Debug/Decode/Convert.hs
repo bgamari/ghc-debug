@@ -11,12 +11,12 @@ import GHC.Debug.Types.Ptr
 
 -- | Convert a GenClosure from ghc-heap to a DebugClosure,
 -- it is mostly an identity function, apart from STACK closures.
-convertClosure :: (Num a, Eq a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure () a a
+convertClosure :: (Num a, Eq a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure InfoTablePtr a a
 convertClosure itb g =
   case g of
     -- The () here will be overwritten by a constant value in
     -- `decodeClosure`
-    GHC.ConstrClosure a1 a2 a3 a4 a5 a6 -> ConstrClosure itb a2 a3 ()
+    GHC.ConstrClosure a1 a2 a3 a4 a5 a6 -> ConstrClosure itb a2 a3 (tableId itb)
     GHC.FunClosure a1 a2 a3             -> FunClosure itb a2 a3
     GHC.ThunkClosure a1 a2 a3           -> ThunkClosure itb a2 a3
     GHC.SelectorClosure a1 a2           -> SelectorClosure itb a2
