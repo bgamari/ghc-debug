@@ -15,7 +15,7 @@ StgArrBytes *heap_view_closurePtrsAsWords(Capability *cap, StgClosure *closure) 
     StgArrBytes *arr =
         (StgArrBytes *)allocate(cap, sizeofW(StgArrBytes) + nptrs);
     TICK_ALLOC_PRIM(sizeofW(StgArrBytes), nptrs, 0);
-    SET_HDR(arr, &stg_ARR_WORDS_info, cap->r.rCCCS);
+    SET_HDR(arr, &stg_ARR_WORDS_info, ((CapabilityPublic *)cap)->r.rCCCS);
     arr->bytes = sizeof(StgWord) * nptrs;
 
     for (StgWord i = 0; i<nptrs; i++) {
