@@ -55,8 +55,8 @@ getClosureRaw itb (Box a) = do
 
 -- | Allow access directly to the chunk of memory used by a bytestring
 allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
-allocate = allocateByCopy
---allocate = allocateByPtr
+--allocate = allocateByCopy
+allocate = allocateByPtr
 
 -- MP: It was thought that allocateByPtr would be quite a bit faster but
 -- this turns out to not be true on some simple benchmarks. In future we
