@@ -122,7 +122,7 @@ withDebuggeeSocket exeName sockName action = do
     let ss = stateSet (BCRequestState bc hdl) (stateSet (RequestState hdl) stateEmpty)
     new_env <- initEnv ss (Debuggee exeName requestMap Batch)
     -- Turn on data fetch stats with report = 3
-    let new_flags = defaultFlags { report = 4 }
+    let new_flags = defaultFlags { report = 0 }
     action (new_env { Haxl.Core.flags = new_flags })
 
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
