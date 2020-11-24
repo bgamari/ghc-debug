@@ -125,6 +125,12 @@ withDebuggeeSocket exeName sockName action = do
     let new_flags = defaultFlags { report = 0 }
     action (new_env { Haxl.Core.flags = new_flags })
 
+{- MP:
+- In some profiles it seemed that the caching step was causing quite a bit
+- of overhead, but still using the cache is about 2-3x faster than without
+- a cache. (ie using `doRequest` directly or `uncachedRequest`.
+-}
+
 -- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
 request :: (Show resp, Typeable resp) => Request resp -> DebugM resp
 request = dataFetch
