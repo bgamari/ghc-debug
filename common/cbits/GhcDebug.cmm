@@ -18,7 +18,7 @@ unpackClosureWordszh ( P_ closure )
     W_ ptrs_arr_sz, ptrs_arr_cards, dat_arr_sz;
     dat_arr_sz = SIZEOF_StgArrBytes + WDS(len);
 
-    ALLOC_PRIM_P (dat_arr_sz, unpackClosureWordszh, closure);
+    ALLOC_PRIM_N (dat_arr_sz, unpackClosureWordszh, closure);
 
     dat_arr = Hp - dat_arr_sz + WDS(1);
 
