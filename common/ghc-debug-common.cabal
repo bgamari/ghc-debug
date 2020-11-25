@@ -14,17 +14,20 @@ extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     GHC.Debug.Types,
-                       GHC.Debug.Decode,
+  exposed-modules:     GHC.Debug.Convention
+                       GHC.Debug.Decode
+                       GHC.Debug.Decode.Convert
                        GHC.Debug.Decode.Stack
+                       GHC.Debug.Types
                        GHC.Debug.Types.Closures
                        GHC.Debug.Types.Graph
                        GHC.Debug.Types.Ptr
-                       GHC.Debug.Decode.Convert
   build-depends:       base >=4.12 && <4.14,
                        bytestring >=0.10 && <0.11,
                        binary >=0.8 && <0.9,
                        array,
+                       directory,
+                       filepath,
                        hashable,
                        ghc-heap,
                        cpu,

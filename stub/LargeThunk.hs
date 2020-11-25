@@ -56,8 +56,7 @@ data Rating = Rating
     deriving anyclass (NFData)
 
 main :: IO ()
-main = do
-    start
+main = withGhcDebug $ do
     -- Parse DB size from arguments
     [nUsersStr, nMoviesStr, nRatingsStr] <- getArgs
     let

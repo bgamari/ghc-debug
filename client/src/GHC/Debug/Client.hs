@@ -25,6 +25,7 @@ module GHC.Debug.Client
   , fullTraversalViaBlocks
   , Tritraversable(..)
   , precacheBlocks
+  , socketDirectory
   ) where
 
 import Control.Concurrent
@@ -52,6 +53,7 @@ import System.FilePath
 import System.Directory
 import Text.Printf
 
+import GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client.BlockCache
 

@@ -633,8 +633,14 @@ static void handle_connection(const unsigned int sock_fd) {
 }
 */
 
-void serve(void) {
+extern "C"
+void start(const char* socket_path) {
+    trace("starting\n");
     struct sockaddr_un local, remote;
+
+    if (strlen(socket_path) >= sizeof(local.sun_path)) {
+        barf("socket_path too long: \"%s\"", socket_path);
+    }
 
     int s = socket(AF_UNIX, SOCK_STREAM, 0);
     if (s == -1) {
@@ -644,9 +650,7 @@ void serve(void) {
     // Bind socket
     {
         local.sun_family = AF_UNIX;
-        const char* sock = getenv("GHC_DEBUG_SOCKET");
-        if (sock == NULL){ sock = "/tmp/ghc-debug"; }
-        strncpy(local.sun_path, sock, sizeof(local.sun_path));
+        strncpy(local.sun_path, socket_path, sizeof(local.sun_path));
         unlink(local.sun_path);
         if (bind(s, (struct sockaddr *) &local, sizeof(local)) != 0) {
             barf("bind failed");
@@ -666,16 +670,6 @@ void serve(void) {
         handle_connection(s2);
     }
 }
-
-static std::thread *server_thread;
-
-extern "C"
-void start(void) {
-    trace("starting\n");
-    server_thread = new std::thread(serve);
-}
-
-
 
 extern "C"
 StgWord saveClosures(StgWord n, HsStablePtr *sps)
