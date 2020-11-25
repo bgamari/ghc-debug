@@ -15,12 +15,11 @@ cabal-version:       >=1.10
 
 executable debugger
   main-is:             Test.hs
-  ghc-options:         -threaded -g3 -rtsopts
+  ghc-options:         -threaded -g3 -rtsopts -eventlog
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
                      , ghc-heap
-                     , ghc-vis
                      , containers
                      , extra
                      , process
@@ -41,7 +40,6 @@ test-suite system-test
     , process
     , ghc-debug-client
     , ghc-debug-common
-    , ghc-vis
     , directory
     , async
     , extra
@@ -73,10 +71,9 @@ executable save-one-pause
                      , ghc-debug-client
                      , ghc-debug-common
                      , ghc-heap
-                     , ghc-vis
                      , containers
                      , extra
                      , process
                      , ghc-debug-stub
   default-language:    Haskell2010
-  
+
