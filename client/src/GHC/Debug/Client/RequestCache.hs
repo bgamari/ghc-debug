@@ -21,7 +21,10 @@ instance Eq AnyReq where
 data AnyResp = AnyResp Any
 
 cacheReq :: Request resp -> resp -> RequestCache -> RequestCache
-cacheReq req resp rc = HM.insert (AnyReq req) (AnyResp (unsafeCoerce resp)) rc
+cacheReq req resp rc
+  -- Don't cache the results of writes, such as pause/unpause
+  | isWriteRequest req = rc
+  | otherwise = HM.insert (AnyReq req) (AnyResp (unsafeCoerce resp)) rc
 
 lookupReq :: forall resp . Request resp -> RequestCache -> Maybe resp
 lookupReq req rc = coerceResult <$> HM.lookup (AnyReq req) rc

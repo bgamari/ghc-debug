@@ -82,6 +82,15 @@ eq1request r1 r2 =
     RequestAllBlocks       -> case r2 of { RequestAllBlocks -> True; _ -> False }
     RequestBlock cp        -> case r2 of { RequestBlock cp' -> cp == cp'; _ -> False }
 
+-- | Whether a request mutates the debuggee state, don't cache these ones
+isWriteRequest :: Request a -> Bool
+isWriteRequest r =
+  case r of
+    RequestPause  -> True
+    RequestResume -> True
+    RequestPoll -> True
+    _ -> False
+
 
 
 deriving instance Show (Request a)
