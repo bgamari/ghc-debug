@@ -5,16 +5,29 @@
 {-# LANGUAGE TypeApplications #-}
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
-    withDebuggeeRun
-  , withDebuggeeConnect
+    Debuggee
   , debuggeeRun
   , debuggeeConnect
   , debuggeeClose
+  , withDebuggeeRun
+  , withDebuggeeConnect
+  , socketDirectory
     -- * Pause/Resume
-  , pauseDebuggee
   , pause
-  , pauseThen
   , resume
+  , pausePoll
+  , withPause
+    -- * Querying the paused debuggee
+  , rootClosures
+  , savedClosures
+
+    -- * Closures
+  , Closure
+  , closureExclusiveSize
+
+    -- * All this stuff feels too low level to be exposed to the frontend, but
+    --   still could be used for tests.
+  , pauseThen -- This feels odd. Like we should just have a better choice of monad
   , request
   , Request(..)
   , getInfoTblPtr
@@ -32,21 +45,118 @@ module GHC.Debug.Client
   , fullTraversalViaBlocks
   , Tritraversable(..)
   , precacheBlocks
-  , socketDirectory
   , DebugEnv
   , DebugM
   ) where
 
 import Control.Exception
-import GHC.Debug.Types
+import qualified GHC.Debug.Types as GD
+import GHC.Debug.Types hiding (Closure)
 import GHC.Debug.Decode
 import GHC.Debug.Decode.Stack
 
 import GHC.Debug.Convention (socketDirectory)
-import GHC.Debug.Client.Monad
+import GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
+import qualified GHC.Debug.Client.Monad as GD
 import GHC.Debug.Client.BlockCache
 
 import Debug.Trace
+
+
+newtype Debuggee = Debuggee { unDebuggee :: DebugEnv DebugM }
+
+-- | Bracketed version of @debuggeeRun@. Runs a debuggee, connects to it, runs
+-- the action, kills the process, then closes the debuggee.
+withDebuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
+                -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+                -> (Debuggee -> IO a)
+                -> IO a
+withDebuggeeRun exeName socketName action = GD.withDebuggeeRun exeName socketName (action . Debuggee)
+
+-- | Bracketed version of @debuggeeConnect@. Connects to a debuggee, runs the
+-- action, then closes the debuggee.
+withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
+                   -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+                   -> (Debuggee -> IO a)
+                   -> IO a
+withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName (action . Debuggee)
+
+-- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
+debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
+            -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+            -> IO Debuggee
+debuggeeRun exeName socketName = Debuggee <$> GD.debuggeeRun exeName socketName
+
+-- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
+debuggeeConnect :: FilePath  -- ^ path to executable to run as the debuggee
+                -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+                -> IO Debuggee
+debuggeeConnect exeName socketName = Debuggee <$> GD.debuggeeConnect exeName socketName
+
+-- | Close the connection to the debuggee.
+debuggeeClose :: Debuggee -> IO ()
+debuggeeClose = GD.debuggeeClose . unDebuggee
+
+-- | Pause the debuggee
+pause :: Debuggee -> IO ()
+pause (Debuggee e) = run e $ request RequestPause
+
+resume :: Debuggee -> IO ()
+resume (Debuggee e) = run e $ request RequestResume
+
+-- | Like pause, but wait for the debuggee to pause itself. It currently
+-- impossible to resume after a pause caused by a poll.?????????? Is that true???? can we not just call resume????
+pausePoll :: Debuggee -> IO ()
+pausePoll (Debuggee e) = run e $ request RequestPoll
+
+-- | Bracketed version of pause/resume.
+withPause :: Debuggee -> IO a -> IO a
+withPause dbg act = bracket_ (pause dbg) (resume dbg) act
+
+-- | Request the debuggee's root pointers.
+rootClosures :: Debuggee -> IO [Closure]
+rootClosures (Debuggee e) = do
+  closures <- run e $ dereferenceClosures =<< request RequestRoots
+  return (Closure <$> closures)
+
+-- | A client can save objects by calling a special RTS method
+-- This function returns the closures it saved.
+savedClosures :: Debuggee -> IO [Closure]
+savedClosures (Debuggee e) = do
+  closures <- run e $ dereferenceClosures =<< request RequestSavedObjects
+  return (Closure <$> closures)
+
+-- -- | Request the description for an info table.
+-- -- The `InfoTablePtr` is just used for the equality
+-- requestConstrDesc :: Debuggee -> PayloadWithKey InfoTablePtr ClosurePtr -> IO ConstrDesc
+-- requestConstrDesc (Debuggee e) = run e $ request RequestConstrDesc
+
+-- -- | Lookup source information of an info table
+-- requestSourceInfo :: Debuggee -> InfoTablePtr -> IO [String]
+-- requestSourceInfo (Debuggee e) = run e $ request RequestSourceInfo
+
+-- -- | Request a set of closures.
+-- requestClosures :: Debuggee -> [ClosurePtr] -> IO [RawClosure]
+-- requestClosures (Debuggee e) = run e $ request RequestClosures
+
+-- -- | Request a stack
+-- requestStack :: Debuggee -> StackPtr -> IO RawStack
+-- requestStack (Debuggee e) = run e $ request RequestStack
+
+-- -- | Request a set of info tables.
+-- requestInfoTables :: Debuggee -> [InfoTablePtr] -> IO [(StgInfoTableWithPtr, RawInfoTable)]
+-- requestInfoTables (Debuggee e) = run e $ request RequestInfoTables
+
+newtype Closure = Closure GD.SizedClosure
+
+-- | Get the exlusive size (not including referenced obejcts) of a closure.
+closureExclusiveSize :: Debuggee -> Closure -> Int
+closureExclusiveSize _dbg (Closure closure) = getSize $ extraDCS closure
+
+
+--
+-- TODO move stuff below here to a lower level module.
+--
 
 
 lookupInfoTable :: RawClosure -> DebugM (StgInfoTableWithPtr, RawInfoTable, RawClosure)
@@ -55,17 +165,11 @@ lookupInfoTable rc = do
     [(itbl, rit)] <- request (RequestInfoTables [ptr])
     return (itbl,rit, rc)
 
-pause, resume :: DebugEnv DebugM -> IO ()
-pauseThen :: DebugEnv DebugM -> DebugM b -> IO b
-pause e = run e $ request RequestPause
-pauseThen e d =
-  pause e >> run e d
-resume e = run e $ request RequestResume
+pauseThen :: Debuggee -> DebugM b -> IO b
+pauseThen dbg@(Debuggee e) d =
+  pause dbg >> run e d
 
-pauseDebuggee :: DebugEnv DebugM -> IO a -> IO a
-pauseDebuggee e act = bracket_ (pause e) (resume e) act
-
-dereferenceClosure :: ClosurePtr -> DebugM Closure
+dereferenceClosure :: ClosurePtr -> DebugM GD.Closure
 dereferenceClosure c = noSize . head <$> dereferenceClosures [c]
 
 dereferenceSizedClosure :: ClosurePtr -> DebugM SizedClosure

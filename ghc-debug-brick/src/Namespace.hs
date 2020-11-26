@@ -8,6 +8,6 @@
 module Namespace where
 
 data Name
-  = Main
-  | Main_KnownDebuggeesList
+  = Setup_KnownDebuggeesList
+  | Connected_Paused_SavedClosuresList
   deriving (Eq, Ord, Show)

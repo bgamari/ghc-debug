@@ -48,7 +48,7 @@ main = do
   -}
 
 -- Test pause/resume
-p1 e = pauseDebuggee e ((void $ getChar))
+p1 e = withPause e ((void $ getChar))
 
 
 -- Testing error codes

@@ -54,7 +54,7 @@ type DebugM = GenHaxl Debuggee String
 - a cache. (ie using `doRequest` directly or `uncachedRequest`.
 -}
 
--- | Send a request to a 'Debuggee' paused with 'pauseDebuggee'.
+-- | Send a request to a 'Debuggee' paused with 'withPause'.
 --request :: (Show resp, Typeable resp) => Request resp -> DebugM resp
 --request = dataFetch
 

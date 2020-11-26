@@ -36,7 +36,7 @@ import Namespace
 initialAppState :: AppState
 initialAppState = AppState
   { _majorState = Setup
-      { _knownDebuggees = list Main_KnownDebuggeesList [] 1
+      { _knownDebuggees = list Setup_KnownDebuggeesList [] 1
       }
   }
 
@@ -53,8 +53,8 @@ data MajorState
 
   -- | Connected to a debuggee
   | Connected
-    { _debuggee :: FilePath
-    , _debugEnv :: DebugEnv DebugM
+    { _debuggeeSocket :: FilePath
+    , _debuggee :: Debuggee
     , _mode     :: ConnectedMode
     }
 
@@ -63,6 +63,8 @@ data ConnectedMode
   = RunningMode
   -- | Debuggee is paused
   | PausedMode
+    { _savedClosures :: GenericList Name Seq Closure
+    }
 
 makeLenses ''AppState
 makeLenses ''MajorState
