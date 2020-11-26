@@ -4,7 +4,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module GHC.Debug.Client
-  ( pauseDebuggee
+  ( -- * Running/Connecting to a debuggee
+    withDebuggeeRun
+  , withDebuggeeConnect
+  , debuggeeRun
+  , debuggeeConnect
+  , debuggeeClose
+    -- * Pause/Resume
+  , pauseDebuggee
   , pause
   , pauseThen
   , resume

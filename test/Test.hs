@@ -34,7 +34,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p23 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p23 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -44,7 +44,7 @@ main = do
 
   -- Start the program and do some debugging
   let someDebuggingAction = p13
-  withDebuggee prog "/tmp/ghc-debug" someDebuggingAction
+  withDebuggeeRun prog "/tmp/ghc-debug" someDebuggingAction
   -}
 
 -- Test pause/resume
