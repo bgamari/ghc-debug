@@ -11,7 +11,7 @@ import Control.Monad (forever)
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
-import Data.Sequence as Seq
+import qualified Data.Sequence as Seq
 import Data.Text
 import Graphics.Vty(defaultConfig, mkVty, defAttr)
 import qualified Graphics.Vty.Input.Events as Vty
@@ -27,71 +27,88 @@ import Brick.Widgets.List
 
 import GHC.Debug.Client
 
+import Model
+
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
 
-data Name
-  = Main
-  | Main_FileList
-  deriving (Eq, Ord, Show)
-
-data AppState = AppState
-  { _knownDebuggees :: GenericList Name Seq (Text, FilePath) -- ^ File name and full path
-  }
-
-makeLenses ''AppState
-
 myAppDraw :: AppState -> [Widget Name]
-myAppDraw appState =
-  [ borderWithLabel (txt "ghc-debug")
-  $ padAll 1
-  $ vBox
-    [ txt $ "Select a process to debug (" <> pack (show nKnownDebuggees) <> " found):"
-    , renderList
-        (\elIsSelected (el, _) -> hBox
-            [ txt $ if elIsSelected then "*" else " "
-            , txt " "
-            , txt el
-            ]
-        )
-        True
-        (appState^.knownDebuggees)
-    ]
+myAppDraw (AppState majorState') =
+  [ case majorState' of
+    Setup knownDebuggees' -> let
+      nKnownDebuggees = Seq.length $ majorState'^.knownDebuggees.listElementsL
+      in mainBorder "ghc-debug" $ vBox
+        [ txt $ "Select a process to debug (" <> pack (show nKnownDebuggees) <> " found):"
+        , renderList
+            (\elIsSelected debuggee -> hBox
+                [ txt $ if elIsSelected then "*" else " "
+                , txt " "
+                , txt (pack $ takeFileName debuggee)
+                ]
+            )
+            True
+            knownDebuggees'
+        ]
+    Connected debuggee env mode -> let
+      title = "ghc-debug - " <> (case mode of
+                RunningMode -> "Running"
+                PausedMode  -> "Paused")
+      in mainBorder title (txt "TODO")
   ]
   where
-  nKnownDebuggees = Seq.length $ appState^.knownDebuggees.listElementsL
+  mainBorder title = borderWithLabel (txt title) . padAll 1
 
 myAppHandleEvent :: AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
-myAppHandleEvent appState brickEvent = case brickEvent of
+myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
   VtyEvent (Vty.EvKey KEsc []) -> halt appState
-  VtyEvent event -> do
-    handleListEvent event (appState^.knownDebuggees)
-    newOptions <- handleListEvent event (appState^.knownDebuggees)
-    continue $ appState & knownDebuggees .~ newOptions
-  AppEvent event -> case event of
-    PollTick -> do
-      -- Poll for debuggees
-      knownDebuggees' <- liftIO $ do
-        dir :: FilePath <- socketDirectory
-        debuggeeSockets :: [FilePath] <- listDirectory dir <|> return []
+  _ -> case majorState' of
+    Setup knownDebuggees' -> case brickEvent of
 
-        let currentSelectedPathMay :: Maybe FilePath
-            currentSelectedPathMay = fmap (snd . snd) (listSelectedElement (appState^.knownDebuggees))
+      VtyEvent event -> case event of
+        -- Connect to the selected debuggee
+        Vty.EvKey KEnter _
+          | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
+          -> do
+            env <- liftIO $ debuggeeConnect (takeFileName socket) socket
+            continue $ appState & majorState .~ Connected
+                  { _debuggee = socket
+                  , _debugEnv = env
+                  , _mode     = RunningMode  -- TODO should we query the debuggee for this?
+                  }
 
-            newSelection :: Maybe Int
-            newSelection = do
-              currentSelectedPath <- currentSelectedPathMay
-              List.findIndex (currentSelectedPath ==) debuggeeSockets
+        -- Navigate through the list.
+        _ -> do
+          handleListEventVi handleListEvent event knownDebuggees'
+          newOptions <- handleListEvent event knownDebuggees'
+          continue $ appState & majorState . knownDebuggees .~ newOptions
 
-        return $ listReplace
-                  (fromList [(pack (dir </> socket), socket) | socket <- debuggeeSockets])
-                  (newSelection <|> (if Prelude.null debuggeeSockets then Nothing else Just 0))
-                  (appState^.knownDebuggees)
+      AppEvent event -> case event of
+        PollTick -> do
+          -- Poll for debuggees
+          knownDebuggees'' <- liftIO $ do
+            dir :: FilePath <- socketDirectory
+            debuggeeSocketFiles :: [FilePath] <- listDirectory dir <|> return []
 
-      continue $ appState & knownDebuggees .~ knownDebuggees'
+            let debuggeeSockets :: [FilePath]
+                debuggeeSockets = (dir </>) <$> debuggeeSocketFiles
+            
+                currentSelectedPathMay :: Maybe FilePath
+                currentSelectedPathMay = fmap snd (listSelectedElement knownDebuggees')
 
-  _ -> do
-    continue appState
+                newSelection :: Maybe Int
+                newSelection = do
+                  currentSelectedPath <- currentSelectedPathMay
+                  List.findIndex (currentSelectedPath ==) debuggeeSockets
+
+            return $ listReplace
+                      (Seq.fromList debuggeeSockets)
+                      (newSelection <|> (if Prelude.null debuggeeSockets then Nothing else Just 0))
+                      knownDebuggees'
+
+          continue $ appState & majorState . knownDebuggees .~ knownDebuggees''
+
+    _ -> do
+      continue appState
 
 myAppStartEvent :: AppState -> EventM Name AppState
 myAppStartEvent = return
@@ -115,9 +132,6 @@ main = do
         , appStartEvent = myAppStartEvent
         , appAttrMap = myAppAttrMap
         }
-      initialState = AppState
-        { _knownDebuggees = list Main_FileList [] 1
-        }
   _finalState <- customMain initialVty buildVty
-                    (Just eventChan) app initialState
+                    (Just eventChan) app initialAppState
   return ()

@@ -33,6 +33,8 @@ module GHC.Debug.Client
   , Tritraversable(..)
   , precacheBlocks
   , socketDirectory
+  , DebugEnv
+  , DebugM
   ) where
 
 import Control.Exception
