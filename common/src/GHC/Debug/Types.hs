@@ -16,19 +16,15 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import Data.Word
 import System.IO
-import System.IO.Unsafe
 
 import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
 import Data.Hashable
-import System.Endian
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
 import GHC.Debug.Decode
-
-import Debug.Trace
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.

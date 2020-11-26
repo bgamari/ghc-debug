@@ -6,6 +6,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module GHC.Debug.Client.Monad.Haxl
   ( Debuggee(..)
   , Request(..)
@@ -13,36 +14,16 @@ module GHC.Debug.Client.Monad.Haxl
   , Env(..)
   ) where
 
-import Control.Concurrent
-import Control.Exception
-import Control.Monad
 import GHC.Debug.Types
-import GHC.Debug.Decode
-import GHC.Debug.Decode.Stack
-import Network.Socket
 import qualified Data.HashMap.Strict as HM
 import System.IO
-import Data.Word
-import Data.Maybe
-import System.Endian
-import Data.Foldable
-import Data.Coerce
-import Data.Bitraversable
-import Data.Hashable
 
 
-import qualified Data.Text  as T
-import Data.List
-import System.Process
-import System.Environment
-import System.FilePath
-import System.Directory
 import GHC.Debug.Client.BlockCache
 import GHC.Debug.Client.Monad.Class
 
 import Haxl.Core hiding (Request, env)
 import Data.Typeable
-import System.IO
 
 import Data.IORef
 
@@ -127,10 +108,11 @@ dispatch h cs its other = do
 -- | Write the correct number of results to each result var
 recordResults :: [a] -> [([b], ResultVar [a])] -> IO ()
 recordResults [] [] = return ()
-recordResults res ((length -> n, var):xs) =
-  putSuccess var here >> recordResults later xs
+recordResults res ((length -> n, rvar):xs) =
+  putSuccess rvar here >> recordResults later xs
   where
     (here, later) = splitAt n res
+recordResults _ _ = error ("Impossible recordResults")
 
 
 _singleFetches :: Handle -> [BlockedFetch Request] -> IO ()
@@ -141,7 +123,7 @@ _singleFetches h bs = mapM_ do_one bs
           putSuccess resp res
 
 instance DataSource Debuggee Request where
-  fetch (RequestState h) fs u =
+  fetch (RequestState h) _fs u =
     -- Grouping together fetches only shaves off about 0.01s on the simple
     -- benchmark
     SyncFetch $
@@ -162,7 +144,7 @@ instance ShowP BlockCacheRequest where
 
 
 instance DataSource u BlockCacheRequest where
-  fetch (BCRequestState ref h) fs u =
+  fetch (BCRequestState ref h) _fs _u =
     SyncFetch (mapM_ do_one)
     where
       do_one :: BlockedFetch BlockCacheRequest -> IO ()
@@ -188,7 +170,7 @@ traceRequestLog d = do
   s <- readIORef (statsRef d)
   putStrLn (ppStats s)
 
-traceProfile :: Env u w -> IO ()
-traceProfile e = do
+_traceProfile :: Env u w -> IO ()
+_traceProfile e = do
   p <- readIORef (profRef e)
   print (profile p)

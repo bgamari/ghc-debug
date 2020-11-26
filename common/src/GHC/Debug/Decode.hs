@@ -11,18 +11,14 @@
 
 module GHC.Debug.Decode (decodeClosure, decodeClosureWithSize, decodeInfoTable, extractFromBlock) where
 
-import GHC.Ptr (Ptr(..), plusPtr, castPtr)
+import GHC.Ptr (plusPtr, castPtr)
 import GHC.Exts -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
-import GHC.Int
-import Data.Coerce
-import Data.Bifunctor
 import GHC.Word
 import GHC.IO.Unsafe
 import Foreign.Storable
 
 import qualified Data.ByteString.Internal as BSI
 
-import qualified GHC.Exts.Heap as GHC
 import GHC.Exts.Heap hiding (Closure)
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
@@ -33,21 +29,21 @@ import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import GHC.ForeignPtr
-import GHC.Int
 import System.Endian
 
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Internal as B
-
-import Debug.Trace
 
 foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
               Addr# -> (# Addr#, ByteArray#, ByteArray# #)
 
+data AllocStrategy = AllocByPtr | AllocByCopy
+
+allocStrategy :: AllocStrategy
+allocStrategy = AllocByPtr
 
 getClosureRaw :: StgInfoTable -> Ptr a -> IO (GenClosure Word)
 getClosureRaw itb (Ptr closurePtr) = do
-  let (# infoTablePtr, datArr, pointers #) = unpackClosureWords# closurePtr
+  let !(# _infoTablePtr, datArr, pointers #) = unpackClosureWords# closurePtr
   let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
       end_ptrs = fromIntegral nelems_ptrs - 1
       rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
@@ -55,8 +51,9 @@ getClosureRaw itb (Ptr closurePtr) = do
 
 -- | Allow access directly to the chunk of memory used by a bytestring
 allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
---allocate = allocateByCopy
-allocate = allocateByPtr
+allocate = case allocStrategy of
+            AllocByPtr  -> allocateByPtr
+            AllocByCopy -> allocateByCopy
 
 -- MP: It was thought that allocateByPtr would be quite a bit faster but
 -- this turns out to not be true on some simple benchmarks. In future we
@@ -80,7 +77,7 @@ allocateByCopy (BSI.PS fp o l) action =
 allocateByPtr :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
 -- DEBUG: Check for alignment
 --allocate' (BSI.PS fp o l) _ | o `mod` 8 /= 0 = error (show ("NOT ALIGNED", fp, o, l))
-allocateByPtr (BSI.PS fp o l) action =
+allocateByPtr (BSI.PS fp o _l) action =
   withForeignPtr (fp `plusForeignPtr` o) $ \p -> do
     --print (fp, p, o, l)
     action (castPtr p)
@@ -89,25 +86,15 @@ allocateByPtr (BSI.PS fp o l) action =
 deriving instance Functor GenClosure
 #endif
 
-boxToRawAddress :: Box -> Word64
-boxToRawAddress (Box x) = (toBE64 (W64# (aToWord# x)))
-
--- This is a datatype that has the same layout as Ptr, so that by
--- unsafeCoerce'ing, we obtain the Addr of the wrapped value
-data Ptr' a = Ptr' a
-
-aToWord# :: Any -> Word#
-aToWord# a = case Ptr' a of mb@(Ptr' _) -> case unsafeCoerce# mb :: Word of W# addr -> addr
-
 decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeClosureWithSize itb (ptr, rc) =
-    let size = Size (rawClosureSize rc)
+    let clos_size = Size (rawClosureSize rc)
         !c = decodeClosure itb (ptr, rc)
-    in DCS size c
+    in DCS clos_size c
 
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  Closure
-decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
+decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
@@ -131,7 +118,7 @@ decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerfor
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
         poke ptr_to_itbl_ptr old_itbl
-        return $ trimap (\itb -> PayloadWithKey itb ptr) stackCont  ClosurePtr . (convertClosure itb)
+        return $ trimap (\itb' -> PayloadWithKey itb' ptr) stackCont  ClosurePtr . (convertClosure itb)
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont
@@ -162,7 +149,7 @@ decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
 extractFromBlock :: ClosurePtr
                 -> RawBlock
                 -> RawClosure
-extractFromBlock cp (RawBlock bp b@(B.PS fp o l)) =
+extractFromBlock cp (RawBlock bp b) =
 --  Calling closureSize doesn't work as the info table addresses are bogus
 --  clos_size_w <- withForeignPtr fp' (\p -> return $ closureSize (ptrToBox p))
 --  let clos_size = clos_size_w * 8

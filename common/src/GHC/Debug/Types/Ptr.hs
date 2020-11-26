@@ -15,7 +15,6 @@ import Data.Word
 import Data.Binary
 import Data.Binary.Get
 import System.Endian
-import Debug.Trace
 
 import Numeric (showHex)
 import Data.Coerce
@@ -108,6 +107,7 @@ data RawBlock = RawBlock BlockPtr BS.ByteString
 rawBlockSize :: RawBlock -> Int
 rawBlockSize (RawBlock _ bs) = BS.length bs
 
+tAG_MASK :: Word64
 tAG_MASK = 0b111
 
 untagClosurePtr :: ClosurePtr -> ClosurePtr

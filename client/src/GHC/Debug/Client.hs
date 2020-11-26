@@ -28,37 +28,15 @@ module GHC.Debug.Client
   , socketDirectory
   ) where
 
-import Control.Concurrent
 import Control.Exception
-import Control.Monad
 import GHC.Debug.Types
 import GHC.Debug.Decode
 import GHC.Debug.Decode.Stack
-import Network.Socket
-import qualified Data.HashMap.Strict as HM
-import System.IO
-import Data.Word
-import Data.Maybe
-import System.Endian
-import Data.Foldable
-import Data.Coerce
-import Data.Bitraversable
-
-
-import qualified Data.Text  as T
-import Data.List
-import System.Process
-import System.Environment
-import System.FilePath
-import System.Directory
-import Text.Printf
 
 import GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client.BlockCache
 
-
-import Data.IORef
 import Debug.Trace
 
 
@@ -68,6 +46,8 @@ lookupInfoTable rc = do
     [(itbl, rit)] <- request (RequestInfoTables [ptr])
     return (itbl,rit, rc)
 
+pause, resume :: DebugEnv DebugM -> IO ()
+pauseThen :: DebugEnv DebugM -> DebugM b -> IO b
 pause e = run e $ request RequestPause
 pauseThen e d =
   pause e >> run e d
@@ -94,7 +74,7 @@ dereferenceStack :: StackCont -> DebugM Stack
 dereferenceStack (StackCont sp) = do
   stack <- request (RequestStack sp)
   let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
-      get_info_table rc = (\(a, b, c) -> a) <$> lookupInfoTable rc
+      get_info_table rc = (\(a, _, _) -> a) <$> lookupInfoTable rc
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
 
@@ -102,9 +82,10 @@ dereferenceStack (StackCont sp) = do
 dereferenceConDesc :: ConstrDescCont -> DebugM ConstrDesc
 dereferenceConDesc i = request (RequestConstrDesc i)
 
-noConDesc :: ConstrDescCont -> DebugM ConstrDesc
-noConDesc c = traceShow c (return emptyConDesc)
+_noConDesc :: ConstrDescCont -> DebugM ConstrDesc
+_noConDesc c = traceShow c (return emptyConDesc)
 
+emptyConDesc :: ConstrDesc
 emptyConDesc = ConstrDesc "" "" ""
 
 -- | Do a traversal requesting closures one by one using RequestClosure

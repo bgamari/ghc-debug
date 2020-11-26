@@ -14,7 +14,6 @@ import qualified Data.IntMap as M
 import Control.Monad
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Class
-import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer.Strict
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Closures
@@ -111,7 +110,7 @@ generalBuildHeapGraph
     -> HeapGraph a
     -> [(a,ClosurePtr)]
     -> m (HeapGraph a, [(a, HeapGraphIndex)])
-generalBuildHeapGraph deref limit _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
+generalBuildHeapGraph _deref limit _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
 generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
     -- First collect all boxes from the existing heap graph
     let boxList = [ (hgeClosurePtr hge, i) | (i, hge) <- M.toList hg ]
@@ -198,12 +197,12 @@ ppHeapGraph printData (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
         else "let " ++ intercalate "\n    " (map ppBinding bindings) ++ "\nin "
 
     bindingLetter i = case hgeClosure (iToE i) of
-        ThunkClosure {..} -> 't'
-        SelectorClosure {..} -> 't'
-        APClosure {..} -> 't'
-        PAPClosure {..} -> 'f'
-        BCOClosure {..} -> 't'
-        FunClosure {..} -> 'f'
+        ThunkClosure {} -> 't'
+        SelectorClosure {} -> 't'
+        APClosure {} -> 't'
+        PAPClosure {} -> 'f'
+        BCOClosure {} -> 't'
+        FunClosure {} -> 'f'
         _ -> 'x'
 
     ppBindingMap = M.fromList $
@@ -220,8 +219,8 @@ ppHeapGraph printData (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
         | Just l <- isList hge   = "[" ++ intercalate "," (map (ppRef 0) l) ++ "]"
         | otherwise = ppClosure (printData (hgeData hge)) ppRef prec (hgeClosure hge)
       where
-        app [a] = a  ++ "()"
-        app xs = addBraces (10 <= prec) (unwords xs)
+        _app [a] = a  ++ "()"
+        _app xs = addBraces (10 <= prec) (unwords xs)
 
     ppRef _ Nothing = "..."
     ppRef prec (Just i) | i `elem` bindings = ppVar i
@@ -339,7 +338,7 @@ ppClosure herald showBox prec c = case c of
         ["MVar", showBox 10 value]
     FunClosure {..} ->
         "_fun" ++ braceize (map (showBox 0) ptrArgs ++ map show dataArgs)
-    BlockingQueueClosure {..} ->
+    BlockingQueueClosure {} ->
         "_blockingQueue"
     IntClosure {..} -> app
         ["Int", show intVal]
@@ -355,9 +354,9 @@ ppClosure herald showBox prec c = case c of
         ["Float", show floatVal]
     DoubleClosure {..} -> app
         ["Double", show doubleVal]
-    OtherClosure {..} ->
+    OtherClosure {} ->
         "_other"
-    UnsupportedClosure {..} ->
+    UnsupportedClosure {} ->
         "_unsupported"
   where
     app [a] = a  ++ "()"

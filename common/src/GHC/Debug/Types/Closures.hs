@@ -153,7 +153,7 @@ inclusive =
       in MkFix1 (DCS (s, new_size) b)
 
       where
-        stack (MkFix2 s) = traverse (Const . fullSize) s
+        stack (MkFix2 st) = traverse (Const . fullSize) st
 
 
 

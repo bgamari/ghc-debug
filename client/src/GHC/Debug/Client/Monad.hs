@@ -13,43 +13,20 @@ module GHC.Debug.Client.Monad
   , DebugM
   , traceWrite
   , runTrace
+  , withDebuggee
   , withDebuggeeSocket
   , outputRequestLog
   ) where
 
-import Control.Concurrent
-import Control.Exception
-import Control.Monad
-import GHC.Debug.Types
-import GHC.Debug.Decode
-import GHC.Debug.Decode.Stack
 import Network.Socket
-import qualified Data.HashMap.Strict as HM
 import System.IO
-import Data.Word
-import Data.Maybe
-import System.Endian
-import Data.Foldable
-import Data.Coerce
-import Data.Bitraversable
-import Data.Hashable
 
 
-import qualified Data.Text  as T
-import Data.List
 import System.Process
 import System.Environment
-import System.FilePath
-import System.Directory
-import GHC.Debug.Client.BlockCache
 import GHC.Debug.Client.Monad.Class
 import qualified GHC.Debug.Client.Monad.Haxl as H
 import qualified GHC.Debug.Client.Monad.Simple as S
-
-import Haxl.Core hiding (Request, env)
-import Data.Typeable
-
-import Data.IORef
 
 -- Modify this to switch between the haxl/non-haxl implementations
 -- type DebugM = H.DebugM

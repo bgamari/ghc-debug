@@ -6,9 +6,9 @@ import System.IO
 import Text.Printf
 
 showFileSnippet :: FilePath -> ([FilePath], Int, Int) -> IO ()
-showFileSnippet base_fp (fps, l, c) = go fps
+showFileSnippet base_fp (all_fps, l, c) = go all_fps
   where
-    go [] = putStrLn ("No files could be found: " ++ show fps)
+    go [] = putStrLn ("No files could be found: " ++ show all_fps)
     go (fp: fps) = do
       exists <- doesFileExist fp
       -- get file modtime
@@ -16,12 +16,12 @@ showFileSnippet base_fp (fps, l, c) = go fps
         then go fps
         else do
           fp `warnIfNewer` base_fp
-          src <- zip [1..] . lines <$> readFile fp
+          src <- zip [1 :: Int ..] . lines <$> readFile fp
           let ctx = take 10 (drop (max (l - 5) 0) src)
           putStrLn (fp <> ":" <> show l <> ":" <> show c)
-          mapM_ (\(n, l) ->
+          mapM_ (\(n, line) ->
            let sn = show n
-           in putStrLn (sn <> replicate (5 - length sn) ' ' <> l)) ctx
+           in putStrLn (sn <> replicate (5 - length sn) ' ' <> line)) ctx
 
 -- | Print a warning if source file (first argument) is newer than the binary (second argument)
 warnIfNewer :: FilePath -> FilePath -> IO ()

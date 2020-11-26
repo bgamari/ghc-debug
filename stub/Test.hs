@@ -37,7 +37,7 @@ main = withGhcDebug $ do
 --  let !m = M.insert name (length name) (M.insert name2 (length name2) M.empty)
 
   --let !y = Data.Sequence.fromList [1..5]
-  let !y = [1..100000]
+  let !y = [1..1000000]
   print (length y)
   performGC
 --  saveClosures [Box y]

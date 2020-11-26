@@ -9,14 +9,12 @@
 -- via a call to RequestBlocks or on demand on a cache miss.
 
 module GHC.Debug.Client.BlockCache(BlockCache, BlockCacheRequest(..)
-                                  , handleBlockReq, emptyBlockCache) where
+                                  , handleBlockReq, emptyBlockCache, bcSize) where
 
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types
-import Data.IntervalMap.Strict as I
 import qualified Data.HashMap.Strict as HM
 import GHC.Word
-import Data.Maybe
 import System.Endian
 import Data.Hashable
 import Data.IORef
@@ -34,6 +32,7 @@ addBlock rb@(RawBlock (BlockPtr (fromBE64 -> bp)) _) (BlockCache bc) =
   BlockCache (HM.insert bp rb bc)
 
 -- 12 bits
+bLOCK_MASK :: Word64
 bLOCK_MASK = 0b111111111111
 
 addBlocks :: [RawBlock] -> BlockCache -> BlockCache
@@ -64,8 +63,8 @@ handleBlockReq h ref (LookupClosure cp) = do
   let mrb = lookupClosure cp bc
   rb <- case mrb of
                Nothing -> do
-                 rb@(RawBlock p _) <- doRequest h (RequestBlock cp)
-                 print ("NEW_BLOCK", bcSize bc, p)
+                 rb <- doRequest h (RequestBlock cp)
+                 --print ("NEW_BLOCK", bcSize bc, p)
                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
                  return rb
                Just rb -> do
@@ -73,7 +72,7 @@ handleBlockReq h ref (LookupClosure cp) = do
   return (extractFromBlock cp rb)
 handleBlockReq h ref PopulateBlockCache = do
   blocks <- doRequest h RequestAllBlocks
-  print ("CACHING", length blocks)
+  --print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
   return (length blocks)
 

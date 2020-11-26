@@ -4,32 +4,28 @@ module GHC.Debug.Decode.Stack
 
 import Data.Word
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
-import Control.Applicative
 
 import Data.Binary.Get as B
 
 import GHC.Debug.Types
 import GHC.Exts.Heap.ClosureTypes
-import GHC.Exts.Heap.InfoTable.Types
 import System.Endian
 
 import Data.Coerce
-
-import GHC.Debug.Decode
 
 decodeStack :: Monad m
             => (RawClosure -> m StgInfoTableWithPtr)
             -> (RawClosure -> m PtrBitmap)
             -> RawStack
             -> m Stack
-decodeStack getInfoTable getBitmap rs = do
-  frames <- get_frames rs
-  return (Stack 0 0 0 frames)
+decodeStack decodeInfoTable getBitmap rs = do
+  stack_frames <- get_frames rs
+  -- TODO: Fill in these fields properly
+  return (Stack 0 0 0 stack_frames)
   where
-    get_frames rs@(RawStack c) = do
-      st_it <- getInfoTable (coerce rs)
-      bm <- getBitmap (coerce rs)
+    get_frames raw@(RawStack c) = do
+      st_it <- decodeInfoTable (coerce rs)
+      bm <- getBitmap (coerce raw)
       let res = B.runGetIncremental (getFrame bm st_it) `pushChunk` c
       case res of
         Fail _rem _offset err -> error err
@@ -41,7 +37,7 @@ decodeStack getInfoTable getBitmap rs = do
 getFrame :: PtrBitmap
          -> StgInfoTableWithPtr
          -> Get (DebugStackFrame ClosurePtr)
-getFrame bitmap itbl =
+getFrame st_bitmap itbl =
     case tipe (decodedTable itbl) of
       RET_BCO ->
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
@@ -50,7 +46,7 @@ getFrame bitmap itbl =
         -- In all other cases we request the pointer bitmap from the debuggee
         -- and decode as appropriate.
         _itblPtr <- getInfoTablePtr
-        fields <- traversePtrBitmap decodeField bitmap
+        fields <- traversePtrBitmap decodeField st_bitmap
         return (DebugStackFrame itbl fields)
   where
     decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord

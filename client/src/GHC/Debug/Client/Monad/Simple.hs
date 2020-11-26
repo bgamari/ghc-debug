@@ -15,40 +15,17 @@ module GHC.Debug.Client.Monad.Simple
   ) where
 
 import Control.Concurrent
-import Control.Exception
-import Control.Monad
 import GHC.Debug.Types
-import GHC.Debug.Decode
-import GHC.Debug.Decode.Stack
-import Network.Socket
 import qualified Data.HashMap.Strict as HM
 import System.IO
-import Data.Word
-import Data.Maybe
-import System.Endian
-import Data.Foldable
-import Data.Coerce
-import Data.Bitraversable
-import Data.Hashable
+import Data.IORef
 
-
-import qualified Data.Text  as T
-import Data.List
-import System.Process
-import System.Environment
-import System.FilePath
-import System.Directory
 import GHC.Debug.Client.BlockCache
 import GHC.Debug.Client.RequestCache
 import GHC.Debug.Client.Monad.Class
 
-import Haxl.Core hiding (Request, env, MonadFail)
-import Data.Typeable
-import System.IO
 import Control.Monad.Reader
 
-import Data.IORef
-import Control.Concurrent.MVar
 
 data Debuggee = Debuggee { debuggeeFilename :: FilePath
                          -- Keep track of how many of each request we make
@@ -75,7 +52,7 @@ runSimple :: Debuggee -> DebugM a -> IO a
 runSimple d (DebugM a) = runReaderT a d
 
 mkEnv :: FilePath -> FilePath -> Handle -> IO Debuggee
-mkEnv exeName sockName h = do
+mkEnv exeName _sockName h = do
   count <- newIORef HM.empty
   bc <- newIORef emptyBlockCache
   rc <- newMVar emptyRequestCache
