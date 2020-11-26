@@ -2,6 +2,7 @@
 module Main where
 
 import GHC.Debug.Client
+import GHC.Debug.Client.Retainers
 import GHC.Debug.Client.Monad
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
@@ -33,7 +34,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p22 e  >> outputRequestLog e)
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p23 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -288,8 +289,23 @@ p22 e = do
   run e $ request RequestPause
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestSavedObjects
+    rs <- request RequestRoots
     forM_ rs $ \r -> do
       traceWrite r
       c <- fullTraversalViaBlocks r
       traceWrite ("DONE", countNodes c)
+
+p23 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    [so] <- request RequestSavedObjects
+    forM_ rs $ \r -> do
+      traceWrite r
+      c <- findRetainer so r
+      case c of
+        NoPath -> traceWrite ("NO_PATH", r)
+        RetainerPath cs -> do
+          --decoded <- dereferenceClosures cs
+          traceWrite ("DONE", cs)
