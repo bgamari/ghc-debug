@@ -36,7 +36,9 @@ library
 
   hs-source-dirs:      src
   cmm-sources:         cbits/GhcDebug.cmm
-  c-sources:           cbits/Heap.c
+-- GhcDebug.cmm in c-sources is a hack to get the build working (GhcDebug.cmm should only appear in cmm-sources)
+  c-sources:           cbits/GhcDebug.cmm,
+                       cbits/Heap.c
   ghc-options: -Wall
   default-language:    Haskell2010
   default-extensions: ApplicativeDo
