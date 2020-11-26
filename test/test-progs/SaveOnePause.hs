@@ -6,9 +6,7 @@ import Data.Word
 import GHC.Stats
 
 main :: IO ()
-main = do
-  start
-
+main = withGhcDebug $ do
   print "sync"
   hFlush stdout
 

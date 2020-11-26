@@ -29,8 +29,7 @@ v = 5
 type TestMap = M.Map String Int
 
 main :: IO ()
-main = do
-  start
+main = withGhcDebug $ do
 --  print "Enter Name"
 --  name <- getLine
 --  print "Enter Name"

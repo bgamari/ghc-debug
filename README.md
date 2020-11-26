@@ -59,8 +59,7 @@ $ nix-shell
 > cabal new-build all
 ```
 
-In order to make a process debuggable it needs to call the socket initialisation
-function `start`, see the `debug-test` executable for exactly how to do this.
+In order to make a process debuggable it needs to wrap it's main function in the `withGhcDebug` function, see the `debug-test` executable for exactly how to do this.
 See `test/Test.hs` for an example of how to run and debug the `debug-test`
 executable.
 

@@ -10,8 +10,7 @@ import GHC.Debug.Stub
 data A = A String deriving Show
 data User = User A Int deriving Generic
 
-main = do
-  start
+main = withGhcDebug $ do
   v <- getLine
   let a = A v
       y = id [a, a, a]

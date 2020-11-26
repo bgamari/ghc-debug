@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 module Main where
 
 import GHC.Debug.Client
@@ -10,7 +11,6 @@ import Debug.Trace
 import Control.Exception
 import Control.Concurrent
 import Data.Bitraversable
-import GHC.Vis
 import Data.Monoid
 import Control.Applicative
 
@@ -33,7 +33,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p22 e  >> traceRequestLog e >> traceProfile e)
+main = withDebuggeeSocket "banj" "/tmp/ghc-debug" (\e -> p22 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
