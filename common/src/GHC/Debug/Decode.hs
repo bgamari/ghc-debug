@@ -42,12 +42,12 @@ import qualified Data.ByteString.Internal as B
 import Debug.Trace
 
 foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
-              Any -> (# Addr#, ByteArray#, ByteArray# #)
+              Addr# -> (# Addr#, ByteArray#, ByteArray# #)
 
 
-getClosureRaw :: StgInfoTable -> Box -> IO (GenClosure Word)
-getClosureRaw itb (Box a) = do
-  let (# infoTablePtr, datArr, pointers #) = unpackClosureWords# a
+getClosureRaw :: StgInfoTable -> Ptr a -> IO (GenClosure Word)
+getClosureRaw itb (Ptr closurePtr) = do
+  let (# infoTablePtr, datArr, pointers #) = unpackClosureWords# closurePtr
   let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
       end_ptrs = fromIntegral nelems_ptrs - 1
       rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
@@ -85,14 +85,9 @@ allocateByPtr (BSI.PS fp o l) action =
     --print (fp, p, o, l)
     action (castPtr p)
 
-data NotABox = NotABox Addr#
-
 #if !MIN_VERSION_ghc_heap(8,7,0)
 deriving instance Functor GenClosure
 #endif
-
-ptrToBox :: Ptr a -> Box
-ptrToBox (Ptr p) = unsafeCoerce# (NotABox p)
 
 boxToRawAddress :: Box -> Word64
 boxToRawAddress (Box x) = (toBE64 (W64# (aToWord# x)))
@@ -131,7 +126,7 @@ decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerfor
         -- Printing this return value can lead to segfaults because the
         -- pointer for constrDesc won't point to a string after being
         -- decoded.
-        !r <- getClosureRaw (decodedTable itb) (ptrToBox closPtr)
+        !r <- getClosureRaw (decodedTable itb) closPtr
         -- Mutate back the ByteArray as if we attempt to use it again then
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space

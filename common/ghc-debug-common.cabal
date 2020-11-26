@@ -1,9 +1,10 @@
+cabal-version:       3.0
 name:                ghc-debug-common
 version:             0.1.0.0
 synopsis:            A debugger for GHC
 -- description:
 homepage:            https://github.com/bgamari/ghc-debug
-license:             BSD3
+license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Ben Gamari
 maintainer:          ben@smart-cactus.org
@@ -11,16 +12,15 @@ copyright:           (c) 2019 Ben Gamari
 category:            Development
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
-cabal-version:       >=1.10
 
 library
-  exposed-modules:     GHC.Debug.Convention
-                       GHC.Debug.Decode
-                       GHC.Debug.Decode.Convert
-                       GHC.Debug.Decode.Stack
-                       GHC.Debug.Types
-                       GHC.Debug.Types.Closures
-                       GHC.Debug.Types.Graph
+  exposed-modules:     GHC.Debug.Convention,
+                       GHC.Debug.Decode,
+                       GHC.Debug.Decode.Convert,
+                       GHC.Debug.Decode.Stack,
+                       GHC.Debug.Types,
+                       GHC.Debug.Types.Closures,
+                       GHC.Debug.Types.Graph,
                        GHC.Debug.Types.Ptr
   build-depends:       base >=4.12 && <4.14,
                        bytestring >=0.10 && <0.11,
@@ -35,8 +35,8 @@ library
                        transformers
 
   hs-source-dirs:      src
-  c-sources:           cbits/GhcDebug.cmm
-                       cbits/Heap.c
+  cmm-sources:         cbits/GhcDebug.cmm
+  c-sources:           cbits/Heap.c
   ghc-options: -Wall
   default-language:    Haskell2010
   default-extensions: ApplicativeDo

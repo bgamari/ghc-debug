@@ -4,13 +4,11 @@ version:             0.1.0.0
 -- description:
 homepage:            https://github.com/bgamari/ghc-debug
 license:             BSD3
-license-file:        LICENSE
 author:              Ben Gamari
 maintainer:          ben@smart-cactus.org
 copyright:           (c) 2019 Ben Gamari
 category:            Development
 build-type:          Simple
-extra-source-files:  CHANGELOG.md
 cabal-version:       >=1.10
 
 executable debugger
