@@ -85,7 +85,7 @@ myAppHandleEvent appState brickEvent = case brickEvent of
 
         return $ listReplace
                   (fromList [(pack (dir </> socket), socket) | socket <- debuggeeSockets])
-                  newSelection
+                  (newSelection <|> (if Prelude.null debuggeeSockets then Nothing else Just 0))
                   (appState^.knownDebuggees)
 
       continue $ appState & knownDebuggees .~ knownDebuggees'
