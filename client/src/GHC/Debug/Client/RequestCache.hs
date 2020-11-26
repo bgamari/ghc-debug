@@ -16,7 +16,7 @@ instance Hashable AnyReq where
   hashWithSalt s (AnyReq r) = hashWithSalt s r
 
 instance Eq AnyReq where
-  (AnyReq r1) == (AnyReq r2) = hash r1 == hash r2
+  (AnyReq r1) == (AnyReq r2) = eq1request r1 r2
 
 data AnyResp = AnyResp Any
 

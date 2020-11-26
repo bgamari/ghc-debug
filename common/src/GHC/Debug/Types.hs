@@ -64,6 +64,25 @@ data Request a where
     -- | Request the block which contains a specific pointer
     RequestBlock :: ClosurePtr -> Request RawBlock
 
+eq1request :: Request a -> Request b -> Bool
+eq1request r1 r2 =
+  case r1 of
+    RequestVersion -> case r2 of {RequestVersion -> True; _ -> False}
+    RequestPause   -> case r2 of {RequestPause -> True; _ -> False }
+    RequestResume  -> case r2 of {RequestResume -> True; _ -> False }
+    RequestRoots   -> case r2 of {RequestRoots -> True; _ -> False }
+    RequestClosures cs -> case r2 of {(RequestClosures cs') -> cs == cs'; _ -> False }
+    RequestStack sp    -> case r2 of {(RequestStack sp') -> sp == sp'; _ -> False }
+    RequestInfoTables itp -> case r2 of { (RequestInfoTables itp') ->  itp == itp'; _ -> False }
+    RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
+    RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
+    RequestBitmap itp      -> case r2 of {(RequestBitmap itp') -> itp == itp'; _ -> False }
+    RequestConstrDesc cp   -> case r2 of { (RequestConstrDesc cp') -> cp == cp'; _ -> False }
+    RequestSourceInfo itp  -> case r2 of { (RequestSourceInfo itp') -> itp == itp'; _ -> False }
+    RequestAllBlocks       -> case r2 of { RequestAllBlocks -> True; _ -> False }
+    RequestBlock cp        -> case r2 of { RequestBlock cp' -> cp == cp'; _ -> False }
+
+
 
 deriving instance Show (Request a)
 deriving instance Eq (Request a)
