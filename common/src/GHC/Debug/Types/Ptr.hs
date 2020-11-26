@@ -81,8 +81,12 @@ getRawStack sp c (RawClosure s) =
   -}
 
 -- | Check if the ClosurePtr is block allocated or not
+-- TODO: MP: These numbers are hard-coded from what
+-- mblock_address_space.begin and mblock_address_space.end were when
+-- I inspected them in gdb. I don't know if they are always the same of
+-- should be queried from the debuggee
 ptrInBlock :: ClosurePtr -> Bool
-ptrInBlock (ClosurePtr (fromBE64 -> w)) = (w >= 283467841536 && w <= 1382979469312)
+ptrInBlock (ClosurePtr (fromBE64 -> w)) = (w >= 0x4200000000 && w <= 0x14200000000)
 
 newtype RawInfoTable = RawInfoTable BS.ByteString
                      deriving (Eq, Ord, Show)
