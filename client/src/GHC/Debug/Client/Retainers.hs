@@ -32,7 +32,8 @@ findRetainer target cp
   | target == cp = return (RetainerPath [cp])
   | otherwise = do
       dc <- dereferenceClosureFromBlock cp
-      res <- getConst . tritraverse Const Const Const <$> tritraverse (const (return NoPath)) (findRetainerStack target) (findRetainer target) dc
+      res <- getConst . tritraverse Const Const Const <$>
+        tritraverse (const (return NoPath)) (findRetainerStack target) (findRetainer target) dc
       case res of
         NoPath -> return NoPath
         RetainerPath p -> return (RetainerPath (cp : p))
