@@ -27,6 +27,7 @@ module GHC.Debug.Client
   , closurePtr
   , closureExclusiveSize
   , closureReferences
+  , ppClosure
 
     -- * All this stuff feels too low level to be exposed to the frontend, but
     --   still could be used for tests.
@@ -62,6 +63,7 @@ import GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
 import qualified GHC.Debug.Client.Monad as GD
 import GHC.Debug.Client.BlockCache
+import qualified GHC.Debug.Types.Graph as GD
 
 import Debug.Trace
 
@@ -176,6 +178,17 @@ closureReferences (Debuggee e) (Closure _ closure) = run e $ do
             refPtrs
             refs
 
+-- | Pritty print a closure
+ppClosure :: Debuggee -> Closure -> IO String
+ppClosure (Debuggee e) (Closure _ closure) = do
+  closure' <- GD.tritraverse toConstrDesc pure pure (unDCS closure)
+  return $ GD.ppClosure
+    "??"
+    (\_ refPtr -> show refPtr)
+    0
+    closure'
+    where
+    toConstrDesc = run e . dereferenceConDesc
 
 --
 -- TODO move stuff below here to a lower level module.
