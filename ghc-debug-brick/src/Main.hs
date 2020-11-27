@@ -19,6 +19,8 @@ import Graphics.Vty.Input.Events (Key(..))
 import Lens.Micro.Platform
 import System.Directory
 import System.FilePath
+import qualified Data.Text as T
+import Data.Ord
 
 import Brick
 import Brick.BChan
@@ -44,7 +46,9 @@ myAppDraw (AppState majorState') =
             (\elIsSelected debuggee -> hBox
                 [ txt $ if elIsSelected then "*" else " "
                 , txt " "
-                , txt (pack $ takeFileName debuggee)
+                , txt (socketName debuggee)
+                , txt " - "
+                , txt (renderSocketTime debuggee)
                 ]
             )
             True
@@ -82,7 +86,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         Vty.EvKey KEnter _
           | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
           -> do
-            debuggee <- liftIO $ debuggeeConnect (takeFileName socket) socket
+            debuggee <- liftIO $ debuggeeConnect (T.unpack (socketName socket)) (view socketLocation socket)
             continue $ appState & majorState .~ Connected
                   { _debuggeeSocket = socket
                   , _debuggee = debuggee
@@ -102,16 +106,18 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
             dir :: FilePath <- socketDirectory
             debuggeeSocketFiles :: [FilePath] <- listDirectory dir <|> return []
 
-            let debuggeeSockets :: [FilePath]
-                debuggeeSockets = (dir </>) <$> debuggeeSocketFiles
+            -- Sort the sockets by the time they have been created, newest
+            -- first.
+            debuggeeSockets <- List.sortBy (comparing Data.Ord.Down)
+                                  <$> mapM (mkSocketInfo . (dir </>)) debuggeeSocketFiles
 
-                currentSelectedPathMay :: Maybe FilePath
+            let currentSelectedPathMay :: Maybe SocketInfo
                 currentSelectedPathMay = fmap snd (listSelectedElement knownDebuggees')
 
                 newSelection :: Maybe Int
                 newSelection = do
                   currentSelectedPath <- currentSelectedPathMay
-                  List.findIndex (currentSelectedPath ==) debuggeeSockets
+                  List.findIndex ((currentSelectedPath ==)) debuggeeSockets
 
             return $ listReplace
                       (Seq.fromList debuggeeSockets)

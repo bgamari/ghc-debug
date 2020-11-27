@@ -28,6 +28,10 @@ import Lens.Micro.Platform
 -- import Brick.BChan
 -- import Brick.Widgets.Border
 import Brick.Widgets.List
+import Data.Time
+import System.Directory
+import System.FilePath
+import Data.Text(Text, pack)
 
 import GHC.Debug.Client
 
@@ -44,16 +48,34 @@ data AppState = AppState
   { _majorState :: MajorState
   }
 
+mkSocketInfo :: FilePath -> IO SocketInfo
+mkSocketInfo fp = SocketInfo fp <$> getModificationTime fp
+
+socketName :: SocketInfo -> Text
+socketName = pack . takeFileName . _socketLocation
+
+renderSocketTime :: SocketInfo -> Text
+renderSocketTime = pack . formatTime defaultTimeLocale "%c" . _socketCreated
+
+data SocketInfo = SocketInfo
+                    { _socketLocation :: FilePath -- ^ FilePath to socket, absolute path
+                    , _socketCreated :: UTCTime  -- ^ Time of socket creation
+                    } deriving Eq
+
+instance Ord SocketInfo where
+  compare (SocketInfo s1 t1) (SocketInfo s2 t2) =
+    -- Compare time first
+    compare t1 t2 <> compare s1 s2
 
 data MajorState
   -- | We have not yet connected to a debuggee.
   = Setup
-    { _knownDebuggees :: GenericList Name Seq FilePath -- ^ File path to socket
+    { _knownDebuggees :: GenericList Name Seq SocketInfo
     }
 
   -- | Connected to a debuggee
   | Connected
-    { _debuggeeSocket :: FilePath
+    { _debuggeeSocket :: SocketInfo
     , _debuggee :: Debuggee
     , _mode     :: ConnectedMode
     }
@@ -69,3 +91,4 @@ data ConnectedMode
 makeLenses ''AppState
 makeLenses ''MajorState
 makeLenses ''ConnectedMode
+makeLenses ''SocketInfo
