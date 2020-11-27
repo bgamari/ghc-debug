@@ -85,11 +85,13 @@ data ConnectedMode
   = RunningMode
   -- | Debuggee is paused and we're exploring the heap
   | PausedMode
-    { _closurePath :: [Closure] -- ^ parent closures (head is immediate parent)
-    , _closure :: Maybe ( Closure -- ^ Current closure (Nothing if root)
-                        , Int     -- ^ Exclusive Size
-                        )
-    , _references :: GenericList Name Seq Closure -- ^ referenced closures
+    { _closurePath :: [(Closure, Int, Int)]
+        -- ^ parent closures,
+        -- index in parent reference list,
+        -- exclusive size (head is current closure)
+    , _references :: GenericList Name Seq Closure
+        -- ^ referenced closures of the current closure, or root closures if
+        -- _closurePath is empty
     }
 
 makeLenses ''AppState

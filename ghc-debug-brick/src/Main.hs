@@ -11,7 +11,7 @@ import Control.Monad (forever)
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe)
 import qualified Data.Sequence as Seq
 import Data.Text
 import Graphics.Vty(defaultConfig, mkVty, defAttr)
@@ -62,15 +62,14 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      PausedMode parents' closureMay' references'  -> mainBorder "ghc-debug - Paused" $ vBox
+      PausedMode path' references'  -> mainBorder "ghc-debug - Paused" $ vBox
         [ border $ vBox
           [ txt "Resume  (r)"
           , txt "Parent  (<-)"
           , txt "Child   (->)"
           ]
         , borderWithLabel (txt "Path") $ vBox $
-            [txt (showClosure parent) | parent <- List.reverse parents']
-            ++ [txt (maybe "<ROOT>" (\(c,_) -> showClosure c) closureMay')]
+            [txt (showClosure closure') | (closure', _, _) <- List.reverse path']
         -- Current closure
         , let
           refListWidget = borderWithLabel (txt "Children") $ renderList
@@ -80,11 +79,11 @@ myAppDraw (AppState majorState') =
                 )
                 True
                 references'
-          in case closureMay' of
-            Nothing -> vBox
+          in case path' of
+            [] -> vBox
               [ refListWidget
               ]
-            Just (_, closureExcSize) -> vBox
+            (_, _, closureExcSize):_ -> vBox
               -- Size
               [ str $ "exclusive size: " <> (show $ closureExcSize)
               -- References
@@ -156,10 +155,10 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          continueWithRoot appState
+          continueWithRoot appState Nothing
         _ -> continue appState
 
-      PausedMode parents' closureMay' refs' -> case brickEvent of
+      PausedMode path' refs' -> case brickEvent of
 
         -- Resume the debuggee
         VtyEvent (Vty.EvKey (KChar 'r') _) -> do
@@ -168,14 +167,16 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
           continue (appState & majorState . mode .~ RunningMode)
 
         -- Goto Parent
-        VtyEvent (Vty.EvKey KLeft _) -> case parents' of
-          parent:ancestors -> continueWithClosure appState (Just parent) ancestors
-          [] -> continueWithClosure appState Nothing []
+        VtyEvent (Vty.EvKey KLeft _)
+          | (_, ixInParentRefs, _):parents' <- path'
+          -> continueWithClosure appState parents' (Just ixInParentRefs)
 
         -- Goto Selected reference
         VtyEvent (Vty.EvKey KRight _)
-          | Just (_, refClosure) <- listSelectedElement refs'
-          -> continueWithClosure appState (Just refClosure) (maybeToList (fst <$> closureMay') ++ parents')
+          | Just (refClosureIx, refClosure) <- listSelectedElement refs'
+          -> do
+            closureExcSize <- liftIO $ closureExclusiveSize debuggee' refClosure
+            continueWithClosure appState ((refClosure, refClosureIx, closureExcSize):path') Nothing
 
         -- Navigate the list of referenced closures
         VtyEvent event -> do
@@ -185,26 +186,25 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         _ -> continue appState
 
         where
-        continueWithClosure appState' closureMay' parents = case closureMay' of
-          Nothing -> continueWithRoot appState'
-          Just closure' -> do
+        -- continueWithClosure :: AppState -> [(Closure, Int, Int)] -> Maybe Int -> _
+        continueWithClosure appState' path'' ixMay = case path'' of
+          [] -> continueWithRoot appState' ixMay
+          (closure', _, _):_ -> do
             refsList <- liftIO $ closureReferences debuggee' closure'
             let newRefsList = listReplace
                         (Seq.fromList refsList)
-                        (if Prelude.null refsList then Nothing else Just 0)
+                        (ixMay <|> if Prelude.null refsList then Nothing else Just 0)
                         refs'
-            closureExcSize <- liftIO $ closureExclusiveSize debuggee' closure'
             continue $ appState'
               & majorState
               . mode
-              .~ PausedMode parents (Just (closure', closureExcSize)) newRefsList
+              .~ PausedMode path'' newRefsList
       where
-      continueWithRoot appState = do
+      continueWithRoot appState' ixMay = do
           rootClosuresList <- liftIO $ GD.rootClosures debuggee'
-          continue (appState & majorState . mode .~ PausedMode
+          continue (appState' & majorState . mode .~ PausedMode
             { _closurePath = []
-            , _closure = Nothing
-            , _references = list
+            , _references = listMoveTo (fromMaybe 0 ixMay) $ list
                 Connected_Paused_SavedClosuresList
                 (Seq.fromList rootClosuresList)
                 1
