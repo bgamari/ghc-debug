@@ -62,33 +62,37 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      PausedMode path' references'  -> mainBorder "ghc-debug - Paused" $ vBox
-        [ border $ vBox
-          [ txt "Resume  (r)"
-          , txt "Parent  (<-)"
-          , txt "Child   (->)"
+      PausedMode path' references'  -> mainBorder "ghc-debug - Paused" $ hBox
+        [ vBox
+          [ border $ vBox
+              [ txt "Resume  (r)"
+              , txt "Parent  (<-)"
+              , txt "Child   (->)"
+              ]
+          , borderWithLabel (txt "Path") $ vBox $
+              [txt "<ROOT>"]
+              ++ [txt (showClosure closure') | (closure', _, _) <- List.reverse path']
           ]
-        , borderWithLabel (txt "Path") $ vBox $
-            [txt (showClosure closure') | (closure', _, _) <- List.reverse path']
-        -- Current closure
-        , let
-          refListWidget = borderWithLabel (txt "Children") $ renderList
-                (\selected refClosure -> txt $
-                  (if selected then "* " else "  ")
-                  <> showClosure refClosure
-                )
-                True
-                references'
+        , padLeft (Pad 1) $
+          -- Current closure
+          let
+            refListWidget = borderWithLabel (txt "Children") $ renderList
+                  (\selected refClosure -> txt $
+                    (if selected then "* " else "  ")
+                    <> showClosure refClosure
+                  )
+                  True
+                  references'
           in case path' of
-            [] -> vBox
-              [ refListWidget
-              ]
-            (_, _, closureExcSize):_ -> vBox
-              -- Size
-              [ str $ "exclusive size: " <> (show $ closureExcSize)
-              -- References
-              , refListWidget
-              ]
+              [] -> vBox
+                [ refListWidget
+                ]
+              (_, _, closureExcSize):_ -> vBox
+                -- Size
+                [ str $ "exclusive size: " <> (show $ closureExcSize)
+                -- References
+                , refListWidget
+                ]
         ]
   ]
   where
