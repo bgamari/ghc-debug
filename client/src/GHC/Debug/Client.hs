@@ -2,6 +2,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
@@ -23,7 +24,9 @@ module GHC.Debug.Client
 
     -- * Closures
   , Closure
+  , closurePtr
   , closureExclusiveSize
+  , closureReferences
 
     -- * All this stuff feels too low level to be exposed to the frontend, but
     --   still could be used for tests.
@@ -115,16 +118,23 @@ withPause dbg act = bracket_ (pause dbg) (resume dbg) act
 
 -- | Request the debuggee's root pointers.
 rootClosures :: Debuggee -> IO [Closure]
-rootClosures (Debuggee e) = do
-  closures <- run e $ dereferenceClosures =<< request RequestRoots
-  return (Closure <$> closures)
+rootClosures (Debuggee e) = run e $ do
+  closurePtrs <- request RequestRoots
+  closures <- dereferenceClosures closurePtrs
+  return [ Closure closurePtr' closure
+            | closurePtr' <- closurePtrs
+            | closure <- closures
+            ]
 
 -- | A client can save objects by calling a special RTS method
 -- This function returns the closures it saved.
 savedClosures :: Debuggee -> IO [Closure]
-savedClosures (Debuggee e) = do
-  closures <- run e $ dereferenceClosures =<< request RequestSavedObjects
-  return (Closure <$> closures)
+savedClosures (Debuggee e) = run e $ do
+  closurePtrs <- request RequestSavedObjects
+  closures <- dereferenceClosures closurePtrs
+  return $ zipWith Closure
+            closurePtrs
+            closures
 
 -- -- | Request the description for an info table.
 -- -- The `InfoTablePtr` is just used for the equality
@@ -147,11 +157,24 @@ savedClosures (Debuggee e) = do
 -- requestInfoTables :: Debuggee -> [InfoTablePtr] -> IO [(StgInfoTableWithPtr, RawInfoTable)]
 -- requestInfoTables (Debuggee e) = run e $ request RequestInfoTables
 
-newtype Closure = Closure GD.SizedClosure
+data Closure = Closure
+  { closurePtr :: ClosurePtr
+  , closureSized :: SizedClosure
+  }
 
 -- | Get the exlusive size (not including referenced obejcts) of a closure.
-closureExclusiveSize :: Debuggee -> Closure -> Int
-closureExclusiveSize _dbg (Closure closure) = getSize $ extraDCS closure
+closureExclusiveSize :: Debuggee -> Closure -> IO Int
+closureExclusiveSize _dbg (Closure _ closure) = return $ getSize $ extraDCS closure
+
+-- | Get the directly referenced closures of a closure.
+closureReferences :: Debuggee -> Closure -> IO [Closure]
+closureReferences (Debuggee e) (Closure _ closure) = run e $ do
+  let refPtrs = allClosures (unDCS closure)
+  -- ^^^ TODO I don't think this works for traversing the stack
+  refs <- mapM dereferenceSizedClosure refPtrs
+  return $ zipWith Closure
+            refPtrs
+            refs
 
 
 --

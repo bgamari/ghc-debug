@@ -16,7 +16,7 @@ module Model
 -- import Control.Concurrent
 -- import qualified Data.List as List
 import Data.Sequence as Seq
-import Data.Text
+-- import Data.Text
 -- import Graphics.Vty(defaultConfig, mkVty, defAttr)
 -- import qualified Graphics.Vty.Input.Events as Vty
 -- import Graphics.Vty.Input.Events (Key(..))
@@ -83,9 +83,13 @@ data MajorState
 data ConnectedMode
   -- | Debuggee is running
   = RunningMode
-  -- | Debuggee is paused
+  -- | Debuggee is paused and we're exploring the heap
   | PausedMode
-    { _savedClosures :: GenericList Name Seq Closure
+    { _closurePath :: [Closure] -- ^ parent closures (head is immediate parent)
+    , _closure :: Maybe ( Closure -- ^ Current closure (Nothing if root)
+                        , Int     -- ^ Exclusive Size
+                        )
+    , _references :: GenericList Name Seq Closure -- ^ referenced closures
     }
 
 makeLenses ''AppState

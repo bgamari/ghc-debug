@@ -11,6 +11,7 @@ import Control.Monad (forever)
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
+import Data.Maybe (maybeToList)
 import qualified Data.Sequence as Seq
 import Data.Text
 import Graphics.Vty(defaultConfig, mkVty, defAttr)
@@ -43,37 +44,59 @@ myAppDraw (AppState majorState') =
       in mainBorder "ghc-debug" $ vBox
         [ txt $ "Select a process to debug (" <> pack (show nKnownDebuggees) <> " found):"
         , renderList
-            (\elIsSelected debuggee -> hBox
+            (\elIsSelected socketPath -> hBox
                 [ txt $ if elIsSelected then "*" else " "
                 , txt " "
-                , txt (socketName debuggee)
+                , txt (socketName socketPath)
                 , txt " - "
-                , txt (renderSocketTime debuggee)
+                , txt (renderSocketTime socketPath)
                 ]
             )
             True
             knownDebuggees'
         ]
 
-    Connected socket debuggee mode -> case mode of
+    Connected _socket _debuggee mode' -> case mode' of
 
       RunningMode -> mainBorder "ghc-debug - Running" $ vBox
         [ txt "Pause (p)"
         ]
 
-      PausedMode savedClosures'  -> mainBorder "ghc-debug - Paused" $ vBox
-        [ txt "Resume (r)"
-        , renderList
-            (\selected closure -> txt $
-              (if selected then "* " else "  ")
-              <> (pack $ show $ closureExclusiveSize debuggee closure)
-            )
-            True
-            savedClosures'
+      PausedMode parents' closureMay' references'  -> mainBorder "ghc-debug - Paused" $ vBox
+        [ border $ vBox
+          [ txt "Resume  (r)"
+          , txt "Parent  (<-)"
+          , txt "Child   (->)"
+          ]
+        , borderWithLabel (txt "Path") $ vBox $
+            [txt (showClosure parent) | parent <- List.reverse parents']
+            ++ [txt (maybe "<ROOT>" (\(c,_) -> showClosure c) closureMay')]
+        -- Current closure
+        , let
+          refListWidget = borderWithLabel (txt "Children") $ renderList
+                (\selected refClosure -> txt $
+                  (if selected then "* " else "  ")
+                  <> showClosure refClosure
+                )
+                True
+                references'
+          in case closureMay' of
+            Nothing -> vBox
+              [ refListWidget
+              ]
+            Just (_, closureExcSize) -> vBox
+              -- Size
+              [ str $ "exclusive size: " <> (show $ closureExcSize)
+              -- References
+              , refListWidget
+              ]
         ]
   ]
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
+
+  showClosure :: Closure -> Text
+  showClosure closure' = pack $ show $ closurePtr closure'
 
 myAppHandleEvent :: AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
@@ -86,17 +109,16 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         Vty.EvKey KEnter _
           | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
           -> do
-            debuggee <- liftIO $ debuggeeConnect (T.unpack (socketName socket)) (view socketLocation socket)
+            debuggee' <- liftIO $ debuggeeConnect (T.unpack (socketName socket)) (view socketLocation socket)
             continue $ appState & majorState .~ Connected
                   { _debuggeeSocket = socket
-                  , _debuggee = debuggee
+                  , _debuggee = debuggee'
                   , _mode     = RunningMode  -- TODO should we query the debuggee for this?
                   }
 
         -- Navigate through the list.
         _ -> do
-          handleListEventVi handleListEvent event knownDebuggees'
-          newOptions <- handleListEvent event knownDebuggees'
+          newOptions <- handleListEventVi handleListEvent event knownDebuggees'
           continue $ appState & majorState . knownDebuggees .~ newOptions
 
       AppEvent event -> case event of
@@ -126,28 +148,67 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
 
           continue $ appState & majorState . knownDebuggees .~ knownDebuggees''
 
-    Connected socket' debuggee' mode' -> case mode' of
+      _ -> continue appState
+
+    Connected _socket' debuggee' mode' -> case mode' of
 
       RunningMode -> case brickEvent of
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
-          savedClosures' <- liftIO $ do
-            pause debuggee'
-            savedClosuresList <- GD.savedClosures debuggee'
-            return $ list
-              Connected_Paused_SavedClosuresList
-              (Seq.fromList savedClosuresList)
-              1
-          continue (appState & majorState . mode .~ PausedMode savedClosures')
+          liftIO $ pause debuggee'
+          continueWithRoot appState
         _ -> continue appState
 
-      PausedMode{} -> case brickEvent of
+      PausedMode parents' closureMay' refs' -> case brickEvent of
+
         -- Resume the debuggee
-        VtyEvent (Vty.EvKey (KChar 'r') []) -> do
+        VtyEvent (Vty.EvKey (KChar 'r') _) -> do
           liftIO $ do
             resume debuggee'
           continue (appState & majorState . mode .~ RunningMode)
+
+        -- Goto Parent
+        VtyEvent (Vty.EvKey KLeft _) -> case parents' of
+          parent:ancestors -> continueWithClosure appState (Just parent) ancestors
+          [] -> continueWithClosure appState Nothing []
+
+        -- Goto Selected reference
+        VtyEvent (Vty.EvKey KRight _)
+          | Just (_, refClosure) <- listSelectedElement refs'
+          -> continueWithClosure appState (Just refClosure) (maybeToList (fst <$> closureMay') ++ parents')
+
+        -- Navigate the list of referenced closures
+        VtyEvent event -> do
+          newRefs <- handleListEventVi handleListEvent event refs'
+          continue $ appState & majorState . mode . references .~ newRefs
+
         _ -> continue appState
+
+        where
+        continueWithClosure appState' closureMay' parents = case closureMay' of
+          Nothing -> continueWithRoot appState'
+          Just closure' -> do
+            refsList <- liftIO $ closureReferences debuggee' closure'
+            let newRefsList = listReplace
+                        (Seq.fromList refsList)
+                        (if Prelude.null refsList then Nothing else Just 0)
+                        refs'
+            closureExcSize <- liftIO $ closureExclusiveSize debuggee' closure'
+            continue $ appState'
+              & majorState
+              . mode
+              .~ PausedMode parents (Just (closure', closureExcSize)) newRefsList
+      where
+      continueWithRoot appState = do
+          rootClosuresList <- liftIO $ GD.rootClosures debuggee'
+          continue (appState & majorState . mode .~ PausedMode
+            { _closurePath = []
+            , _closure = Nothing
+            , _references = list
+                Connected_Paused_SavedClosuresList
+                (Seq.fromList rootClosuresList)
+                1
+            })
 
 myAppStartEvent :: AppState -> EventM Name AppState
 myAppStartEvent = return
@@ -158,7 +219,7 @@ myAppAttrMap _appState = attrMap defAttr []
 main :: IO ()
 main = do
   eventChan <- newBChan 10
-  forkIO $ forever $ do
+  _ <- forkIO $ forever $ do
     writeBChan eventChan PollTick
     threadDelay 2000000
   let buildVty = mkVty defaultConfig
