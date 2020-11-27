@@ -63,7 +63,7 @@ myAppDraw (AppState majorState') =
         ]
 
       PausedMode path' references'  -> mainBorder "ghc-debug - Paused" $ hBox
-        [ vBox
+        [ hLimit 50 $ vBox
           [ border $ vBox
               [ txt "Resume  (r)"
               , txt "Parent  (<-)"
@@ -71,15 +71,15 @@ myAppDraw (AppState majorState') =
               ]
           , borderWithLabel (txt "Path") $ vBox $
               [txt "<ROOT>"]
-              ++ [txt (showClosure closure') | (closure', _, _) <- List.reverse path']
+              ++ [txt ("(" <> showClosure (closure', pretty) <> ") " <> pretty) | (closure', pretty, _, _) <- List.reverse path']
           ]
         , padLeft (Pad 1) $
           -- Current closure
           let
             refListWidget = borderWithLabel (txt "Children") $ renderList
-                  (\selected refClosure -> txt $
+                  (\selected refClosurePretty -> txt $
                     (if selected then "* " else "  ")
-                    <> showClosure refClosure
+                    <> showClosure refClosurePretty
                   )
                   True
                   references'
@@ -87,7 +87,7 @@ myAppDraw (AppState majorState') =
               [] -> vBox
                 [ refListWidget
                 ]
-              (_, _, closureExcSize):_ -> vBox
+              (_, _, _, closureExcSize):_ -> vBox
                 -- Size
                 [ str $ "exclusive size: " <> (show $ closureExcSize)
                 -- References
@@ -98,8 +98,8 @@ myAppDraw (AppState majorState') =
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
 
-  showClosure :: Closure -> Text
-  showClosure closure' = pack $ show $ closurePtr closure'
+  showClosure :: (Closure, Text) -> Text
+  showClosure (closure', pretty) = "(" <> (pack $ show $ closurePtr closure') <> ") " <> pretty
 
 myAppHandleEvent :: AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
@@ -172,15 +172,15 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
 
         -- Goto Parent
         VtyEvent (Vty.EvKey KLeft _)
-          | (_, ixInParentRefs, _):parents' <- path'
+          | (_, _, ixInParentRefs, _):parents' <- path'
           -> continueWithClosure appState parents' (Just ixInParentRefs)
 
         -- Goto Selected reference
         VtyEvent (Vty.EvKey KRight _)
-          | Just (refClosureIx, refClosure) <- listSelectedElement refs'
+          | Just (refClosureIx, (refClosure, refClosurePretty)) <- listSelectedElement refs'
           -> do
             closureExcSize <- liftIO $ closureExclusiveSize debuggee' refClosure
-            continueWithClosure appState ((refClosure, refClosureIx, closureExcSize):path') Nothing
+            continueWithClosure appState ((refClosure, refClosurePretty, refClosureIx, closureExcSize):path') Nothing
 
         -- Navigate the list of referenced closures
         VtyEvent event -> do
@@ -193,10 +193,11 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- continueWithClosure :: AppState -> [(Closure, Int, Int)] -> Maybe Int -> _
         continueWithClosure appState' path'' ixMay = case path'' of
           [] -> continueWithRoot appState' ixMay
-          (closure', _, _):_ -> do
-            refsList <- liftIO $ closureReferences debuggee' closure'
+          (closure', _, _, _):_ -> do
+            refsList       <- liftIO $ closureReferences debuggee' closure'
+            refPrettysList <- closuresToPretty refsList
             let newRefsList = listReplace
-                        (Seq.fromList refsList)
+                        (Seq.fromList (List.zip refsList refPrettysList))
                         (ixMay <|> if Prelude.null refsList then Nothing else Just 0)
                         refs'
             continue $ appState'
@@ -206,13 +207,16 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
       where
       continueWithRoot appState' ixMay = do
           rootClosuresList <- liftIO $ GD.rootClosures debuggee'
+          refPrettysList <- closuresToPretty rootClosuresList
           continue (appState' & majorState . mode .~ PausedMode
             { _closurePath = []
             , _references = listMoveTo (fromMaybe 0 ixMay) $ list
                 Connected_Paused_SavedClosuresList
-                (Seq.fromList rootClosuresList)
+                (Seq.fromList (List.zip rootClosuresList refPrettysList))
                 1
             })
+
+      closuresToPretty cs = liftIO $ mapM (fmap pack . closurePretty debuggee') cs
 
 myAppStartEvent :: AppState -> EventM Name AppState
 myAppStartEvent = return

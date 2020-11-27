@@ -332,6 +332,8 @@ ppClosure herald showBox prec c = case c of
     MutArrClosure {..} -> app
         --["toMutArray", "("++show (length mccPayload) ++ " ptrs)",  intercalate "," (shorten (map (showBox 10) mccPayload))]
         ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]
+    SmallMutArrClosure {..} -> app
+        ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]
     MutVarClosure {..} -> app
         ["_mutVar", showBox 10 var]
     MVarClosure {..} -> app
@@ -356,8 +358,12 @@ ppClosure herald showBox prec c = case c of
         ["Double", show doubleVal]
     OtherClosure {} ->
         "_other"
+    TSOClosure {..} -> "TSO"
+    WeakClosure {..} -> "_wk"
     UnsupportedClosure {} ->
         "_unsupported"
+
+
   where
     app [a] = a  ++ "()"
     app xs = addBraces (10 <= prec) (unwords xs)

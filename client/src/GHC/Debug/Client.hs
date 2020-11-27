@@ -27,7 +27,7 @@ module GHC.Debug.Client
   , closurePtr
   , closureExclusiveSize
   , closureReferences
-  , ppClosure
+  , closurePretty
 
     -- * All this stuff feels too low level to be exposed to the frontend, but
     --   still could be used for tests.
@@ -179,8 +179,8 @@ closureReferences (Debuggee e) (Closure _ closure) = run e $ do
             refs
 
 -- | Pritty print a closure
-ppClosure :: Debuggee -> Closure -> IO String
-ppClosure (Debuggee e) (Closure _ closure) = do
+closurePretty :: Debuggee -> Closure -> IO String
+closurePretty (Debuggee e) (Closure _ closure) = do
   closure' <- GD.tritraverse toConstrDesc pure pure (unDCS closure)
   return $ GD.ppClosure
     "??"

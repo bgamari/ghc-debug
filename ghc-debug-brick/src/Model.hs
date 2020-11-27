@@ -85,11 +85,14 @@ data ConnectedMode
   = RunningMode
   -- | Debuggee is paused and we're exploring the heap
   | PausedMode
-    { _closurePath :: [(Closure, Int, Int)]
-        -- ^ parent closures,
-        -- index in parent reference list,
-        -- exclusive size (head is current closure)
-    , _references :: GenericList Name Seq Closure
+    { _closurePath :: [(Closure, Text, Int, Int)]
+        -- ^ parent closures:
+        -- ( the closure
+        -- , closure pretty printed
+        -- , index in parent reference list,
+        -- , exclusive size (head is current closure)
+        -- )
+    , _references :: GenericList Name Seq (Closure, Text)
         -- ^ referenced closures of the current closure, or root closures if
         -- _closurePath is empty
     }
