@@ -1,5 +1,7 @@
 packages: common, stub, client, test, dyepack-test, ghc-debug-brick
 
+optional-packages: /home/david/Documents/code/head.hackage/packages/Cabal-3.2.1.0/*.cabal
+
 repository head.hackage.ghc.haskell.org
    url: https://ghc.gitlab.haskell.org/head.hackage/
    secure: True
@@ -38,7 +40,7 @@ allow-newer:
   time
 
 constraints:
-  Cabal ==2.4.1.0 || ==3.0.2.0 || ==3.2.0.0,
+  Cabal ==2.4.1.0 || ==3.0.2.0 || ==3.2.0.0 || ==3.2.1.0,
   Decimal ==0.5.1,
   EdisonAPI ==1.3.1,
   EdisonCore ==1.3.2.1,

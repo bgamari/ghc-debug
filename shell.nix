@@ -24,7 +24,7 @@ let
 
 in
   np.mkShell { buildInputs = [ ghc
-                               ghc-utils
+                               # ghc-utils
                                np.linuxPackages.perf
                                np.ncurses
                                np.wget  # Used by cabal-install for https support when communicating with head.hackage
