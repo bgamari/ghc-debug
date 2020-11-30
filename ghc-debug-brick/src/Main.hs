@@ -71,7 +71,7 @@ myAppDraw (AppState majorState') =
               ]
           , borderWithLabel (txt "Path") $ vBox $
               [txt "<ROOT>"]
-              ++ [txt (pack $ show $ closurePtr closure') | (closure', _, _, _) <- List.reverse path']
+              ++ [txt (pack $ closureShowAddress closure') | (closure', _, _, _) <- List.reverse path']
           ]
         , padLeft (Pad 1) $
           -- Current closure
@@ -103,7 +103,7 @@ myAppDraw (AppState majorState') =
   renderClosureRow selected (closure', label, pretty) = renderRow
     (if selected then "* " else "  ")
     label
-    (pack $ show $ closurePtr closure')
+    (pack $ closureShowAddress closure')
     pretty
 
   renderRow :: Text -> Text -> Text -> Text -> Widget Name

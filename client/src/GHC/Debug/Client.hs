@@ -25,8 +25,7 @@ module GHC.Debug.Client
 
     -- * Closures
   , Closure
-  , closurePtr
-  , closureSized
+  , closureShowAddress
   , closureExclusiveSize
   , closureReferences
   , closurePretty
@@ -58,7 +57,7 @@ module GHC.Debug.Client
 import Control.Exception
 import Control.Monad (forM)
 import qualified GHC.Debug.Types as GD
-import GHC.Debug.Types hiding (Closure)
+import GHC.Debug.Types hiding (Closure, Stack)
 import GHC.Debug.Decode
 import GHC.Debug.Decode.Stack
 
@@ -162,38 +161,61 @@ savedClosures (Debuggee e) = run e $ do
 -- requestInfoTables :: Debuggee -> [InfoTablePtr] -> IO [(StgInfoTableWithPtr, RawInfoTable)]
 -- requestInfoTables (Debuggee e) = run e $ request RequestInfoTables
 
-data Closure = Closure
-  { closurePtr :: ClosurePtr
-  , closureSized :: SizedClosure
-  }
+data Closure
+  = Closure
+    { closurePtr :: ClosurePtr
+    , closureSized :: SizedClosure
+    }
+  | Stack
+    { stackPtr :: StackCont
+    , stackStack :: GD.Stack
+    }
+
+closureShowAddress :: Closure -> String
+closureShowAddress (Closure c _) = show c
+closureShowAddress (Stack   s _) = show s
 
 -- | Get the exlusive size (not including referenced obejcts) of a closure.
 closureExclusiveSize :: Debuggee -> Closure -> IO Int
+closureExclusiveSize _dbg (Stack _ _stack) = return (-1)
+  -- ^ TODO How should we handle stack size? only used space on the stack?
+  -- Include underflow frames? Return Maybe?
 closureExclusiveSize _dbg (Closure _ closure) = return $ getSize $ extraDCS closure
 
 -- | Get the directly referenced closures (with a label) of a closure.
 closureReferences :: Debuggee -> Closure -> IO [(String, Closure)]
+closureReferences (Debuggee e) (Stack _ stack) = run e $ do
+  let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
+                     , ptr
+                     )
+                      | (frameIx, frame) <- zip [(0::Int)..] (GD.frames stack)
+                      , (ptrIx  , ptr  ) <- zip [(0::Int)..] [ptr | GD.SPtr ptr <- GD.values frame]
+                   ]
+  closures <- dereferenceClosures (snd <$> lblAndPtrs)
+  return $ zipWith (\(lbl,ptr) c -> (lbl, Closure ptr c))
+            lblAndPtrs
+            closures
 closureReferences (Debuggee e) (Closure _ closure) = run e $ do
   let
-      withIxLables elements = [("[" <> show i <> "]", arg) | (i, arg) <- zip [(0::Int)..] elements]
-      withArgLables ptrArgs = [("Argument " <> show i, arg) | (i, arg) <- zip [(0::Int)..] ptrArgs]
-      withFieldLables ptrArgs = [("Field " <> show i, arg) | (i, arg) <- zip [(0::Int)..] ptrArgs]
+      withIxLables elements   = [("[" <> show i <> "]" , Left x) | (i, x) <- zip [(0::Int)..] elements]
+      withArgLables ptrArgs   = [("Argument " <> show i, Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
+      withFieldLables ptrArgs = [("Field " <> show i   , Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
 
       refPtrs = case unDCS closure of
           TSOClosure {..} ->
-            [ -- ("Stack", tsoStack) -- TODO
-              ("Link", _link)
-            , ("Global Link", global_link)
-            , ("TRec", trec)
-            , ("Blocked Exceptions", blocked_exceptions)
-            , ("Blocking Queue", bq)
+            [ ("Stack", Right tsoStack)
+            , ("Link", Left _link)
+            , ("Global Link", Left global_link)
+            , ("TRec", Left trec)
+            , ("Blocked Exceptions", Left blocked_exceptions)
+            , ("Blocking Queue", Left bq)
             ]
-          WeakClosure {..} -> [ ("Key", key)
-                              , ("Value", value)
-                              , ("C Finalizers", cfinalizers)
-                              , ("Finalizer", finalizer)
+          WeakClosure {..} -> [ ("Key", Left key)
+                              , ("Value", Left value)
+                              , ("C Finalizers", Left cfinalizers)
+                              , ("Finalizer", Left finalizer)
                               ] ++
-                              [ ("Link", link)
+                              [ ("Link", Left link)
                               | Just link <- [mlink] -- TODO do we want to show NULL pointers some how?
                               ]
           IntClosure {} -> []
@@ -205,40 +227,45 @@ closureReferences (Debuggee e) (Closure _ closure) = run e $ do
           DoubleClosure {} -> []
           ConstrClosure {..} -> withFieldLables ptrArgs
           ThunkClosure {..} -> withArgLables ptrArgs
-          SelectorClosure {..} -> [("Selectee", selectee)]
-          IndClosure {..} -> [("Indirectee", indirectee)]
-          BlackholeClosure {..} -> [("Indirectee", indirectee)]
-          APClosure {..} -> ("Function", fun) : withArgLables payload
-          PAPClosure {..} -> ("Function", fun) : withArgLables payload
-          APStackClosure {..} -> ("Function", fun) : withArgLables payload
-          BCOClosure {..} -> [ ("Instructions", instrs)
-                             , ("Literals", literals)
-                             , ("Byte Code Objects", bcoptrs)
+          SelectorClosure {..} -> [("Selectee", Left selectee)]
+          IndClosure {..} -> [("Indirectee", Left indirectee)]
+          BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
+          APClosure {..} -> ("Function", Left fun) : withArgLables payload
+          PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
+          APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
+          BCOClosure {..} -> [ ("Instructions", Left instrs)
+                             , ("Literals", Left literals)
+                             , ("Byte Code Objects", Left bcoptrs)
                              ]
           ArrWordsClosure {} -> []
           MutArrClosure {..} -> withIxLables mccPayload
           SmallMutArrClosure {..} -> withIxLables mccPayload
-          MutVarClosure {..} -> [("Value", var)]
-          MVarClosure {..} -> [ ("Queue Head", queueHead)
-                              , ("Queue Tail", queueTail)
-                              , ("Value", value)
+          MutVarClosure {..} -> [("Value", Left var)]
+          MVarClosure {..} -> [ ("Queue Head", Left queueHead)
+                              , ("Queue Tail", Left queueTail)
+                              , ("Value", Left value)
                               ]
           FunClosure {..} -> withArgLables ptrArgs
-          BlockingQueueClosure {..} -> [ ("Link", link)
-                                       , ("Black Hole", blackHole)
-                                       , ("Owner", owner)
-                                       , ("Queue", queue)
+          BlockingQueueClosure {..} -> [ ("Link", Left link)
+                                       , ("Black Hole", Left blackHole)
+                                       , ("Owner", Left owner)
+                                       , ("Queue", Left queue)
                                        ]
-          OtherClosure {..} -> ("",) <$> hvalues
+          OtherClosure {..} -> ("",) . Left <$> hvalues
           UnsupportedClosure {} -> []
 
 
-  forM refPtrs $ \(label, ref) -> do
-    refClosure' <- dereferenceSizedClosure ref
-    return (label, Closure ref refClosure')
+  forM refPtrs $ \(label, ptr) -> case ptr of
+    Left cPtr -> do
+      refClosure' <- dereferenceSizedClosure cPtr
+      return (label, Closure cPtr refClosure')
+    Right sPtr -> do
+      refStack' <- dereferenceStack sPtr
+      return (label, Stack sPtr refStack')
 
 -- | Pritty print a closure
 closurePretty :: Debuggee -> Closure -> IO String
+closurePretty _ (Stack _ _) = return "STACK"
 closurePretty (Debuggee e) (Closure _ closure) = do
   closure' <- GD.tritraverse toConstrDesc pure pure (unDCS closure)
   return $ GD.ppClosure
@@ -278,7 +305,7 @@ dereferenceClosures cs = do
     raw_its <- request (RequestInfoTables its)
     return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
 
-dereferenceStack :: StackCont -> DebugM Stack
+dereferenceStack :: StackCont -> DebugM GD.Stack
 dereferenceStack (StackCont sp) = do
   stack <- request (RequestStack sp)
   let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
