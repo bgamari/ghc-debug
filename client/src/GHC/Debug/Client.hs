@@ -1,6 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
@@ -25,6 +26,7 @@ module GHC.Debug.Client
     -- * Closures
   , Closure
   , closurePtr
+  , closureSized
   , closureExclusiveSize
   , closureReferences
   , closurePretty
@@ -54,6 +56,7 @@ module GHC.Debug.Client
   ) where
 
 import Control.Exception
+import Control.Monad (forM)
 import qualified GHC.Debug.Types as GD
 import GHC.Debug.Types hiding (Closure)
 import GHC.Debug.Decode
@@ -168,15 +171,71 @@ data Closure = Closure
 closureExclusiveSize :: Debuggee -> Closure -> IO Int
 closureExclusiveSize _dbg (Closure _ closure) = return $ getSize $ extraDCS closure
 
--- | Get the directly referenced closures of a closure.
-closureReferences :: Debuggee -> Closure -> IO [Closure]
+-- | Get the directly referenced closures (with a label) of a closure.
+closureReferences :: Debuggee -> Closure -> IO [(String, Closure)]
 closureReferences (Debuggee e) (Closure _ closure) = run e $ do
-  let refPtrs = allClosures (unDCS closure)
-  -- ^^^ TODO I don't think this works for traversing the stack
-  refs <- mapM dereferenceSizedClosure refPtrs
-  return $ zipWith Closure
-            refPtrs
-            refs
+  let
+      withIxLables elements = [("[" <> show i <> "]", arg) | (i, arg) <- zip [(0::Int)..] elements]
+      withArgLables ptrArgs = [("Argument " <> show i, arg) | (i, arg) <- zip [(0::Int)..] ptrArgs]
+      withFieldLables ptrArgs = [("Field " <> show i, arg) | (i, arg) <- zip [(0::Int)..] ptrArgs]
+
+      refPtrs = case unDCS closure of
+          TSOClosure {..} ->
+            [ -- ("Stack", tsoStack) -- TODO
+              ("Link", _link)
+            , ("Global Link", global_link)
+            , ("TRec", trec)
+            , ("Blocked Exceptions", blocked_exceptions)
+            , ("Blocking Queue", bq)
+            ]
+          WeakClosure {..} -> [ ("Key", key)
+                              , ("Value", value)
+                              , ("C Finalizers", cfinalizers)
+                              , ("Finalizer", finalizer)
+                              ] ++
+                              [ ("Link", link)
+                              | Just link <- [mlink] -- TODO do we want to show NULL pointers some how?
+                              ]
+          IntClosure {} -> []
+          WordClosure {} -> []
+          Int64Closure {} -> []
+          Word64Closure {} -> []
+          AddrClosure {} -> []
+          FloatClosure {} -> []
+          DoubleClosure {} -> []
+          ConstrClosure {..} -> withFieldLables ptrArgs
+          ThunkClosure {..} -> withArgLables ptrArgs
+          SelectorClosure {..} -> [("Selectee", selectee)]
+          IndClosure {..} -> [("Indirectee", indirectee)]
+          BlackholeClosure {..} -> [("Indirectee", indirectee)]
+          APClosure {..} -> ("Function", fun) : withArgLables payload
+          PAPClosure {..} -> ("Function", fun) : withArgLables payload
+          APStackClosure {..} -> ("Function", fun) : withArgLables payload
+          BCOClosure {..} -> [ ("Instructions", instrs)
+                             , ("Literals", literals)
+                             , ("Byte Code Objects", bcoptrs)
+                             ]
+          ArrWordsClosure {} -> []
+          MutArrClosure {..} -> withIxLables mccPayload
+          SmallMutArrClosure {..} -> withIxLables mccPayload
+          MutVarClosure {..} -> [("Value", var)]
+          MVarClosure {..} -> [ ("Queue Head", queueHead)
+                              , ("Queue Tail", queueTail)
+                              , ("Value", value)
+                              ]
+          FunClosure {..} -> withArgLables ptrArgs
+          BlockingQueueClosure {..} -> [ ("Link", link)
+                                       , ("Black Hole", blackHole)
+                                       , ("Owner", owner)
+                                       , ("Queue", queue)
+                                       ]
+          OtherClosure {..} -> ("",) <$> hvalues
+          UnsupportedClosure {} -> []
+
+
+  forM refPtrs $ \(label, ref) -> do
+    refClosure' <- dereferenceSizedClosure ref
+    return (label, Closure ref refClosure')
 
 -- | Pritty print a closure
 closurePretty :: Debuggee -> Closure -> IO String

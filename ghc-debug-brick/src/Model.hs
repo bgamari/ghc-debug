@@ -92,9 +92,13 @@ data ConnectedMode
         -- , index in parent reference list,
         -- , exclusive size (head is current closure)
         -- )
-    , _references :: GenericList Name Seq (Closure, Text)
+    , _references :: GenericList Name Seq (Closure, Text, Text)
         -- ^ referenced closures of the current closure, or root closures if
-        -- _closurePath is empty
+        -- _closurePath is empty:
+        -- ( the closure
+        -- , reference label
+        -- , referenced rendered
+        -- )
     }
 
 makeLenses ''AppState

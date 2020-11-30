@@ -71,18 +71,19 @@ myAppDraw (AppState majorState') =
               ]
           , borderWithLabel (txt "Path") $ vBox $
               [txt "<ROOT>"]
-              ++ [txt ("(" <> showClosure (closure', pretty) <> ") " <> pretty) | (closure', pretty, _, _) <- List.reverse path']
+              ++ [txt (pack $ show $ closurePtr closure') | (closure', _, _, _) <- List.reverse path']
           ]
         , padLeft (Pad 1) $
           -- Current closure
           let
-            refListWidget = borderWithLabel (txt "Children") $ renderList
-                  (\selected refClosurePretty -> txt $
-                    (if selected then "* " else "  ")
-                    <> showClosure refClosurePretty
-                  )
+            refListWidget = borderWithLabel (txt "Children") $ vBox
+              [ renderRow "  " "Pointer Field" "Pointer" "Value"
+              , renderRow "  " "-------------" "-------" "-----"
+              , renderList
+                  renderClosureRow
                   True
                   references'
+              ]
           in case path' of
               [] -> vBox
                 [ refListWidget
@@ -98,8 +99,25 @@ myAppDraw (AppState majorState') =
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
 
-  showClosure :: (Closure, Text) -> Text
-  showClosure (closure', pretty) = "(" <> (pack $ show $ closurePtr closure') <> ") " <> pretty
+  renderClosureRow :: Bool -> (Closure, Text, Text) -> Widget Name
+  renderClosureRow selected (closure', label, pretty) = renderRow
+    (if selected then "* " else "  ")
+    label
+    (pack $ show $ closurePtr closure')
+    pretty
+
+  renderRow :: Text -> Text -> Text -> Text -> Widget Name
+  renderRow selected label address value = hBox
+    [ vLimit 1 $ hLimit 2  (txt selected)
+    , space
+    , vLimit 1 $ hLimit 20 $ padRight Max (txt label)
+    , space
+    , vLimit 1 $ hLimit 15 $ padLeft  Max (txt address)
+    , space
+    , vLimit 1                            (txt value)
+    ]
+    where
+    space = txt "  "
 
 myAppHandleEvent :: AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
@@ -177,7 +195,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
 
         -- Goto Selected reference
         VtyEvent (Vty.EvKey KRight _)
-          | Just (refClosureIx, (refClosure, refClosurePretty)) <- listSelectedElement refs'
+          | Just (refClosureIx, (refClosure, _, refClosurePretty)) <- listSelectedElement refs'
           -> do
             closureExcSize <- liftIO $ closureExclusiveSize debuggee' refClosure
             continueWithClosure appState ((refClosure, refClosurePretty, refClosureIx, closureExcSize):path') Nothing
@@ -195,9 +213,9 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
           [] -> continueWithRoot appState' ixMay
           (closure', _, _, _):_ -> do
             refsList       <- liftIO $ closureReferences debuggee' closure'
-            refPrettysList <- closuresToPretty refsList
+            refPrettysList <- closuresToPretty (snd <$> refsList)
             let newRefsList = listReplace
-                        (Seq.fromList (List.zip refsList refPrettysList))
+                        (Seq.fromList [(c, pack lbl, pretty) | ((lbl, c), pretty) <- List.zip refsList refPrettysList])
                         (ixMay <|> if Prelude.null refsList then Nothing else Just 0)
                         refs'
             continue $ appState'
@@ -212,7 +230,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
             { _closurePath = []
             , _references = listMoveTo (fromMaybe 0 ixMay) $ list
                 Connected_Paused_SavedClosuresList
-                (Seq.fromList (List.zip rootClosuresList refPrettysList))
+                (Seq.fromList (List.zipWith (\c pretty -> (c, "GC Root", pretty)) rootClosuresList refPrettysList))
                 1
             })
 
