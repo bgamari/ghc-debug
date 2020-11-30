@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeApplications #-}
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
-    Debuggee
+    Debuggee(..)
   , debuggeeRun
   , debuggeeConnect
   , debuggeeClose

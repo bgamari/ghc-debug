@@ -3,7 +3,7 @@ module Main where
 
 import GHC.Debug.Client
 import GHC.Debug.Client.Retainers
-import GHC.Debug.Client.Monad
+import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
 
@@ -34,7 +34,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p23 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p24 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -109,10 +109,10 @@ p6 e = do
   run e $ request RequestPoll
   putStrLn "POLL"
   -- Should return already paused
-  pause e
+  pause (Debuggee e)
   putStrLn "PAUSE"
   -- Now unpause
-  resume e
+  resume (Debuggee e)
   putStrLn "RESUME"
 
 -- Request saved objects
@@ -219,7 +219,7 @@ p15 d = do
 
 -- pretty-print graph
 p16 e = do
-  pause e
+  pause (Debuggee e)
   hg <- run e $ do
           (so:_) <- request RequestSavedObjects
           buildHeapGraph derefFuncM 20 () so
@@ -227,7 +227,7 @@ p16 e = do
 
 -- Testing IPE
 p17 e = do
-  pause e
+  pause (Debuggee e)
   runTrace e $ do
     [so] <- request RequestSavedObjects
     [c] <- request (RequestClosures [so])
