@@ -28,11 +28,13 @@ import GHC.Debug.Types.Closures
 -- heap graph. In addition we have a slot for arbitrary data, for the user's convenience.
 data HeapGraphEntry a = HeapGraphEntry {
         hgeClosurePtr :: ClosurePtr,
-        hgeClosure :: DebugClosure ConstrDesc StackCont (Maybe HeapGraphIndex),
+        hgeClosure :: DebugClosure ConstrDesc StackHI (Maybe HeapGraphIndex),
         hgeLive :: Bool,
         hgeData :: a}
     deriving (Show, Functor, Foldable, Traversable)
 type HeapGraphIndex = Int
+
+type StackHI = GenStack (Maybe HeapGraphIndex)
 
 -- | The whole graph. The suggested interface is to only use 'lookupHeapGraph',
 -- as the internal representation may change. Nevertheless, we export it here:
@@ -65,7 +67,7 @@ buildHeapGraph
 buildHeapGraph deref limit rootD initialBox =
     fst <$> multiBuildHeapGraph deref limit [(rootD, initialBox)]
 
-type DerefFunction m = ClosurePtr -> m (DebugClosure ConstrDesc StackCont ClosurePtr)
+type DerefFunction m = ClosurePtr -> m (DebugClosure ConstrDesc Stack ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
@@ -148,7 +150,7 @@ generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
                 -- Look up the closure
                 c <- lift $ lift $ deref b
                 -- Find indicies for all boxes contained in the map
-                c' <- T.mapM (add (n-1)) c
+                c' <- tritraverse pure (traverse (add (n-1))) (add (n-1)) c
                 -- Add add the resulting closure to the map
                 lift $ tell (M.singleton i (HeapGraphEntry b c' True mempty))
                 return $ Just i

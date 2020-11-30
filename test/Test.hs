@@ -252,7 +252,7 @@ derefFunc e c = run e $ derefFuncM c
 
 derefFuncM c = do
   c <- dereferenceClosure c
-  tritraverse dereferenceConDesc pure pure c
+  tritraverse dereferenceConDesc dereferenceStack pure c
 
 -- Use with large-thunk
 p19 e = do
@@ -309,3 +309,15 @@ p23 e = do
         RetainerPath cs -> do
           --decoded <- dereferenceClosures cs
           traceWrite ("DONE", cs)
+
+-- Use with large-thunk
+p24 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestSavedObjects
+    forM_ rs $ \r -> do
+      traceWrite r
+      hg <- buildHeapGraph derefFuncM 10000 () r
+      traceMsg (ppHeapGraph (const "") hg)
+      traceWrite ("DONE", r)
