@@ -225,12 +225,17 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
       where
       continueWithRoot appState' ixMay = do
           rootClosuresList <- liftIO $ GD.rootClosures debuggee'
-          refPrettysList <- closuresToPretty rootClosuresList
+          rootRefPrettysList <- closuresToPretty rootClosuresList
+          savedClosuresList <- liftIO $ GD.savedClosures debuggee'
+          savedRefPrettysList <- closuresToPretty savedClosuresList
           continue (appState' & majorState . mode .~ PausedMode
             { _closurePath = []
             , _references = listMoveTo (fromMaybe 0 ixMay) $ list
                 Connected_Paused_SavedClosuresList
-                (Seq.fromList (List.zipWith (\c pretty -> (c, "GC Root", pretty)) rootClosuresList refPrettysList))
+                (Seq.fromList $
+                  List.zipWith (\c pretty -> (c, "Saved Object", pretty)) savedClosuresList savedRefPrettysList
+                  ++ List.zipWith (\c pretty -> (c, "GC Root", pretty)) rootClosuresList rootRefPrettysList
+                )
                 1
             })
 
