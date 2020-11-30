@@ -27,6 +27,7 @@ module GHC.Debug.Client
   , Closure
   , closureShowAddress
   , closureExclusiveSize
+  , closureSourceLocation
   , closureReferences
   , closurePretty
 
@@ -153,22 +154,14 @@ savedClosures (Debuggee e) = run e $ do
 -- requestClosures :: Debuggee -> [ClosurePtr] -> IO [RawClosure]
 -- requestClosures (Debuggee e) = run e $ request RequestClosures
 
--- -- | Request a stack
--- requestStack :: Debuggee -> StackPtr -> IO RawStack
--- requestStack (Debuggee e) = run e $ request RequestStack
-
--- -- | Request a set of info tables.
--- requestInfoTables :: Debuggee -> [InfoTablePtr] -> IO [(StgInfoTableWithPtr, RawInfoTable)]
--- requestInfoTables (Debuggee e) = run e $ request RequestInfoTables
-
 data Closure
   = Closure
-    { closurePtr :: ClosurePtr
-    , closureSized :: SizedClosure
+    { _closurePtr :: ClosurePtr
+    , _closureSized :: SizedClosure
     }
   | Stack
-    { stackPtr :: StackCont
-    , stackStack :: GD.Stack
+    { _stackPtr :: StackCont
+    , _stackStack :: GD.Stack
     }
 
 closureShowAddress :: Closure -> String
@@ -181,6 +174,13 @@ closureExclusiveSize _dbg (Stack _ _stack) = return (-1)
   -- ^ TODO How should we handle stack size? only used space on the stack?
   -- Include underflow frames? Return Maybe?
 closureExclusiveSize _dbg (Closure _ closure) = return $ getSize $ extraDCS closure
+
+closureSourceLocation :: Debuggee -> Closure -> IO [String]
+closureSourceLocation _ (Stack _ _) = return []
+closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
+  case lookupStgInfoTableWithPtr (noSize c) of
+    Nothing -> return []
+    Just infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
 
 -- | Get the directly referenced closures (with a label) of a closure.
 closureReferences :: Debuggee -> Closure -> IO [(String, Closure)]

@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -29,6 +30,7 @@ module GHC.Debug.Types.Closures (
     , GenStack(..)
     , Stack
     , GHC.PrimType(..)
+    , lookupStgInfoTableWithPtr
     , allClosures
     , Fix1(..)
     , foldFix1
@@ -549,6 +551,35 @@ instance Bifoldable DebugClosure where
 -}
 
 
+lookupStgInfoTableWithPtr :: DebugClosure string s b -> Maybe StgInfoTableWithPtr
+lookupStgInfoTableWithPtr dc = case dc of
+  ConstrClosure         { info } -> Just info
+  FunClosure            { info } -> Just info
+  ThunkClosure          { info } -> Just info
+  SelectorClosure       { info } -> Just info
+  PAPClosure            { info } -> Just info
+  APClosure             { info } -> Just info
+  APStackClosure        { info } -> Just info
+  IndClosure            { info } -> Just info
+  BCOClosure            { info } -> Just info
+  BlackholeClosure      { info } -> Just info
+  ArrWordsClosure       { info } -> Just info
+  MutArrClosure         { info } -> Just info
+  SmallMutArrClosure    { info } -> Just info
+  MVarClosure           { info } -> Just info
+  MutVarClosure         { info } -> Just info
+  BlockingQueueClosure  { info } -> Just info
+  TSOClosure            { info } -> Just info
+  WeakClosure           { info } -> Just info
+  OtherClosure          { info } -> Just info
+  UnsupportedClosure    { info } -> Just info
+  IntClosure{}    -> Nothing
+  WordClosure{}   -> Nothing
+  Int64Closure{}  -> Nothing
+  Word64Closure{} -> Nothing
+  AddrClosure{}   -> Nothing
+  FloatClosure{}  -> Nothing
+  DoubleClosure{} -> Nothing
 
 
 -- | For generic code, this function returns all referenced closures.

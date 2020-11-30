@@ -80,6 +80,16 @@ data MajorState
     , _mode     :: ConnectedMode
     }
 
+data ClosureDetails = ClosureDetails
+  { _sourceLocation :: Maybe Text
+  , _closureType :: Maybe Text
+  , _constructor :: Maybe Text
+  , _excSize :: Maybe Int
+  }
+
+noClosureDetails :: ClosureDetails
+noClosureDetails = ClosureDetails Nothing Nothing Nothing Nothing
+
 data ConnectedMode
   -- | Debuggee is running
   = RunningMode
@@ -92,6 +102,8 @@ data ConnectedMode
         -- , index in parent reference list,
         -- , exclusive size (head is current closure)
         -- )
+    , _currentClosureDetails :: Maybe ClosureDetails -- ^ If not root
+    , _selectedClosureDetails :: Maybe ClosureDetails -- ^ If one is selected in _references
     , _references :: GenericList Name Seq (Closure, Text, Text)
         -- ^ referenced closures of the current closure, or root closures if
         -- _closurePath is empty:
@@ -103,5 +115,6 @@ data ConnectedMode
 
 makeLenses ''AppState
 makeLenses ''MajorState
+makeLenses ''ClosureDetails
 makeLenses ''ConnectedMode
 makeLenses ''SocketInfo

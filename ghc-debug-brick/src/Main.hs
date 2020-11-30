@@ -62,7 +62,7 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      PausedMode path' references'  -> mainBorder "ghc-debug - Paused" $ hBox
+      PausedMode path' currentCD selectedCD references'  -> mainBorder "ghc-debug - Paused" $ hBox
         [ hLimit 50 $ vBox
           [ border $ vBox
               [ txt "Resume  (r)"
@@ -73,31 +73,49 @@ myAppDraw (AppState majorState') =
               [txt "<ROOT>"]
               ++ [txt (pack $ closureShowAddress closure') | (closure', _, _, _) <- List.reverse path']
           ]
-        , padLeft (Pad 1) $
-          -- Current closure
-          let
-            refListWidget = borderWithLabel (txt "Children") $ vBox
-              [ renderRow "  " "Pointer Field" "Pointer" "Value"
-              , renderRow "  " "-------------" "-------" "-----"
-              , renderList
-                  renderClosureRow
-                  True
-                  references'
-              ]
-          in case path' of
-              [] -> vBox
-                [ refListWidget
+        , padLeft (Pad 1) $ vBox
+          [ -- Current closure details
+            borderWithLabel (txt "Closure Details") $ renderClosureDetails currentCD
+            -- Current closure's references
+            , let
+              refListWidget = borderWithLabel (txt "Children") $ vBox
+                [ renderRow "  " "Pointer Field" "Pointer" "Value"
+                , renderRow "  " "-------------" "-------" "-----"
+                , renderList
+                    renderClosureRow
+                    True
+                    references'
                 ]
-              (_, _, _, closureExcSize):_ -> vBox
-                -- Size
-                [ str $ "exclusive size: " <> (show $ closureExcSize)
-                -- References
-                , refListWidget
-                ]
+              in case path' of
+                [] -> vBox
+                  [ refListWidget
+                  ]
+                (_, _, _, closureExcSize):_ -> vBox
+                  -- Size
+                  [ str $ "exclusive size: " <> (show $ closureExcSize)
+                  -- References
+                  , refListWidget
+                  ]
+            -- Selected closure details
+            , borderWithLabel (txt "Child Closure Details") $ renderClosureDetails selectedCD
+          ]
         ]
   ]
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
+
+  renderClosureDetails :: Maybe ClosureDetails -> Widget Name
+  renderClosureDetails cd = vBox $
+      [ txt "SourceLocation   "
+            <+> txt (fromMaybe "" (_sourceLocation =<< cd))
+      -- TODO these aren't actually implemented yet
+      -- , txt $ "Type             "
+      --       <> fromMaybe "" (_closureType =<< cd)
+      -- , txt $ "Constructor      "
+      --       <> fromMaybe "" (_constructor =<< cd)
+      , txt $ "Exclusive Size   "
+            <> maybe "" (pack . show) (_excSize =<< cd) <> " bytes"
+      ]
 
   renderClosureRow :: Bool -> (Closure, Text, Text) -> Widget Name
   renderClosureRow selected (closure', label, pretty) = renderRow
@@ -180,7 +198,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
           continueWithRoot appState Nothing
         _ -> continue appState
 
-      PausedMode path' refs' -> case brickEvent of
+      PausedMode path' _ _ refs' -> case brickEvent of
 
         -- Resume the debuggee
         VtyEvent (Vty.EvKey (KChar 'r') _) -> do
@@ -203,7 +221,8 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- Navigate the list of referenced closures
         VtyEvent event -> do
           newRefs <- handleListEventVi handleListEvent event refs'
-          continue $ appState & majorState . mode . references .~ newRefs
+          appState' <- updateSelectedRefClosureDetails $ appState & majorState . mode . references .~ newRefs
+          continue appState'
 
         _ -> continue appState
 
@@ -212,32 +231,64 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         continueWithClosure appState' path'' ixMay = case path'' of
           [] -> continueWithRoot appState' ixMay
           (closure', _, _, _):_ -> do
+            closureDetails <- liftIO $ getClosureDetails closure'
             refsList       <- liftIO $ closureReferences debuggee' closure'
             refPrettysList <- closuresToPretty (snd <$> refsList)
             let newRefsList = listReplace
                         (Seq.fromList [(c, pack lbl, pretty) | ((lbl, c), pretty) <- List.zip refsList refPrettysList])
                         (ixMay <|> if Prelude.null refsList then Nothing else Just 0)
                         refs'
-            continue $ appState'
+            appState'' <- updateSelectedRefClosureDetails $ appState'
               & majorState
               . mode
-              .~ PausedMode path'' newRefsList
+              .~ PausedMode
+                  { _closurePath = path''
+                  , _currentClosureDetails = Just closureDetails
+                  , _selectedClosureDetails = error "_selectedClosureDetails should be set by `updateSelectedRefClosureDetails`"
+                  , _references = newRefsList
+                  }
+            continue appState''
       where
       continueWithRoot appState' ixMay = do
           rootClosuresList <- liftIO $ GD.rootClosures debuggee'
           rootRefPrettysList <- closuresToPretty rootClosuresList
           savedClosuresList <- liftIO $ GD.savedClosures debuggee'
           savedRefPrettysList <- closuresToPretty savedClosuresList
-          continue (appState' & majorState . mode .~ PausedMode
-            { _closurePath = []
-            , _references = listMoveTo (fromMaybe 0 ixMay) $ list
-                Connected_Paused_SavedClosuresList
-                (Seq.fromList $
+          let ix' = fromMaybe 0 ixMay
+              refsSeq = Seq.fromList $
                   List.zipWith (\c pretty -> (c, "Saved Object", pretty)) savedClosuresList savedRefPrettysList
                   ++ List.zipWith (\c pretty -> (c, "GC Root", pretty)) rootClosuresList rootRefPrettysList
-                )
+          continue =<< liftIO (updateSelectedRefClosureDetails (appState' & majorState . mode .~ PausedMode
+            { _closurePath = []
+            , _currentClosureDetails = Nothing
+            , _selectedClosureDetails = error "_selectedClosureDetails should be set by `updateSelectedRefClosureDetails`"
+            , _references = listMoveTo ix' $ list
+                Connected_Paused_SavedClosuresList
+                refsSeq
                 1
-            })
+            }))
+
+      updateSelectedRefClosureDetails appState' = do
+        let ixItemMay = listSelectedElement =<< (appState'^?majorState.mode.references)
+        cdMay <- case ixItemMay of
+                Nothing -> return Nothing
+                Just (_, (c, _, _)) -> liftIO $ Just <$> getClosureDetails c
+        return $ appState'
+            & majorState
+            . mode
+            . selectedClosureDetails
+            .~ cdMay
+
+      getClosureDetails :: Closure -> IO ClosureDetails
+      getClosureDetails c = do
+        excSize' <- closureExclusiveSize debuggee' c
+        sourceLoc <- closureSourceLocation debuggee' c
+        return ClosureDetails
+          { _sourceLocation = Just (pack $ Prelude.unlines sourceLoc)
+          , _closureType = Nothing
+          , _constructor = Nothing
+          , _excSize = Just excSize'
+          }
 
       closuresToPretty cs = liftIO $ mapM (fmap pack . closurePretty debuggee') cs
 
