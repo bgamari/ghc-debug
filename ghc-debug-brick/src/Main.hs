@@ -90,9 +90,9 @@ myAppDraw (AppState majorState') =
                 [] -> vBox
                   [ refListWidget
                   ]
-                (_, _, _, closureExcSize):_ -> vBox
-                  -- Size
-                  [ str $ "exclusive size: " <> (show $ closureExcSize)
+                (_, prettyClosure, _, _):_ -> vBox
+                  -- Pretty print current closure
+                  [ borderWithLabel (txt "Closure") (txt prettyClosure)
                   -- References
                   , refListWidget
                   ]
