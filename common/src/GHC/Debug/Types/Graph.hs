@@ -70,7 +70,7 @@ lookupHeapGraph i (HeapGraph _r m) = M.lookup i m
 buildHeapGraph
    :: (Monad m)
    => DerefFunction m a
-   -> Int -- ^ Search limit
+   -> Maybe Int -- ^ Search limit
    -> ClosurePtr -- ^ The value to start with
    -> m (HeapGraph a)
 buildHeapGraph deref limit initialBox =
@@ -87,7 +87,7 @@ type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a ConstrDesc Sta
 multiBuildHeapGraph
     :: (Monad m)
     => DerefFunction m a
-    -> Int -- ^ Search limit
+    -> Maybe Int -- ^ Search limit
     -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
 multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref limit (HeapGraph rs M.empty) rs
@@ -98,7 +98,7 @@ multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref limit (HeapGrap
 addHeapGraph
     :: (Monad m)
     => DerefFunction m a
-    -> Int -- ^ Search limit
+    -> Maybe Int -- ^ Search limit
     -> a -- ^ Data to be stored with the added value
     -> ClosurePtr -- ^ Value to add to the graph
     -> HeapGraph a -- ^ Graph to extend
@@ -117,11 +117,11 @@ annotateHeapGraph f i (HeapGraph rs hg) = HeapGraph rs $ M.update go i hg
 generalBuildHeapGraph
     :: (Monad m)
     => DerefFunction m a
-    -> Int
+    -> Maybe Int
     -> HeapGraph a
     -> NonEmpty ClosurePtr
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
-generalBuildHeapGraph _deref limit _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
+generalBuildHeapGraph _deref (Just limit) _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
 generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
     -- First collect all boxes from the existing heap graph
     let boxList = [ (hgeClosurePtr hge, i) | (i, hge) <- M.toList hg ]
@@ -139,7 +139,7 @@ generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
             i <- fromJust <$> (add limit b)
             return i
 
-    add 0  _ = return Nothing
+    add (Just 0)  _ = return Nothing
     add n b = do
         -- If the box is in the map, return the index
         (existing,_) <- get
@@ -153,7 +153,7 @@ generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
                 -- Look up the closure
                 c <- lift $ lift $ deref b
                 -- Find indicies for all boxes contained in the map
-                DCS e c' <- tritraverse pure (traverse (add (n-1))) (add (n-1)) c
+                DCS e c' <- tritraverse pure (traverse (add (subtract 1 <$> n))) (add (subtract 1 <$> n)) c
                 -- Add add the resulting closure to the map
                 lift $ tell (M.singleton b (HeapGraphEntry b c' True e))
                 return $ Just b
@@ -167,7 +167,7 @@ generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
 --    and newly referenced closures are, up to the given depth, added to the graph.
 --  * A map mapping previous indicies to the corresponding new indicies is returned as well.
 --  * The closure at 'heapGraphRoot' stays at 'heapGraphRoot'
-updateHeapGraph :: (Monad m) => DerefFunction m a-> Int -> HeapGraph a -> m (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
+updateHeapGraph :: (Monad m) => DerefFunction m a-> Maybe Int -> HeapGraph a -> m (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
 updateHeapGraph deref limit (HeapGraph rs startHG) = do
     (hg', indexMap) <- runWriterT $ foldM go (HeapGraph rs M.empty) (M.toList startHG)
     return (hg', (M.!) indexMap)
@@ -392,7 +392,7 @@ retainerSize hg = bottomUpSize d
     d = computeDominators hg
 
 annotateWithRetainerSize :: HeapGraph Size -> HeapGraph (Size, RetainerSize)
-annotateWithRetainerSize h@(HeapGraph rs hg) =
+annotateWithRetainerSize h@(HeapGraph rs _) =
   convertToHeapGraph rs (retainerSize h)
 
 bottomUpSize :: Tree.Tree (HeapGraphEntry Size) -> Tree.Tree (HeapGraphEntry (Size, RetainerSize))
