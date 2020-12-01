@@ -391,6 +391,10 @@ retainerSize hg = bottomUpSize d
   where
     d = computeDominators hg
 
+annotateWithRetainerSize :: HeapGraph Size -> HeapGraph (Size, RetainerSize)
+annotateWithRetainerSize h@(HeapGraph rs hg) =
+  convertToHeapGraph rs (retainerSize h)
+
 bottomUpSize :: Tree.Tree (HeapGraphEntry Size) -> Tree.Tree (HeapGraphEntry (Size, RetainerSize))
 bottomUpSize (Tree.Node rl sf) =
   let ts = map bottomUpSize sf
