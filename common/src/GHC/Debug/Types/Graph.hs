@@ -142,7 +142,6 @@ generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
             Nothing -> do
                 -- Look up the closure
                 c <- lift $ deref b
-                -- Find indicies for all boxes contained in the map
                 DCS e c' <- tritraverse pure (traverse (add (subtract 1 <$> n))) (add (subtract 1 <$> n)) c
                 -- Add add the resulting closure to the map
                 modify' (M.insert b (HeapGraphEntry b c' True e))
@@ -369,21 +368,26 @@ intToClosurePtr :: Int -> ClosurePtr
 intToClosurePtr i = ClosurePtr (fromIntegral i)
 
 convertToDom :: HeapGraph a -> DO.Rooted
-convertToDom  (HeapGraph (ClosurePtr h :| _) is) = (fromIntegral h, M.foldlWithKey' collectNodes IM.empty is)
+convertToDom  (HeapGraph roots is) = (0, graph)
   where
+    rootNodes = IS.fromList (map closurePtrToInt (NE.toList roots))
+    graph = IM.insert 0 rootNodes (M.foldlWithKey' collectNodes IM.empty is)
     collectNodes newMap (ClosurePtr k) h =  IM.insert (fromIntegral k) (IS.fromList (map closurePtrToInt (catMaybes (allClosures (hgeClosure h))))) newMap
 
-computeDominators :: HeapGraph a -> Tree.Tree (HeapGraphEntry a)
-computeDominators hg = fmap (fromJust . flip lookupHeapGraph hg . intToClosurePtr) (DO.domTree (convertToDom hg))
-
-retainerSize :: HeapGraph Size -> Tree.Tree (HeapGraphEntry (Size, RetainerSize))
-retainerSize hg = bottomUpSize d
+computeDominators :: HeapGraph a -> [Tree.Tree (HeapGraphEntry a)]
+computeDominators hg = map (fmap (fromJust . flip lookupHeapGraph hg . intToClosurePtr)) entries
   where
-    d = computeDominators hg
+    entries = case DO.domTree (convertToDom hg) of
+                Tree.Node 0 es -> es
+
+retainerSize :: HeapGraph Size -> [Tree.Tree (HeapGraphEntry (Size, RetainerSize))]
+retainerSize hg = map bottomUpSize doms
+  where
+    doms = computeDominators hg
 
 annotateWithRetainerSize :: HeapGraph Size -> HeapGraph (Size, RetainerSize)
 annotateWithRetainerSize h@(HeapGraph rs _) =
-  convertToHeapGraph rs (retainerSize h)
+  HeapGraph rs (foldMap convertToHeapGraph (retainerSize h))
 
 bottomUpSize :: Tree.Tree (HeapGraphEntry Size) -> Tree.Tree (HeapGraphEntry (Size, RetainerSize))
 bottomUpSize (Tree.Node rl sf) =
@@ -395,6 +399,6 @@ bottomUpSize (Tree.Node rl sf) =
       rl' = rl { hgeData = (s', inclusive_size) }
   in Tree.Node rl' ts
 
-convertToHeapGraph :: NE.NonEmpty ClosurePtr -> Tree.Tree (HeapGraphEntry a) -> HeapGraph a
-convertToHeapGraph rs t = HeapGraph rs (M.fromList ([(hgeClosurePtr c, c) | c <- F.toList t ]))
+convertToHeapGraph ::  Tree.Tree (HeapGraphEntry a) -> M.HashMap ClosurePtr (HeapGraphEntry a)
+convertToHeapGraph t = M.fromList ([(hgeClosurePtr c, c) | c <- F.toList t ])
 

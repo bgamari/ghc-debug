@@ -19,6 +19,7 @@ import Data.List.Extra (trim)
 import System.Process
 import Data.Tree
 import Data.Maybe
+import Data.List.NonEmpty(NonEmpty(..))
 
 saveOnePath :: IO FilePath
 saveOnePath = testProgPath "save-one"
@@ -318,9 +319,9 @@ p24 e = do
   runTrace e $ do
     precacheBlocks
     rs <- request RequestRoots
-    forM_ rs $ \r -> do
-      traceWrite r
-      hg <- buildHeapGraph derefFuncM Nothing r
-      let k = show . tipe . decodedTable . info . hgeClosure . fromJust
-      traceMsg (drawTree $ fmap show $ retainerSize hg) --(ppHeapGraph show (computeInclusiveSize rid hg))
-      --traceWrite ("DONE", r)
+    (hg, rs') <- case rs of
+      [] -> error "Empty roots"
+      (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+    case retainerSize hg of
+      rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
+
