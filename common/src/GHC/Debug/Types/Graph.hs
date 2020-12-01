@@ -124,16 +124,10 @@ generalBuildHeapGraph
 generalBuildHeapGraph _deref (Just limit) _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
 generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
     -- First collect all boxes from the existing heap graph
-    let boxList = [ (hgeClosurePtr hge, i) | (i, hge) <- M.toList hg ]
-        initialState = (boxList, [])
-    -- It is ok to use the Monoid (IntMap a) instance here, because
-    -- we will, besides the first time, use 'tell' only to add singletons not
-    -- already there
-    (is, hg') <- runWriterT (evalStateT run initialState)
+    (is, hg') <- runStateT run hg
     return (HeapGraph rs hg', is)
   where
     run = do
-        lift $ tell hg -- Start with the initial map
         forM addBoxes $ \b -> do
             -- Cannot fail, as limit is not zero here
             i <- fromJust <$> (add limit b)
@@ -142,20 +136,16 @@ generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
     add (Just 0)  _ = return Nothing
     add n b = do
         -- If the box is in the map, return the index
-        (existing,_) <- get
-        mbI <- lift $ lift $ findM (return . (== b) . fst) existing
-        case mbI of
-            Just (_,i) -> return $ Just i
+        hm <- get
+        case M.lookup b hm of
+            Just {} -> return $ Just b
             Nothing -> do
-                -- Otherwise, allocate a new index
-                -- And register it
-                modify (\(x,z) -> ((b,b):x, z))
                 -- Look up the closure
-                c <- lift $ lift $ deref b
+                c <- lift $ deref b
                 -- Find indicies for all boxes contained in the map
                 DCS e c' <- tritraverse pure (traverse (add (subtract 1 <$> n))) (add (subtract 1 <$> n)) c
                 -- Add add the resulting closure to the map
-                lift $ tell (M.singleton b (HeapGraphEntry b c' True e))
+                modify' (M.insert b (HeapGraphEntry b c' True e))
                 return $ Just b
 
 -- | This function updates a heap graph to reflect the current state of
