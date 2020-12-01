@@ -9,5 +9,5 @@ module Namespace where
 
 data Name
   = Setup_KnownDebuggeesList
-  | Connected_Paused_SavedClosuresList
+  | Connected_Paused_ClosureTree
   deriving (Eq, Ord, Show)

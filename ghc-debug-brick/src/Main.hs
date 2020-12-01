@@ -23,6 +23,7 @@ import System.FilePath
 import qualified Data.Text as T
 import Data.Ord
 
+import IOTree
 import Brick
 import Brick.BChan
 import Brick.Widgets.Border
@@ -62,50 +63,25 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      PausedMode path' currentCD selectedCD references'  -> mainBorder "ghc-debug - Paused" $ hBox
-        [ hLimit 50 $ vBox
+      PausedMode tree'  -> mainBorder "ghc-debug - Paused" $ vBox
+        [ hBox
           [ border $ vBox
-              [ txt "Resume  (r)"
-              , txt "Parent  (<-)"
-              , txt "Child   (->)"
-              ]
-          , borderWithLabel (txt "Path") $ vBox $
-              [txt "<ROOT>"]
-              ++ [txt (pack $ closureShowAddress closure') | (closure', _, _, _) <- List.reverse path']
+            [ txt "Resume  (r)"
+            , txt "Parent  (<-)"
+            , txt "Child   (->)"
+            ]
+          , -- Current closure details
+            borderWithLabel (txt "Closure Details") $ renderClosureDetails (ioTreeSelection tree')
           ]
-        , padLeft (Pad 1) $ vBox
-          [ -- Current closure details
-            borderWithLabel (txt "Closure Details") $ renderClosureDetails currentCD
-            -- Current closure's references
-            , let
-              refListWidget = borderWithLabel (txt "Children") $ vBox
-                [ renderRow "  " "Pointer Field" "Pointer" "Value"
-                , renderRow "  " "-------------" "-------" "-----"
-                , renderList
-                    renderClosureRow
-                    True
-                    references'
-                ]
-              in case path' of
-                [] -> vBox
-                  [ refListWidget
-                  ]
-                (_, prettyClosure, _, _):_ -> vBox
-                  -- Pretty print current closure
-                  [ borderWithLabel (txt "Closure") (txt prettyClosure)
-                  -- References
-                  , refListWidget
-                  ]
-            -- Selected closure details
-            , borderWithLabel (txt "Child Closure Details") $ renderClosureDetails selectedCD
-          ]
+        , -- Tree
+          borderWithLabel (txt "Closures") $ renderIOTree tree'
         ]
   ]
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
 
   renderClosureDetails :: Maybe ClosureDetails -> Widget Name
-  renderClosureDetails cd = vBox $
+  renderClosureDetails cd = vLimit 8 $ vBox $
       [ txt "SourceLocation   "
             <+> txt (fromMaybe "" (_sourceLocation =<< cd))
       -- TODO these aren't actually implemented yet
@@ -114,28 +90,9 @@ myAppDraw (AppState majorState') =
       -- , txt $ "Constructor      "
       --       <> fromMaybe "" (_constructor =<< cd)
       , txt $ "Exclusive Size   "
-            <> maybe "" (pack . show) (_excSize =<< cd) <> " bytes"
+            <> maybe "" (pack . show) (_excSize <$> cd) <> " bytes"
+      , fill ' '
       ]
-
-  renderClosureRow :: Bool -> (Closure, Text, Text) -> Widget Name
-  renderClosureRow selected (closure', label, pretty) = renderRow
-    (if selected then "* " else "  ")
-    label
-    (pack $ closureShowAddress closure')
-    pretty
-
-  renderRow :: Text -> Text -> Text -> Text -> Widget Name
-  renderRow selected label address value = hBox
-    [ vLimit 1 $ hLimit 2  (txt selected)
-    , space
-    , vLimit 1 $ hLimit 20 $ padRight Max (txt label)
-    , space
-    , vLimit 1 $ hLimit 15 $ padLeft  Max (txt address)
-    , space
-    , vLimit 1                            (txt value)
-    ]
-    where
-    space = txt "  "
 
 myAppHandleEvent :: AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
@@ -195,102 +152,58 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          continueWithRoot appState Nothing
+          rootClosures' <- liftIO $ mapM (getClosureDetails "GC Root") =<< GD.rootClosures debuggee'
+          savedClosures' <- liftIO $ mapM (getClosureDetails "Saved Object") =<< GD.savedClosures debuggee'
+          let tree' = ioTree Connected_Paused_ClosureTree
+                        (savedClosures' ++ rootClosures')
+                        (\c -> do
+                            children <- closureReferences debuggee' (_closure c)
+                            mapM (\(lbl, child) -> getClosureDetails (pack lbl) child) children
+                        )
+                        (\selected depth closureDesc -> hBox
+                                [ txt (T.replicate depth "  ")
+                                , (if selected then visible . txt else txt) $
+                                    (if selected then "* " else "  ")
+                                    <> _labelInParent closureDesc
+                                    <> "   "
+                                    <> pack (closureShowAddress (_closure closureDesc))
+                                    <> "   "
+                                    <> _pretty closureDesc
+                                ]
+                        )
+                        (\depth _closureDesc children -> if List.null children
+                            then txt $ T.replicate depth "  " <> "<Empty>"
+                            else emptyWidget
+                        )
+
+          continue (appState & majorState . mode .~ PausedMode tree')
+
         _ -> continue appState
 
-      PausedMode path' _ _ refs' -> case brickEvent of
+      PausedMode tree' -> case brickEvent of
 
-        -- Resume the debuggee
-        VtyEvent (Vty.EvKey (KChar 'r') _) -> do
-          liftIO $ do
-            resume debuggee'
-          continue (appState & majorState . mode .~ RunningMode)
-
-        -- Goto Parent
-        VtyEvent (Vty.EvKey KLeft _)
-          | (_, _, ixInParentRefs, _):parents' <- path'
-          -> continueWithClosure appState parents' (Just ixInParentRefs)
-
-        -- Goto Selected reference
-        VtyEvent (Vty.EvKey KRight _)
-          | Just (refClosureIx, (refClosure, _, refClosurePretty)) <- listSelectedElement refs'
-          -> do
-            closureExcSize <- liftIO $ closureExclusiveSize debuggee' refClosure
-            continueWithClosure appState ((refClosure, refClosurePretty, refClosureIx, closureExcSize):path') Nothing
-
-        -- Navigate the list of referenced closures
+        -- Navigate the tree of closures
         VtyEvent event -> do
-          newRefs <- handleListEventVi handleListEvent event refs'
-          appState' <- updateSelectedRefClosureDetails $ appState & majorState . mode . references .~ newRefs
-          continue appState'
+          newTree <- handleIOTreeEvent event tree'
+          continue (appState & majorState . mode . tree .~ newTree)
 
         _ -> continue appState
 
-        where
-        -- continueWithClosure :: AppState -> [(Closure, Int, Int)] -> Maybe Int -> _
-        continueWithClosure appState' path'' ixMay = case path'' of
-          [] -> continueWithRoot appState' ixMay
-          (closure', _, _, _):_ -> do
-            closureDetails <- liftIO $ getClosureDetails closure'
-            refsList       <- liftIO $ closureReferences debuggee' closure'
-            refPrettysList <- closuresToPretty (snd <$> refsList)
-            let newRefsList = listReplace
-                        (Seq.fromList [(c, pack lbl, pretty) | ((lbl, c), pretty) <- List.zip refsList refPrettysList])
-                        (ixMay <|> if Prelude.null refsList then Nothing else Just 0)
-                        refs'
-            appState'' <- updateSelectedRefClosureDetails $ appState'
-              & majorState
-              . mode
-              .~ PausedMode
-                  { _closurePath = path''
-                  , _currentClosureDetails = Just closureDetails
-                  , _selectedClosureDetails = error "_selectedClosureDetails should be set by `updateSelectedRefClosureDetails`"
-                  , _references = newRefsList
-                  }
-            continue appState''
       where
-      continueWithRoot appState' ixMay = do
-          rootClosuresList <- liftIO $ GD.rootClosures debuggee'
-          rootRefPrettysList <- closuresToPretty rootClosuresList
-          savedClosuresList <- liftIO $ GD.savedClosures debuggee'
-          savedRefPrettysList <- closuresToPretty savedClosuresList
-          let ix' = fromMaybe 0 ixMay
-              refsSeq = Seq.fromList $
-                  List.zipWith (\c pretty -> (c, "Saved Object", pretty)) savedClosuresList savedRefPrettysList
-                  ++ List.zipWith (\c pretty -> (c, "GC Root", pretty)) rootClosuresList rootRefPrettysList
-          continue =<< liftIO (updateSelectedRefClosureDetails (appState' & majorState . mode .~ PausedMode
-            { _closurePath = []
-            , _currentClosureDetails = Nothing
-            , _selectedClosureDetails = error "_selectedClosureDetails should be set by `updateSelectedRefClosureDetails`"
-            , _references = listMoveTo ix' $ list
-                Connected_Paused_SavedClosuresList
-                refsSeq
-                1
-            }))
-
-      updateSelectedRefClosureDetails appState' = do
-        let ixItemMay = listSelectedElement =<< (appState'^?majorState.mode.references)
-        cdMay <- case ixItemMay of
-                Nothing -> return Nothing
-                Just (_, (c, _, _)) -> liftIO $ Just <$> getClosureDetails c
-        return $ appState'
-            & majorState
-            . mode
-            . selectedClosureDetails
-            .~ cdMay
-
-      getClosureDetails :: Closure -> IO ClosureDetails
-      getClosureDetails c = do
+      getClosureDetails :: Text -> Closure -> IO ClosureDetails
+      getClosureDetails label c = do
         excSize' <- closureExclusiveSize debuggee' c
         sourceLoc <- closureSourceLocation debuggee' c
+        pretty' <- closurePretty debuggee' c
         return ClosureDetails
-          { _sourceLocation = Just (pack $ Prelude.unlines sourceLoc)
+          { _closure = c
+          , _pretty = pack pretty'
+          , _labelInParent = label
+          , _sourceLocation = Just (pack $ Prelude.unlines sourceLoc)
           , _closureType = Nothing
           , _constructor = Nothing
-          , _excSize = Just excSize'
+          , _excSize = excSize'
           }
-
-      closuresToPretty cs = liftIO $ mapM (fmap pack . closurePretty debuggee') cs
 
 myAppStartEvent :: AppState -> EventM Name AppState
 myAppStartEvent = return

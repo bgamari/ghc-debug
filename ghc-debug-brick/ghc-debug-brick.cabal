@@ -20,6 +20,7 @@ executable tui
   main-is:             Main.hs
   other-modules:       Model
                      , Namespace
+                     , IOTree
   -- other-extensions:
   build-depends:       base >=4.10 && <5
                      , brick

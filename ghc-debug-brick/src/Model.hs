@@ -10,28 +10,15 @@ module Model
   , module Namespace
   ) where
 
--- import Control.Applicative
--- import Control.Monad (forever)
--- import Control.Monad.IO.Class
--- import Control.Concurrent
--- import qualified Data.List as List
 import Data.Sequence as Seq
--- import Data.Text
--- import Graphics.Vty(defaultConfig, mkVty, defAttr)
--- import qualified Graphics.Vty.Input.Events as Vty
--- import Graphics.Vty.Input.Events (Key(..))
 import Lens.Micro.Platform
--- import System.Directory
--- import System.FilePath
-
--- import Brick
--- import Brick.BChan
--- import Brick.Widgets.Border
-import Brick.Widgets.List
 import Data.Time
 import System.Directory
 import System.FilePath
 import Data.Text(Text, pack)
+
+import Brick.Widgets.List
+import IOTree
 
 import GHC.Debug.Client
 
@@ -81,36 +68,22 @@ data MajorState
     }
 
 data ClosureDetails = ClosureDetails
-  { _sourceLocation :: Maybe Text
+  { _closure :: Closure
+  , _labelInParent :: Text -- ^ A label describing the relationship to the parent
+  -- Stuff  that requires IO to calculate
+  , _pretty :: Text
+  , _sourceLocation :: Maybe Text
   , _closureType :: Maybe Text
   , _constructor :: Maybe Text
-  , _excSize :: Maybe Int
+  , _excSize :: Int
   }
-
-noClosureDetails :: ClosureDetails
-noClosureDetails = ClosureDetails Nothing Nothing Nothing Nothing
 
 data ConnectedMode
   -- | Debuggee is running
   = RunningMode
   -- | Debuggee is paused and we're exploring the heap
   | PausedMode
-    { _closurePath :: [(Closure, Text, Int, Int)]
-        -- ^ parent closures:
-        -- ( the closure
-        -- , closure pretty printed
-        -- , index in parent reference list,
-        -- , exclusive size (head is current closure)
-        -- )
-    , _currentClosureDetails :: Maybe ClosureDetails -- ^ If not root
-    , _selectedClosureDetails :: Maybe ClosureDetails -- ^ If one is selected in _references
-    , _references :: GenericList Name Seq (Closure, Text, Text)
-        -- ^ referenced closures of the current closure, or root closures if
-        -- _closurePath is empty:
-        -- ( the closure
-        -- , reference label
-        -- , referenced rendered
-        -- )
+    { _tree :: IOTree ClosureDetails Name
     }
 
 makeLenses ''AppState
