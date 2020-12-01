@@ -41,13 +41,15 @@ data AllocStrategy = AllocByPtr | AllocByCopy
 allocStrategy :: AllocStrategy
 allocStrategy = AllocByPtr
 
-getClosureRaw :: StgInfoTable -> Ptr a -> IO (GenClosure Word)
+getClosureRaw :: StgInfoTable -> Ptr a -> IO (GenClosure Word, Size)
 getClosureRaw itb (Ptr closurePtr) = do
   let !(# _infoTablePtr, datArr, pointers #) = unpackClosureWords# closurePtr
   let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
       end_ptrs = fromIntegral nelems_ptrs - 1
       rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
-  getClosureDataFromHeapRepPrim (return ("", "", "")) itb datArr  rawPtrs
+      raw_size = I# (sizeofByteArray# datArr)
+  gen_closure <- getClosureDataFromHeapRepPrim (return ("", "", "")) itb datArr  rawPtrs
+  return (gen_closure, Size raw_size)
 
 -- | Allow access directly to the chunk of memory used by a bytestring
 allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
@@ -87,13 +89,10 @@ deriving instance Functor GenClosure
 #endif
 
 decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
-decodeClosureWithSize itb (ptr, rc) =
-    let clos_size = Size (rawClosureSize rc)
-        !c = decodeClosure itb (ptr, rc)
-    in DCS clos_size c
+decodeClosureWithSize itb (ptr, rc) = decodeClosure itb (ptr, rc)
 
 
-decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  Closure
+decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
@@ -113,12 +112,14 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
         -- Printing this return value can lead to segfaults because the
         -- pointer for constrDesc won't point to a string after being
         -- decoded.
-        !r <- getClosureRaw (decodedTable itb) closPtr
+        (!r, !s) <- getClosureRaw (decodedTable itb) closPtr
         -- Mutate back the ByteArray as if we attempt to use it again then
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
         poke ptr_to_itbl_ptr old_itbl
-        return $ trimap (\itb' -> PayloadWithKey itb' ptr) stackCont  ClosurePtr . (convertClosure itb)
+        return $ DCS s . trimap (\itb' -> PayloadWithKey itb' ptr)
+                        stackCont
+                        ClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
     stackCont :: Word64 -> StackCont

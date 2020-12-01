@@ -253,7 +253,7 @@ p18 e = do
 derefFunc e c = run e $ derefFuncM c
 
 derefFuncM c = do
-  c <- dereferenceSizedClosure c
+  c <- dereferenceClosureFromBlock c
   tritraverse dereferenceConDesc dereferenceStack pure c
 
 -- Use with large-thunk
