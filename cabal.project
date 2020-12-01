@@ -17,6 +17,11 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/AndreasPK/dom-lt.git
+  tag: 90cb66a5eba7c1b24322d94c692698a7212b42fe
+
+source-repository-package
+  type: git
   location: https://github.com/mpickering/haxl.git
   tag: b6aedf24ff874e18f66160af4c4d3361d3ff4144
 

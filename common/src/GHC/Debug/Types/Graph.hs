@@ -3,6 +3,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE BangPatterns #-}
 module GHC.Debug.Types.Graph where
 
 import Data.Char
@@ -10,13 +11,23 @@ import Data.List
 import Data.Maybe       ( catMaybes, fromJust )
 import Data.Function
 import qualified Data.Traversable as T
-import qualified Data.IntMap as M
+import qualified Data.HashMap.Strict as M
+import qualified Data.IntMap as IM
+import qualified Data.IntSet as IS
 import Control.Monad
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Writer.Strict
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Closures
+import Control.Applicative
+import Data.Functor.Compose
+import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.Foldable as F
+import qualified Data.Graph.Dom as DO
+import qualified Data.Tree as Tree
+import Debug.Trace
 
 -- | For heap graphs, i.e. data structures that also represent sharing and
 -- cyclic structures, these are the entries. If the referenced value is
@@ -32,42 +43,40 @@ data HeapGraphEntry a = HeapGraphEntry {
         hgeLive :: Bool,
         hgeData :: a}
     deriving (Show, Functor, Foldable, Traversable)
-type HeapGraphIndex = Int
+type HeapGraphIndex = ClosurePtr
 
 type StackHI = GenStack (Maybe HeapGraphIndex)
 
 -- | The whole graph. The suggested interface is to only use 'lookupHeapGraph',
 -- as the internal representation may change. Nevertheless, we export it here:
 -- Sometimes the user knows better what he needs than we do.
-newtype HeapGraph a = HeapGraph (M.IntMap (HeapGraphEntry a))
+data HeapGraph a = HeapGraph
+                      { roots :: NE.NonEmpty ClosurePtr
+                      , graph :: (M.HashMap ClosurePtr (HeapGraphEntry a)) }
     deriving (Show, Foldable, Traversable, Functor)
 
 traverseHeapGraph :: Applicative m =>
                     (HeapGraphEntry a -> m (HeapGraphEntry b))
                   -> HeapGraph a
                   -> m (HeapGraph b)
-traverseHeapGraph f (HeapGraph im) = HeapGraph <$> traverse f im
+traverseHeapGraph f (HeapGraph r im) = HeapGraph r <$> traverse f im
 
 
 lookupHeapGraph :: HeapGraphIndex -> HeapGraph a -> Maybe (HeapGraphEntry a)
-lookupHeapGraph i (HeapGraph m) = M.lookup i m
-
-heapGraphRoot :: HeapGraphIndex
-heapGraphRoot = 0
+lookupHeapGraph i (HeapGraph _r m) = M.lookup i m
 
 -- | Creates a 'HeapGraph' for the value in the box, but not recursing further
 -- than the given limit. The initial value has index 'heapGraphRoot'.
 buildHeapGraph
-   :: (Monad m, Monoid a)
-   => DerefFunction m
+   :: (Monad m)
+   => DerefFunction m a
    -> Int -- ^ Search limit
-   -> a -- ^ Data value for the root
    -> ClosurePtr -- ^ The value to start with
    -> m (HeapGraph a)
-buildHeapGraph deref limit rootD initialBox =
-    fst <$> multiBuildHeapGraph deref limit [(rootD, initialBox)]
+buildHeapGraph deref limit initialBox =
+    fst <$> multiBuildHeapGraph deref limit (NE.singleton initialBox)
 
-type DerefFunction m = ClosurePtr -> m (DebugClosure ConstrDesc Stack ClosurePtr)
+type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a ConstrDesc Stack ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
@@ -76,88 +85,78 @@ type DerefFunction m = ClosurePtr -> m (DebugClosure ConstrDesc Stack ClosurePtr
 --   type @a@ can be used to make the connection between the input and the
 --   resulting list of indices, and to store additional data.
 multiBuildHeapGraph
-    :: (Monad m, Monoid a)
-    => DerefFunction m
+    :: (Monad m)
+    => DerefFunction m a
     -> Int -- ^ Search limit
-    -> [(a, ClosurePtr)] -- ^ Starting values with associated data entry
-    -> m (HeapGraph a, [(a, HeapGraphIndex)])
-multiBuildHeapGraph deref limit = generalBuildHeapGraph deref limit (HeapGraph M.empty)
+    -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
+    -> m (HeapGraph a, NonEmpty HeapGraphIndex)
+multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref limit (HeapGraph rs M.empty) rs
 
 -- | Adds an entry to an existing 'HeapGraph'.
 --
 --   Returns the updated 'HeapGraph' and the index of the added value.
 addHeapGraph
-    :: (Monoid a, Monad m)
-    => DerefFunction m
+    :: (Monad m)
+    => DerefFunction m a
     -> Int -- ^ Search limit
     -> a -- ^ Data to be stored with the added value
     -> ClosurePtr -- ^ Value to add to the graph
     -> HeapGraph a -- ^ Graph to extend
     -> m (HeapGraphIndex, HeapGraph a)
 addHeapGraph deref limit d box hg = do
-    (hg', (head -> (_,i))) <- generalBuildHeapGraph deref limit hg [(d,box)]
+    (hg', (NE.head -> i)) <- generalBuildHeapGraph deref limit hg (NE.singleton box)
     return (i, hg')
 
 -- | Adds the given annotation to the entry at the given index, using the
 -- 'mappend' operation of its 'Monoid' instance.
-annotateHeapGraph :: Monoid a => a -> HeapGraphIndex -> HeapGraph a -> HeapGraph a
-annotateHeapGraph d i (HeapGraph hg) = HeapGraph $ M.update go i hg
+annotateHeapGraph ::  (a -> a) -> HeapGraphIndex -> HeapGraph a -> HeapGraph a
+annotateHeapGraph f i (HeapGraph rs hg) = HeapGraph rs $ M.update go i hg
   where
-    go hge = Just $ hge { hgeData = hgeData hge <> d }
+    go hge = Just $ hge { hgeData = f (hgeData hge) }
 
 generalBuildHeapGraph
-    :: (Monoid a, Monad m)
-    => DerefFunction m
+    :: (Monad m)
+    => DerefFunction m a
     -> Int
     -> HeapGraph a
-    -> [(a,ClosurePtr)]
-    -> m (HeapGraph a, [(a, HeapGraphIndex)])
+    -> NonEmpty ClosurePtr
+    -> m (HeapGraph a, NonEmpty HeapGraphIndex)
 generalBuildHeapGraph _deref limit _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
-generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
+generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
     -- First collect all boxes from the existing heap graph
     let boxList = [ (hgeClosurePtr hge, i) | (i, hge) <- M.toList hg ]
-        indices | M.null hg = [0..]
-                | otherwise = [1 + fst (M.findMax hg)..]
-
-        initialState = (boxList, indices, [])
+        initialState = (boxList, [])
     -- It is ok to use the Monoid (IntMap a) instance here, because
     -- we will, besides the first time, use 'tell' only to add singletons not
     -- already there
     (is, hg') <- runWriterT (evalStateT run initialState)
-    -- Now add the annotations of the root values
-    let hg'' = foldl' (flip (uncurry annotateHeapGraph)) (HeapGraph hg') is
-    return (hg'', is)
+    return (HeapGraph rs hg', is)
   where
     run = do
         lift $ tell hg -- Start with the initial map
-        forM addBoxes $ \(d, b) -> do
+        forM addBoxes $ \b -> do
             -- Cannot fail, as limit is not zero here
             i <- fromJust <$> (add limit b)
-            return (d, i)
+            return i
 
     add 0  _ = return Nothing
     add n b = do
         -- If the box is in the map, return the index
-        (existing,_,_) <- get
+        (existing,_) <- get
         mbI <- lift $ lift $ findM (return . (== b) . fst) existing
         case mbI of
             Just (_,i) -> return $ Just i
             Nothing -> do
                 -- Otherwise, allocate a new index
-                i <- nextI
                 -- And register it
-                modify (\(x,y,z) -> ((b,i):x, y, z))
+                modify (\(x,z) -> ((b,b):x, z))
                 -- Look up the closure
                 c <- lift $ lift $ deref b
                 -- Find indicies for all boxes contained in the map
-                c' <- tritraverse pure (traverse (add (n-1))) (add (n-1)) c
+                DCS e c' <- tritraverse pure (traverse (add (n-1))) (add (n-1)) c
                 -- Add add the resulting closure to the map
-                lift $ tell (M.singleton i (HeapGraphEntry b c' True mempty))
-                return $ Just i
-    nextI = do
-        i <- gets (head . (\(_,b,_) -> b))
-        modify (\(a,b,c) -> (a, tail b, c))
-        return i
+                lift $ tell (M.singleton b (HeapGraphEntry b c' True e))
+                return $ Just b
 
 -- | This function updates a heap graph to reflect the current state of
 -- closures on the heap, conforming to the following specification.
@@ -168,9 +167,9 @@ generalBuildHeapGraph deref limit (HeapGraph hg) addBoxes = do
 --    and newly referenced closures are, up to the given depth, added to the graph.
 --  * A map mapping previous indicies to the corresponding new indicies is returned as well.
 --  * The closure at 'heapGraphRoot' stays at 'heapGraphRoot'
-updateHeapGraph :: (Monad m, Monoid a) => DerefFunction m -> Int -> HeapGraph a -> m (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
-updateHeapGraph deref limit (HeapGraph startHG) = do
-    (hg', indexMap) <- runWriterT $ foldM go (HeapGraph M.empty) (M.toList startHG)
+updateHeapGraph :: (Monad m) => DerefFunction m a-> Int -> HeapGraph a -> m (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
+updateHeapGraph deref limit (HeapGraph rs startHG) = do
+    (hg', indexMap) <- runWriterT $ foldM go (HeapGraph rs M.empty) (M.toList startHG)
     return (hg', (M.!) indexMap)
   where
     go hg (i, hge) = do
@@ -188,10 +187,10 @@ liftH = lift
 -- >    x6 = C# 'H' : C# 'o' : x6
 -- >in (x1,x1,x6)
 ppHeapGraph :: (a -> String) -> HeapGraph a -> String
-ppHeapGraph printData (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
+ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++ printData (hgeData (iToE (rs !! 0))) ++ ") " ++ ppRef 0 (Just heapGraphRoot)
   where
     -- All variables occuring more than once
-    bindings = boundMultipleTimes (HeapGraph m) [heapGraphRoot]
+    bindings = boundMultipleTimes (HeapGraph (heapGraphRoot :| rs) m) [heapGraphRoot]
 
     letWrapper =
         if null bindings
@@ -214,7 +213,7 @@ ppHeapGraph printData (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
         [ (i, bindingLetter i) | i <- bindings ]
 
     ppVar i = ppBindingMap M.! i
-    ppBinding i = ppVar i ++ " = " ++ ppEntry 0 (iToE i)
+    ppBinding i = ppVar i ++ "(" ++ printData (hgeData (iToE i)) ++  ") = " ++ ppEntry 0 (iToE i)
 
     ppEntry prec hge
         | Just s <- isString hge = show s
@@ -257,7 +256,7 @@ ppHeapGraph printData (HeapGraph m) = letWrapper ++ ppRef 0 (Just heapGraphRoot)
 -- | In the given HeapMap, list all indices that are used more than once. The
 -- second parameter adds external references, commonly @[heapGraphRoot]@.
 boundMultipleTimes :: HeapGraph a -> [HeapGraphIndex] -> [HeapGraphIndex]
-boundMultipleTimes (HeapGraph m) roots = map head $ filter (not.null) $ map tail $ group $ sort $
+boundMultipleTimes (HeapGraph rs m) roots = map head $ filter (not.null) $ map tail $ group $ sort $
      roots ++ concatMap (catMaybes . allClosures . hgeClosure) (M.elems m)
 
 -- Utilities
@@ -371,3 +370,37 @@ ppClosure herald showBox prec c = case c of
     app xs = addBraces (10 <= prec) (unwords xs)
 
     shorten xs = if length xs > 20 then take 20 xs ++ ["(and more)"] else xs
+
+
+closurePtrToInt :: ClosurePtr -> Int
+closurePtrToInt (ClosurePtr p) = fromIntegral p
+
+intToClosurePtr :: Int -> ClosurePtr
+intToClosurePtr i = ClosurePtr (fromIntegral i)
+
+convertToDom :: HeapGraph a -> DO.Rooted
+convertToDom  (HeapGraph (ClosurePtr h :| _) is) = (fromIntegral h, M.foldlWithKey' collectNodes IM.empty is)
+  where
+    collectNodes newMap (ClosurePtr k) h =  IM.insert (fromIntegral k) (IS.fromList (map closurePtrToInt (catMaybes (allClosures (hgeClosure h))))) newMap
+
+computeDominators :: HeapGraph a -> Tree.Tree (HeapGraphEntry a)
+computeDominators hg = fmap (fromJust . flip lookupHeapGraph hg . intToClosurePtr) (DO.domTree (convertToDom hg))
+
+retainerSize :: HeapGraph Size -> Tree.Tree (HeapGraphEntry (Size, RetainerSize))
+retainerSize hg = bottomUpSize d
+  where
+    d = computeDominators hg
+
+bottomUpSize :: Tree.Tree (HeapGraphEntry Size) -> Tree.Tree (HeapGraphEntry (Size, RetainerSize))
+bottomUpSize (Tree.Node rl sf) =
+  let ts = map bottomUpSize sf
+      s'@(Size s) =  hgeData rl
+      RetainerSize children_size = foldMap (snd . hgeData . Tree.rootLabel) ts
+      inclusive_size :: RetainerSize
+      !inclusive_size = RetainerSize  (s + children_size)
+      rl' = rl { hgeData = (s', inclusive_size) }
+  in Tree.Node rl' ts
+
+convertToHeapGraph :: NE.NonEmpty ClosurePtr -> Tree.Tree (HeapGraphEntry a) -> HeapGraph a
+convertToHeapGraph rs t = HeapGraph rs (M.fromList ([(hgeClosurePtr c, c) | c <- F.toList t ]))
+

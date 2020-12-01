@@ -32,7 +32,9 @@ library
                        ghc-heap,
                        cpu,
                        containers,
-                       transformers
+                       transformers,
+                       dom-lt,
+                       unordered-containers
 
   hs-source-dirs:      src
   cmm-sources:         cbits/GhcDebug.cmm

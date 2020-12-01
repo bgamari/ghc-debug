@@ -8,6 +8,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
@@ -21,6 +22,8 @@ module GHC.Debug.Types.Closures (
     , DebugClosure(..)
     , DebugClosureWithSize
     , Size(..)
+    , InclusiveSize(..)
+    , RetainerSize(..)
     , DebugClosureWithExtra(..)
     , noSize
     , StgInfoTable(..)
@@ -179,8 +182,13 @@ data DebugClosureWithExtra x string s b = DCS { extraDCS :: x
 newtype Size = Size { getSize :: Int }
   deriving stock (Show, Generic)
   deriving (Semigroup, Monoid) via (Sum Int)
+  deriving newtype (Num)
 
 newtype InclusiveSize = InclusiveSize { getInclusiveSize :: Int }
+  deriving stock (Show, Generic)
+  deriving (Semigroup, Monoid) via (Sum Int)
+
+newtype RetainerSize = RetainerSize { getRetainerSize :: Int }
   deriving stock (Show, Generic)
   deriving (Semigroup, Monoid) via (Sum Int)
 
@@ -499,6 +507,8 @@ trimap = coerce
               -> (c -> Identity d)
               -> (e -> Identity f) -> t a c e -> Identity (t b d f))
 
+allClosures :: DebugClosure a (GenStack c) c -> [c]
+allClosures c = getConst $ tritraverse (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b
                   | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable)
@@ -582,23 +592,3 @@ lookupStgInfoTableWithPtr dc = case dc of
   DoubleClosure{} -> Nothing
 
 
--- | For generic code, this function returns all referenced closures.
-allClosures :: DebugClosure str sta b -> [b]
-allClosures ConstrClosure {..} = ptrArgs
-allClosures ThunkClosure {..} = ptrArgs
-allClosures SelectorClosure {..} = [selectee]
-allClosures IndClosure {..} = [indirectee]
-allClosures BlackholeClosure {..} = [indirectee]
-allClosures APClosure {..} = fun:payload
-allClosures PAPClosure {..} = fun:payload
-allClosures APStackClosure {..} = fun:payload
-allClosures BCOClosure {..} = [instrs,literals,bcoptrs]
-allClosures ArrWordsClosure {} = []
-allClosures MutArrClosure {..} = mccPayload
-allClosures SmallMutArrClosure {..} = mccPayload
-allClosures MutVarClosure {..} = [var]
-allClosures MVarClosure {..} = [queueHead,queueTail,value]
-allClosures FunClosure {..} = ptrArgs
-allClosures BlockingQueueClosure {..} = [link, blackHole, owner, queue]
-allClosures OtherClosure {..} = hvalues
-allClosures _ = []

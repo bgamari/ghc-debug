@@ -17,6 +17,8 @@ import Control.Applicative
 
 import Data.List.Extra (trim)
 import System.Process
+import Data.Tree
+import Data.Maybe
 
 saveOnePath :: IO FilePath
 saveOnePath = testProgPath "save-one"
@@ -222,7 +224,7 @@ p16 e = do
   pause (Debuggee e)
   hg <- run e $ do
           (so:_) <- request RequestSavedObjects
-          buildHeapGraph derefFuncM 20 () so
+          buildHeapGraph derefFuncM 20 so
   putStrLn $ ppHeapGraph (const "") hg
 
 -- Testing IPE
@@ -251,7 +253,7 @@ p18 e = do
 derefFunc e c = run e $ derefFuncM c
 
 derefFuncM c = do
-  c <- dereferenceClosure c
+  c <- dereferenceSizedClosure c
   tritraverse dereferenceConDesc dereferenceStack pure c
 
 -- Use with large-thunk
@@ -259,7 +261,7 @@ p19 e = do
   run e $ request RequestPoll
   hg <- run e $ do
           (so:_) <- request RequestSavedObjects
-          hg <- buildHeapGraph derefFuncM 10 () so
+          hg <- buildHeapGraph derefFuncM 10 so
           annotateWithSource hg
   putStrLn $ ppHeapGraph (maybe "" concat) hg
 
@@ -315,9 +317,10 @@ p24 e = do
   run e $ request RequestPause
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestSavedObjects
+    rs <- request RequestRoots
     forM_ rs $ \r -> do
       traceWrite r
-      hg <- buildHeapGraph derefFuncM 10000 () r
-      traceMsg (ppHeapGraph (const "") hg)
-      traceWrite ("DONE", r)
+      hg <- buildHeapGraph derefFuncM 10000 r
+      let k = show . tipe . decodedTable . info . hgeClosure . fromJust
+      traceMsg (drawTree $ fmap show $ retainerSize hg) --(ppHeapGraph show (computeInclusiveSize rid hg))
+      --traceWrite ("DONE", r)

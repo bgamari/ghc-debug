@@ -44,6 +44,7 @@ module GHC.Debug.Client
   , DebugClosure(..)
   , dereferenceClosures
   , dereferenceClosure
+  , dereferenceSizedClosure
   , dereferenceClosureFromBlock
   , dereferenceStack
   , dereferenceConDesc
