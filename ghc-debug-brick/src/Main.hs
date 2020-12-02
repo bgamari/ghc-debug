@@ -244,7 +244,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
                 ]
         )
         (\depth _closureDesc children -> if List.null children
-            then txt $ T.replicate depth "  " <> "<Empty>"
+            then txt $ T.replicate (depth + 2) "  " <> "<Empty>"
             else emptyWidget
         )
 
