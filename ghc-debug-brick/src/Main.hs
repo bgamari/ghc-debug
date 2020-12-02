@@ -173,6 +173,11 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
 
       PausedMode treeMode' domTree rootsTree -> case brickEvent of
 
+        -- Resume the debuggee
+        VtyEvent (Vty.EvKey (KChar 'r') _) -> do
+          liftIO $ resume debuggee'
+          continue (appState & majorState . mode .~ RunningMode)
+
         -- Change Modes
         VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ appState
             & majorState
