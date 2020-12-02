@@ -26,6 +26,7 @@ library
 
   build-depends:       base >=4.12 && <4.14,
                        network >=2.6 && <2.7,
+                       containers,
                        unordered-containers,
                        ghc-debug-common, cpu,
                        text, process, filepath, directory,

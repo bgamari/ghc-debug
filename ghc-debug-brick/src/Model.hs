@@ -76,15 +76,28 @@ data ClosureDetails = ClosureDetails
   , _closureType :: Maybe Text
   , _constructor :: Maybe Text
   , _excSize :: Int
+  , _retainerSize :: Int
   }
+
+data TreeMode = Dominator | SavedAndGCRoots
 
 data ConnectedMode
   -- | Debuggee is running
   = RunningMode
   -- | Debuggee is paused and we're exploring the heap
   | PausedMode
-    { _tree :: IOTree ClosureDetails Name
+    { _treeMode :: TreeMode
+    , _treeDominator :: IOTree ClosureDetails Name
+    -- ^ Tree corresponding to Dominator mode
+    , _treeSavedAndGCRoots :: IOTree ClosureDetails Name
+    -- ^ Tree corresponding to SavedAndGCRoots mode
     }
+
+pauseModeTree :: ConnectedMode -> IOTree ClosureDetails Name
+pauseModeTree RunningMode = error "Not Paused"
+pauseModeTree (PausedMode mode dom roots) = case mode of
+  Dominator -> dom
+  SavedAndGCRoots -> roots
 
 makeLenses ''AppState
 makeLenses ''MajorState

@@ -14,11 +14,13 @@ module GHC.Debug.Client
   , withDebuggeeRun
   , withDebuggeeConnect
   , socketDirectory
+
     -- * Pause/Resume
   , pause
   , resume
   , pausePoll
   , withPause
+
     -- * Querying the paused debuggee
   , rootClosures
   , savedClosures
@@ -27,9 +29,16 @@ module GHC.Debug.Client
   , Closure
   , closureShowAddress
   , closureExclusiveSize
+  , closureRetainerSize
   , closureSourceLocation
   , closureReferences
   , closurePretty
+
+    -- * Dominator Tree
+  , dominatorRootClosures
+  , closureDominatees
+    --
+    -- $dominatorTree
 
     -- * All this stuff feels too low level to be exposed to the frontend, but
     --   still could be used for tests.
@@ -56,23 +65,78 @@ module GHC.Debug.Client
   , DebugM
   ) where
 
-import Control.Exception
-import Control.Monad (forM)
+import           Control.Exception
+import           Control.Monad (forM)
+import           Control.Monad.IO.Class
+import           Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.Graph as G
+import           Data.IORef
+import           Data.Maybe (fromMaybe)
 import qualified GHC.Debug.Types as GD
-import GHC.Debug.Types hiding (Closure, Stack)
-import GHC.Debug.Decode
-import GHC.Debug.Decode.Stack
-
-import GHC.Debug.Convention (socketDirectory)
-import GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
+import           GHC.Debug.Types hiding (Closure, Stack)
+import           GHC.Debug.Decode
+import           GHC.Debug.Decode.Stack
+import           GHC.Debug.Convention (socketDirectory)
+import           GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
 import qualified GHC.Debug.Client.Monad as GD
-import GHC.Debug.Client.BlockCache
-import qualified GHC.Debug.Types.Graph as GD
+import           GHC.Debug.Client.BlockCache
+import qualified GHC.Debug.Types.Graph as HG
 
 import Debug.Trace
 
 
-newtype Debuggee = Debuggee { unDebuggee :: DebugEnv DebugM }
+data Debuggee = Debuggee
+  { debuggeeEnv :: DebugEnv DebugM
+  , debuggeeAnalysis :: IORef (Maybe Analysis)
+  -- ^ Nothing when not paused
+  }
+
+data Analysis = Analysis
+  { analysisDominatorRoots :: [ClosurePtr]
+  , analysisDominatees :: ClosurePtr -> [ClosurePtr]
+  -- ^ Unsorted dominatees of a closure
+  , analysisSizes :: ClosurePtr -> (Size, RetainerSize)
+  -- ^ Size and retainer size (via dominator tree) of closures
+  }
+
+mkDebuggee :: DebugEnv DebugM -> IO Debuggee
+mkDebuggee e = Debuggee e <$> newIORef Nothing
+
+runAnalysis :: Debuggee -> IO ()
+runAnalysis (Debuggee e analysisIORef) = run e $ do
+    -- Calculate the dominator tree with retainer sizes
+    -- TODO perhaps this conversion to a graph can be done in GHC.Debug.Types.Graph
+    -- TODO precacheBlocks
+    rs <- request RequestRoots
+    let derefFuncM cPtr = do
+          c <- dereferenceClosureFromBlock cPtr
+          tritraverse dereferenceConDesc dereferenceStack pure c
+    (hg, _) <- case rs of
+      [] -> error "Empty roots"
+      (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+    let drs :: [G.Tree (ClosurePtr, (Size, RetainerSize))]
+        drs = fmap (\ent -> (HG.hgeClosurePtr ent, HG.hgeData ent)) <$> HG.retainerSize hg
+
+        dAllSubTrees :: [G.Tree (ClosurePtr, (Size, RetainerSize))]
+        dAllSubTrees = concatMap go drs
+          where
+          go t@(G.Node _ ts) = t : concatMap go ts
+
+        (_, vertexToData, cPtrToVertex) = G.graphFromEdges
+              [ (extraData, cPtr, [neighbor | G.Node (neighbor, _) _ <- neighbors])
+              | G.Node (cPtr, extraData) neighbors <- dAllSubTrees
+              ]
+
+        cPtrToData
+          = fromMaybe ((-12221, RetainerSize (-12221)), ClosurePtr 0, [])
+          -- ^ TODO I would expect the mapping to be complete unless out analysis misses some closures.
+          . fmap vertexToData
+          . cPtrToVertex
+
+    liftIO $ writeIORef analysisIORef $ Just $ Analysis
+              [drPtr | G.Node (drPtr, _) _ <- drs]
+              ((\(_,_,x) -> x) . cPtrToData)
+              ((\(x,_,_) -> x) . cPtrToData)
 
 -- | Bracketed version of @debuggeeRun@. Runs a debuggee, connects to it, runs
 -- the action, kills the process, then closes the debuggee.
@@ -80,7 +144,7 @@ withDebuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
                 -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> (Debuggee -> IO a)
                 -> IO a
-withDebuggeeRun exeName socketName action = GD.withDebuggeeRun exeName socketName (action . Debuggee)
+withDebuggeeRun exeName socketName action = GD.withDebuggeeRun exeName socketName (\e -> action =<< mkDebuggee e)
 
 -- | Bracketed version of @debuggeeConnect@. Connects to a debuggee, runs the
 -- action, then closes the debuggee.
@@ -88,35 +152,39 @@ withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
                    -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                    -> (Debuggee -> IO a)
                    -> IO a
-withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName (action . Debuggee)
+withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName (\e -> action =<< mkDebuggee e)
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
             -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
             -> IO Debuggee
-debuggeeRun exeName socketName = Debuggee <$> GD.debuggeeRun exeName socketName
+debuggeeRun exeName socketName = mkDebuggee =<< GD.debuggeeRun exeName socketName
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeConnect :: FilePath  -- ^ path to executable to run as the debuggee
                 -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect exeName socketName = Debuggee <$> GD.debuggeeConnect exeName socketName
+debuggeeConnect exeName socketName = mkDebuggee =<< GD.debuggeeConnect exeName socketName
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()
-debuggeeClose = GD.debuggeeClose . unDebuggee
+debuggeeClose = GD.debuggeeClose . debuggeeEnv
 
 -- | Pause the debuggee
 pause :: Debuggee -> IO ()
-pause (Debuggee e) = run e $ request RequestPause
+pause dbg@(Debuggee e _) = do
+  run e $ request RequestPause
+  runAnalysis dbg
 
 resume :: Debuggee -> IO ()
-resume (Debuggee e) = run e $ request RequestResume
+resume (Debuggee e _) = run e $ request RequestResume
 
 -- | Like pause, but wait for the debuggee to pause itself. It currently
 -- impossible to resume after a pause caused by a poll.?????????? Is that true???? can we not just call resume????
 pausePoll :: Debuggee -> IO ()
-pausePoll (Debuggee e) = run e $ request RequestPoll
+pausePoll dbg@(Debuggee e _) = do
+  run e $ request RequestPoll
+  runAnalysis dbg
 
 -- | Bracketed version of pause/resume.
 withPause :: Debuggee -> IO a -> IO a
@@ -124,7 +192,7 @@ withPause dbg act = bracket_ (pause dbg) (resume dbg) act
 
 -- | Request the debuggee's root pointers.
 rootClosures :: Debuggee -> IO [Closure]
-rootClosures (Debuggee e) = run e $ do
+rootClosures (Debuggee e _) = run e $ do
   closurePtrs <- request RequestRoots
   closures <- dereferenceClosures closurePtrs
   return [ Closure closurePtr' closure
@@ -135,7 +203,7 @@ rootClosures (Debuggee e) = run e $ do
 -- | A client can save objects by calling a special RTS method
 -- This function returns the closures it saved.
 savedClosures :: Debuggee -> IO [Closure]
-savedClosures (Debuggee e) = run e $ do
+savedClosures (Debuggee e _) = run e $ do
   closurePtrs <- request RequestSavedObjects
   closures <- dereferenceClosures closurePtrs
   return $ zipWith Closure
@@ -145,15 +213,15 @@ savedClosures (Debuggee e) = run e $ do
 -- -- | Request the description for an info table.
 -- -- The `InfoTablePtr` is just used for the equality
 -- requestConstrDesc :: Debuggee -> PayloadWithKey InfoTablePtr ClosurePtr -> IO ConstrDesc
--- requestConstrDesc (Debuggee e) = run e $ request RequestConstrDesc
+-- requestConstrDesc (Debuggee e _) = run e $ request RequestConstrDesc
 
 -- -- | Lookup source information of an info table
 -- requestSourceInfo :: Debuggee -> InfoTablePtr -> IO [String]
--- requestSourceInfo (Debuggee e) = run e $ request RequestSourceInfo
+-- requestSourceInfo (Debuggee e _) = run e $ request RequestSourceInfo
 
 -- -- | Request a set of closures.
 -- requestClosures :: Debuggee -> [ClosurePtr] -> IO [RawClosure]
--- requestClosures (Debuggee e) = run e $ request RequestClosures
+-- requestClosures (Debuggee e _) = run e $ request RequestClosures
 
 data Closure
   = Closure
@@ -169,23 +237,34 @@ closureShowAddress :: Closure -> String
 closureShowAddress (Closure c _) = show c
 closureShowAddress (Stack   s _) = show s
 
--- | Get the exlusive size (not including referenced obejcts) of a closure.
+-- | Get the exclusive size (not including any referenced closures) of a closure.
 closureExclusiveSize :: Debuggee -> Closure -> IO Int
-closureExclusiveSize _dbg (Stack _ _stack) = return (-1)
+closureExclusiveSize dbg c = fst <$> closureExcAndRetainerSizes dbg c
+
+-- | Get the retained size (including all dominated closures) of a closure.
+closureRetainerSize :: Debuggee -> Closure -> IO Int
+closureRetainerSize dbg c = snd <$> closureExcAndRetainerSizes dbg c
+
+closureExcAndRetainerSizes :: Debuggee -> Closure -> IO (Int, Int)
+closureExcAndRetainerSizes _ Stack{} = return (-1, -1)
   -- ^ TODO How should we handle stack size? only used space on the stack?
   -- Include underflow frames? Return Maybe?
-closureExclusiveSize _dbg (Closure _ closure) = return $ getSize $ extraDCS closure
+closureExcAndRetainerSizes (Debuggee _ analysisIORef) (Closure cPtr _) = do
+  getSizes <- fmap (maybe (error "NotPaused") analysisSizes)
+            $ readIORef analysisIORef
+  let (excSize, retSize) = getSizes cPtr
+  return (GD.getSize excSize, GD.getRetainerSize retSize)
 
 closureSourceLocation :: Debuggee -> Closure -> IO [String]
 closureSourceLocation _ (Stack _ _) = return []
-closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
+closureSourceLocation (Debuggee e _) (Closure _ c) = run e $ do
   case lookupStgInfoTableWithPtr (noSize c) of
     Nothing -> return []
     Just infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
 
 -- | Get the directly referenced closures (with a label) of a closure.
 closureReferences :: Debuggee -> Closure -> IO [(String, Closure)]
-closureReferences (Debuggee e) (Stack _ stack) = run e $ do
+closureReferences (Debuggee e _) (Stack _ stack) = run e $ do
   let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
                      , ptr
                      )
@@ -196,66 +275,8 @@ closureReferences (Debuggee e) (Stack _ stack) = run e $ do
   return $ zipWith (\(lbl,ptr) c -> (lbl, Closure ptr c))
             lblAndPtrs
             closures
-closureReferences (Debuggee e) (Closure _ closure) = run e $ do
-  let
-      withIxLables elements   = [("[" <> show i <> "]" , Left x) | (i, x) <- zip [(0::Int)..] elements]
-      withArgLables ptrArgs   = [("Argument " <> show i, Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
-      withFieldLables ptrArgs = [("Field " <> show i   , Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
-
-      refPtrs = case unDCS closure of
-          TSOClosure {..} ->
-            [ ("Stack", Right tsoStack)
-            , ("Link", Left _link)
-            , ("Global Link", Left global_link)
-            , ("TRec", Left trec)
-            , ("Blocked Exceptions", Left blocked_exceptions)
-            , ("Blocking Queue", Left bq)
-            ]
-          WeakClosure {..} -> [ ("Key", Left key)
-                              , ("Value", Left value)
-                              , ("C Finalizers", Left cfinalizers)
-                              , ("Finalizer", Left finalizer)
-                              ] ++
-                              [ ("Link", Left link)
-                              | Just link <- [mlink] -- TODO do we want to show NULL pointers some how?
-                              ]
-          IntClosure {} -> []
-          WordClosure {} -> []
-          Int64Closure {} -> []
-          Word64Closure {} -> []
-          AddrClosure {} -> []
-          FloatClosure {} -> []
-          DoubleClosure {} -> []
-          ConstrClosure {..} -> withFieldLables ptrArgs
-          ThunkClosure {..} -> withArgLables ptrArgs
-          SelectorClosure {..} -> [("Selectee", Left selectee)]
-          IndClosure {..} -> [("Indirectee", Left indirectee)]
-          BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
-          APClosure {..} -> ("Function", Left fun) : withArgLables payload
-          PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
-          APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
-          BCOClosure {..} -> [ ("Instructions", Left instrs)
-                             , ("Literals", Left literals)
-                             , ("Byte Code Objects", Left bcoptrs)
-                             ]
-          ArrWordsClosure {} -> []
-          MutArrClosure {..} -> withIxLables mccPayload
-          SmallMutArrClosure {..} -> withIxLables mccPayload
-          MutVarClosure {..} -> [("Value", Left var)]
-          MVarClosure {..} -> [ ("Queue Head", Left queueHead)
-                              , ("Queue Tail", Left queueTail)
-                              , ("Value", Left value)
-                              ]
-          FunClosure {..} -> withArgLables ptrArgs
-          BlockingQueueClosure {..} -> [ ("Link", Left link)
-                                       , ("Black Hole", Left blackHole)
-                                       , ("Owner", Left owner)
-                                       , ("Queue", Left queue)
-                                       ]
-          OtherClosure {..} -> ("",) . Left <$> hvalues
-          UnsupportedClosure {} -> []
-
-
+closureReferences (Debuggee e _) (Closure _ closure) = run e $ do
+  let refPtrs = closureReferencesAndLabels (unDCS closure)
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
       refClosure' <- dereferenceSizedClosure cPtr
@@ -264,18 +285,115 @@ closureReferences (Debuggee e) (Closure _ closure) = run e $ do
       refStack' <- dereferenceStack sPtr
       return (label, Stack sPtr refStack')
 
--- | Pritty print a closure
+-- | Pretty print a closure
 closurePretty :: Debuggee -> Closure -> IO String
 closurePretty _ (Stack _ _) = return "STACK"
-closurePretty (Debuggee e) (Closure _ closure) = do
+closurePretty (Debuggee e _) (Closure _ closure) = do
   closure' <- GD.tritraverse toConstrDesc pure pure (unDCS closure)
-  return $ GD.ppClosure
+  return $ HG.ppClosure
     "??"
     (\_ refPtr -> show refPtr)
     0
     closure'
     where
     toConstrDesc = run e . dereferenceConDesc
+
+-- $dominatorTree
+--
+-- Closure `a` dominates closure `b` if all paths from GC roots to `b` pass
+-- through `a`. This means that if `a` is GCed then all dominated closures can
+-- be GCed. The relationship is transitive. Transitive edges are omitted in the
+-- "dominator tree".
+--
+-- see http://kohlerm.blogspot.com/2009/02/memory-leaks-are-easy-to-find.html
+
+-- | The roots of the dominator tree.
+dominatorRootClosures :: Debuggee -> IO [Closure]
+dominatorRootClosures (Debuggee e analysisIORef) = run e $ do
+  domRoots <- liftIO
+            $ fmap (maybe (error "NotPaused") analysisDominatorRoots)
+            $ readIORef analysisIORef
+  closures <- dereferenceClosures domRoots
+  return [ Closure closurePtr' closure
+            | closurePtr' <- domRoots
+            | closure <- closures
+            ]
+
+-- | Get the dominatess of a closure i.e. the children in the dominator tree.
+closureDominatees :: Debuggee -> Closure -> IO [Closure]
+closureDominatees _ (Stack{}) = error "TODO dominator tree does not yet support STACKs"
+closureDominatees (Debuggee e analysisIORef) (Closure cPtr _) = run e $ do
+  cPtrToDominatees <- liftIO
+            $ fmap (maybe (error "NotPaused") analysisDominatees)
+            $ readIORef analysisIORef
+  let cPtrs = cPtrToDominatees cPtr
+  closures <- dereferenceClosures cPtrs
+  return [ Closure closurePtr' closure
+            | closurePtr' <- cPtrs
+            | closure <- closures
+            ]
+
+--
+-- Internal Stuff
+--
+
+closureReferencesAndLabels :: DebugClosure string stack pointer -> [(String, Either pointer stack)]
+closureReferencesAndLabels closure = case closure of
+  TSOClosure {..} ->
+    [ ("Stack", Right tsoStack)
+    , ("Link", Left _link)
+    , ("Global Link", Left global_link)
+    , ("TRec", Left trec)
+    , ("Blocked Exceptions", Left blocked_exceptions)
+    , ("Blocking Queue", Left bq)
+    ]
+  WeakClosure {..} -> [ ("Key", Left key)
+                      , ("Value", Left value)
+                      , ("C Finalizers", Left cfinalizers)
+                      , ("Finalizer", Left finalizer)
+                      ] ++
+                      [ ("Link", Left link)
+                      | Just link <- [mlink] -- TODO do we want to show NULL pointers some how?
+                      ]
+  IntClosure {} -> []
+  WordClosure {} -> []
+  Int64Closure {} -> []
+  Word64Closure {} -> []
+  AddrClosure {} -> []
+  FloatClosure {} -> []
+  DoubleClosure {} -> []
+  ConstrClosure {..} -> withFieldLables ptrArgs
+  ThunkClosure {..} -> withArgLables ptrArgs
+  SelectorClosure {..} -> [("Selectee", Left selectee)]
+  IndClosure {..} -> [("Indirectee", Left indirectee)]
+  BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
+  APClosure {..} -> ("Function", Left fun) : withArgLables payload
+  PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
+  APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
+  BCOClosure {..} -> [ ("Instructions", Left instrs)
+                      , ("Literals", Left literals)
+                      , ("Byte Code Objects", Left bcoptrs)
+                      ]
+  ArrWordsClosure {} -> []
+  MutArrClosure {..} -> withIxLables mccPayload
+  SmallMutArrClosure {..} -> withIxLables mccPayload
+  MutVarClosure {..} -> [("Value", Left var)]
+  MVarClosure {..} -> [ ("Queue Head", Left queueHead)
+                      , ("Queue Tail", Left queueTail)
+                      , ("Value", Left value)
+                      ]
+  FunClosure {..} -> withArgLables ptrArgs
+  BlockingQueueClosure {..} -> [ ("Link", Left link)
+                                , ("Black Hole", Left blackHole)
+                                , ("Owner", Left owner)
+                                , ("Queue", Left queue)
+                                ]
+  OtherClosure {..} -> ("",) . Left <$> hvalues
+  UnsupportedClosure {} -> []
+  where
+  withIxLables elements   = [("[" <> show i <> "]" , Left x) | (i, x) <- zip [(0::Int)..] elements]
+  withArgLables ptrArgs   = [("Argument " <> show i, Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
+  withFieldLables ptrArgs = [("Field " <> show i   , Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
 
 --
 -- TODO move stuff below here to a lower level module.
@@ -289,7 +407,7 @@ lookupInfoTable rc = do
     return (itbl,rit, rc)
 
 pauseThen :: Debuggee -> DebugM b -> IO b
-pauseThen dbg@(Debuggee e) d =
+pauseThen dbg@(Debuggee e _) d =
   pause dbg >> run e d
 
 dereferenceClosure :: ClosurePtr -> DebugM GD.Closure

@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Main where
 import Control.Applicative
@@ -12,6 +13,8 @@ import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
 import Data.Maybe (fromMaybe)
+import Data.Ord (comparing)
+import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
 import Data.Text
 import Graphics.Vty(defaultConfig, mkVty, defAttr)
@@ -21,7 +24,6 @@ import Lens.Micro.Platform
 import System.Directory
 import System.FilePath
 import qualified Data.Text as T
-import Data.Ord
 
 import IOTree
 import Brick
@@ -63,25 +65,34 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      PausedMode tree'  -> mainBorder "ghc-debug - Paused" $ vBox
-        [ hBox
-          [ border $ vBox
-            [ txt "Resume  (r)"
-            , txt "Parent  (<-)"
-            , txt "Child   (->)"
+      pm@(PausedMode treeMode' _ _) -> let
+        tree' = pauseModeTree pm
+        in mainBorder "ghc-debug - Paused" $ vBox
+          [ hBox
+            [ border $ vBox
+              [ txt "Resume          (r)"
+              , txt "Parent          (<-)"
+              , txt "Child           (->)"
+              , txt "Dominator Tree  (F1)"
+              , txt "Saved/GC Roots  (F2)"
+              ]
+            , -- Current closure details
+              borderWithLabel (txt "Closure Details") $ renderClosureDetails (ioTreeSelection tree')
             ]
-          , -- Current closure details
-            borderWithLabel (txt "Closure Details") $ renderClosureDetails (ioTreeSelection tree')
+          , -- Tree
+            borderWithLabel
+              (txt $ case treeMode' of
+                Dominator -> "Dominator Tree"
+                SavedAndGCRoots -> "Root Closures"
+              )
+              (renderIOTree tree')
           ]
-        , -- Tree
-          borderWithLabel (txt "Closures") $ renderIOTree tree'
-        ]
   ]
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
 
   renderClosureDetails :: Maybe ClosureDetails -> Widget Name
-  renderClosureDetails cd = vLimit 8 $ vBox $
+  renderClosureDetails cd = vLimit 9 $ vBox $
       [ txt "SourceLocation   "
             <+> txt (fromMaybe "" (_sourceLocation =<< cd))
       -- TODO these aren't actually implemented yet
@@ -91,6 +102,8 @@ myAppDraw (AppState majorState') =
       --       <> fromMaybe "" (_constructor =<< cd)
       , txt $ "Exclusive Size   "
             <> maybe "" (pack . show) (_excSize <$> cd) <> " bytes"
+      , txt $ "Retained Size    "
+            <> maybe "" (pack . show) (_retainerSize <$> cd) <> " bytes"
       , fill ' '
       ]
 
@@ -126,7 +139,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
 
             -- Sort the sockets by the time they have been created, newest
             -- first.
-            debuggeeSockets <- List.sortBy (comparing Data.Ord.Down)
+            debuggeeSockets <- List.sortBy (comparing Ord.Down)
                                   <$> mapM (mkSocketInfo . (dir </>)) debuggeeSocketFiles
 
             let currentSelectedPathMay :: Maybe SocketInfo
@@ -152,40 +165,34 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          rootClosures' <- liftIO $ mapM (getClosureDetails "GC Root") =<< GD.rootClosures debuggee'
-          savedClosures' <- liftIO $ mapM (getClosureDetails "Saved Object") =<< GD.savedClosures debuggee'
-          let tree' = ioTree Connected_Paused_ClosureTree
-                        (savedClosures' ++ rootClosures')
-                        (\c -> do
-                            children <- closureReferences debuggee' (_closure c)
-                            mapM (\(lbl, child) -> getClosureDetails (pack lbl) child) children
-                        )
-                        (\selected depth closureDesc -> hBox
-                                [ txt (T.replicate depth "  ")
-                                , (if selected then visible . txt else txt) $
-                                    (if selected then "* " else "  ")
-                                    <> _labelInParent closureDesc
-                                    <> "   "
-                                    <> pack (closureShowAddress (_closure closureDesc))
-                                    <> "   "
-                                    <> _pretty closureDesc
-                                ]
-                        )
-                        (\depth _closureDesc children -> if List.null children
-                            then txt $ T.replicate depth "  " <> "<Empty>"
-                            else emptyWidget
-                        )
-
-          continue (appState & majorState . mode .~ PausedMode tree')
+          domTree <- mkDominatorIOTree
+          rootsTree <- mkSavedAndGCRootsIOTree
+          continue (appState & majorState . mode .~ PausedMode Dominator domTree rootsTree)
 
         _ -> continue appState
 
-      PausedMode tree' -> case brickEvent of
+      PausedMode treeMode' domTree rootsTree -> case brickEvent of
+
+        -- Change Modes
+        VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ appState
+            & majorState
+            . mode
+            . treeMode
+            .~ Dominator
+        VtyEvent (Vty.EvKey (KFun 2) _) -> continue $ appState
+            & majorState
+            . mode
+            . treeMode
+            .~ SavedAndGCRoots
 
         -- Navigate the tree of closures
-        VtyEvent event -> do
-          newTree <- handleIOTreeEvent event tree'
-          continue (appState & majorState . mode . tree .~ newTree)
+        VtyEvent event -> case treeMode' of
+          Dominator -> do
+            newTree <- handleIOTreeEvent event domTree
+            continue (appState & majorState . mode . treeDominator .~ newTree)
+          SavedAndGCRoots -> do
+            newTree <- handleIOTreeEvent event rootsTree
+            continue (appState & majorState . mode . treeSavedAndGCRoots .~ newTree)
 
         _ -> continue appState
 
@@ -193,6 +200,7 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
       getClosureDetails :: Text -> Closure -> IO ClosureDetails
       getClosureDetails label c = do
         excSize' <- closureExclusiveSize debuggee' c
+        retSize' <- closureRetainerSize debuggee' c
         sourceLoc <- closureSourceLocation debuggee' c
         pretty' <- closurePretty debuggee' c
         return ClosureDetails
@@ -203,7 +211,42 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
           , _closureType = Nothing
           , _constructor = Nothing
           , _excSize = excSize'
+          , _retainerSize = retSize'
           }
+
+      mkDominatorIOTree = do
+        rootClosures' <- liftIO $ mapM (getClosureDetails "") =<< GD.dominatorRootClosures debuggee'
+        return $ mkIOTree rootClosures'
+                  (\dbg c -> fmap ("",) <$> closureDominatees dbg c)
+                  (List.sortOn (Ord.Down . _retainerSize))
+
+      mkSavedAndGCRootsIOTree = do
+        rootClosures' <- liftIO $ mapM (getClosureDetails "GC Root") =<< GD.rootClosures debuggee'
+        savedClosures' <- liftIO $ mapM (getClosureDetails "Saved Object") =<< GD.savedClosures debuggee'
+        return $ mkIOTree (savedClosures' ++ rootClosures') closureReferences id
+
+      mkIOTree cs getChildren sort = ioTree Connected_Paused_ClosureTree
+        (sort cs)
+        (\c -> do
+            children <- getChildren debuggee' (_closure c)
+            cDets <- mapM (\(lbl, child) -> getClosureDetails (pack lbl) child) children
+            return (sort cDets)
+        )
+        (\selected depth closureDesc -> hBox
+                [ txt (T.replicate depth "  ")
+                , (if selected then visible . txt else txt) $
+                    (if selected then "* " else "  ")
+                    <> _labelInParent closureDesc
+                    <> "   "
+                    <> pack (closureShowAddress (_closure closureDesc))
+                    <> "   "
+                    <> _pretty closureDesc
+                ]
+        )
+        (\depth _closureDesc children -> if List.null children
+            then txt $ T.replicate depth "  " <> "<Empty>"
+            else emptyWidget
+        )
 
 myAppStartEvent :: AppState -> EventM Name AppState
 myAppStartEvent = return
