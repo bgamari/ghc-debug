@@ -17,7 +17,7 @@ module GHC.Debug.Client.Monad.Haxl
 import GHC.Debug.Types
 import qualified Data.HashMap.Strict as HM
 import System.IO
-
+import Control.Concurrent
 
 import GHC.Debug.Client.BlockCache
 import GHC.Debug.Client.Monad.Class
@@ -60,7 +60,7 @@ type DebugM = GenHaxl Debuggee String
 
 
 instance StateKey Request where
-  data State Request = RequestState Handle
+  data State Request = RequestState (MVar Handle)
 
 instance DataSourceName Request where
   dataSourceName Proxy = "ghc-debug"
@@ -71,7 +71,7 @@ instance ShowP Request where
 
 -- | Group together RequestClosures and RequestInfoTables to avoid
 -- some context switching.
-groupFetches :: Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [(StgInfoTableWithPtr, RawInfoTable)])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
+groupFetches :: MVar Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [(StgInfoTableWithPtr, RawInfoTable)])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
 groupFetches h cs is todo [] = dispatch h cs is (reverse todo)
 groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
   case r of
@@ -79,7 +79,7 @@ groupFetches h cs is todo (b@(BlockedFetch r resp) : bs) =
     RequestClosures cs' -> groupFetches h ((cs', resp):cs) is todo bs
     _ -> groupFetches h cs is (b:todo) bs
 
-dispatch :: Handle
+dispatch :: MVar Handle
          -> [([ClosurePtr], ResultVar [RawClosure])]
          -> [([InfoTablePtr], ResultVar [(StgInfoTableWithPtr, RawInfoTable)])]
          -> [BlockedFetch Request]
@@ -115,7 +115,7 @@ recordResults res ((length -> n, rvar):xs) =
 recordResults _ _ = error ("Impossible recordResults")
 
 
-_singleFetches :: Handle -> [BlockedFetch Request] -> IO ()
+_singleFetches :: MVar Handle -> [BlockedFetch Request] -> IO ()
 _singleFetches h bs = mapM_ do_one bs
       where
         do_one (BlockedFetch req resp) = do
@@ -134,7 +134,7 @@ instance DataSource Debuggee Request where
 
 
 instance StateKey BlockCacheRequest where
-  data State BlockCacheRequest = BCRequestState (IORef BlockCache) Handle
+  data State BlockCacheRequest = BCRequestState (IORef BlockCache) (MVar Handle)
 
 instance DataSourceName BlockCacheRequest where
   dataSourceName Proxy = "block-cache"
@@ -158,7 +158,8 @@ mkEnv :: FilePath -> FilePath -> Handle -> IO (Env Debuggee String)
 mkEnv exeName _sock hdl = do
   requestMap <- newIORef HM.empty
   bc <- newIORef emptyBlockCache
-  let ss = stateSet (BCRequestState bc hdl) (stateSet (RequestState hdl) stateEmpty)
+  mhdl <- newMVar hdl
+  let ss = stateSet (BCRequestState bc mhdl) (stateSet (RequestState mhdl) stateEmpty)
   new_env <- initEnv ss (Debuggee exeName requestMap Batch)
   -- Turn on data fetch stats with report = 3
   let new_flags = defaultFlags { report = 0 }

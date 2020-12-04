@@ -37,6 +37,10 @@ module GHC.Debug.Client
     -- * Dominator Tree
   , dominatorRootClosures
   , closureDominatees
+  , runAnalysis
+  , Analysis(..)
+  , Size(..)
+  , RetainerSize(..)
     --
     -- $dominatorTree
 
@@ -67,7 +71,6 @@ module GHC.Debug.Client
 
 import           Control.Exception
 import           Control.Monad (forM)
-import           Control.Monad.IO.Class
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Graph as G
 import           Data.IORef
@@ -87,8 +90,6 @@ import Debug.Trace
 
 data Debuggee = Debuggee
   { debuggeeEnv :: DebugEnv DebugM
-  , debuggeeAnalysis :: IORef (Maybe Analysis)
-  -- ^ Nothing when not paused
   }
 
 data Analysis = Analysis
@@ -99,14 +100,14 @@ data Analysis = Analysis
   -- ^ Size and retainer size (via dominator tree) of closures
   }
 
-mkDebuggee :: DebugEnv DebugM -> IO Debuggee
-mkDebuggee e = Debuggee e <$> newIORef Nothing
+mkDebuggee :: DebugEnv DebugM -> Debuggee
+mkDebuggee e = Debuggee e
 
-runAnalysis :: Debuggee -> IO ()
-runAnalysis (Debuggee e analysisIORef) = run e $ do
+runAnalysis :: Debuggee -> IO Analysis
+runAnalysis (Debuggee e) = run e $ do
     -- Calculate the dominator tree with retainer sizes
     -- TODO perhaps this conversion to a graph can be done in GHC.Debug.Types.Graph
-    -- TODO precacheBlocks
+    precacheBlocks
     rs <- request RequestRoots
     let derefFuncM cPtr = do
           c <- dereferenceClosureFromBlock cPtr
@@ -133,7 +134,7 @@ runAnalysis (Debuggee e analysisIORef) = run e $ do
           . fmap vertexToData
           . cPtrToVertex
 
-    liftIO $ writeIORef analysisIORef $ Just $ Analysis
+    return $ Analysis
               [drPtr | G.Node (drPtr, _) _ <- drs]
               ((\(_,_,x) -> x) . cPtrToData)
               ((\(x,_,_) -> x) . cPtrToData)
@@ -144,7 +145,7 @@ withDebuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
                 -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> (Debuggee -> IO a)
                 -> IO a
-withDebuggeeRun exeName socketName action = GD.withDebuggeeRun exeName socketName (\e -> action =<< mkDebuggee e)
+withDebuggeeRun exeName socketName action = GD.withDebuggeeRun exeName socketName (\e -> action (mkDebuggee e))
 
 -- | Bracketed version of @debuggeeConnect@. Connects to a debuggee, runs the
 -- action, then closes the debuggee.
@@ -152,19 +153,19 @@ withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
                    -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                    -> (Debuggee -> IO a)
                    -> IO a
-withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName (\e -> action =<< mkDebuggee e)
+withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName (\e -> action (mkDebuggee e))
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
             -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
             -> IO Debuggee
-debuggeeRun exeName socketName = mkDebuggee =<< GD.debuggeeRun exeName socketName
+debuggeeRun exeName socketName = mkDebuggee <$> GD.debuggeeRun exeName socketName
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeConnect :: FilePath  -- ^ path to executable to run as the debuggee
                 -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect exeName socketName = mkDebuggee =<< GD.debuggeeConnect exeName socketName
+debuggeeConnect exeName socketName = mkDebuggee <$> GD.debuggeeConnect exeName socketName
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()
@@ -172,19 +173,17 @@ debuggeeClose = GD.debuggeeClose . debuggeeEnv
 
 -- | Pause the debuggee
 pause :: Debuggee -> IO ()
-pause dbg@(Debuggee e _) = do
+pause (Debuggee e) = do
   run e $ request RequestPause
-  runAnalysis dbg
 
 resume :: Debuggee -> IO ()
-resume (Debuggee e _) = run e $ request RequestResume
+resume (Debuggee e) = run e $ request RequestResume
 
 -- | Like pause, but wait for the debuggee to pause itself. It currently
 -- impossible to resume after a pause caused by a poll.?????????? Is that true???? can we not just call resume????
 pausePoll :: Debuggee -> IO ()
-pausePoll dbg@(Debuggee e _) = do
+pausePoll (Debuggee e) = do
   run e $ request RequestPoll
-  runAnalysis dbg
 
 -- | Bracketed version of pause/resume.
 withPause :: Debuggee -> IO a -> IO a
@@ -192,7 +191,7 @@ withPause dbg act = bracket_ (pause dbg) (resume dbg) act
 
 -- | Request the debuggee's root pointers.
 rootClosures :: Debuggee -> IO [Closure]
-rootClosures (Debuggee e _) = run e $ do
+rootClosures (Debuggee e) = run e $ do
   closurePtrs <- request RequestRoots
   closures <- dereferenceClosures closurePtrs
   return [ Closure closurePtr' closure
@@ -203,7 +202,7 @@ rootClosures (Debuggee e _) = run e $ do
 -- | A client can save objects by calling a special RTS method
 -- This function returns the closures it saved.
 savedClosures :: Debuggee -> IO [Closure]
-savedClosures (Debuggee e _) = run e $ do
+savedClosures (Debuggee e) = run e $ do
   closurePtrs <- request RequestSavedObjects
   closures <- dereferenceClosures closurePtrs
   return $ zipWith Closure
@@ -238,33 +237,32 @@ closureShowAddress (Closure c _) = show c
 closureShowAddress (Stack   s _) = show s
 
 -- | Get the exclusive size (not including any referenced closures) of a closure.
-closureExclusiveSize :: Debuggee -> Closure -> IO Int
-closureExclusiveSize dbg c = fst <$> closureExcAndRetainerSizes dbg c
+closureExclusiveSize :: Closure -> Size
+closureExclusiveSize (Stack{}) = Size (-1)
+closureExclusiveSize (Closure _ c) = (GD.dcSize c)
 
 -- | Get the retained size (including all dominated closures) of a closure.
-closureRetainerSize :: Debuggee -> Closure -> IO Int
-closureRetainerSize dbg c = snd <$> closureExcAndRetainerSizes dbg c
+closureRetainerSize :: Analysis -> Closure -> RetainerSize
+closureRetainerSize analysis c = snd (closureExcAndRetainerSizes analysis c)
 
-closureExcAndRetainerSizes :: Debuggee -> Closure -> IO (Int, Int)
-closureExcAndRetainerSizes _ Stack{} = return (-1, -1)
+closureExcAndRetainerSizes :: Analysis -> Closure -> (Size, RetainerSize)
+closureExcAndRetainerSizes _ Stack{} = (Size (-1), RetainerSize (-1))
   -- ^ TODO How should we handle stack size? only used space on the stack?
   -- Include underflow frames? Return Maybe?
-closureExcAndRetainerSizes (Debuggee _ analysisIORef) (Closure cPtr _) = do
-  getSizes <- fmap (maybe (error "NotPaused") analysisSizes)
-            $ readIORef analysisIORef
-  let (excSize, retSize) = getSizes cPtr
-  return (GD.getSize excSize, GD.getRetainerSize retSize)
+closureExcAndRetainerSizes analysis (Closure cPtr _) =
+  let getSizes = analysisSizes analysis
+  in getSizes cPtr
 
 closureSourceLocation :: Debuggee -> Closure -> IO [String]
 closureSourceLocation _ (Stack _ _) = return []
-closureSourceLocation (Debuggee e _) (Closure _ c) = run e $ do
+closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
   case lookupStgInfoTableWithPtr (noSize c) of
     Nothing -> return []
     Just infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
 
 -- | Get the directly referenced closures (with a label) of a closure.
 closureReferences :: Debuggee -> Closure -> IO [(String, Closure)]
-closureReferences (Debuggee e _) (Stack _ stack) = run e $ do
+closureReferences (Debuggee e) (Stack _ stack) = run e $ do
   let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
                      , ptr
                      )
@@ -275,7 +273,7 @@ closureReferences (Debuggee e _) (Stack _ stack) = run e $ do
   return $ zipWith (\(lbl,ptr) c -> (lbl, Closure ptr c))
             lblAndPtrs
             closures
-closureReferences (Debuggee e _) (Closure _ closure) = run e $ do
+closureReferences (Debuggee e) (Closure _ closure) = run e $ do
   let refPtrs = closureReferencesAndLabels (unDCS closure)
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
@@ -288,7 +286,7 @@ closureReferences (Debuggee e _) (Closure _ closure) = run e $ do
 -- | Pretty print a closure
 closurePretty :: Debuggee -> Closure -> IO String
 closurePretty _ (Stack _ _) = return "STACK"
-closurePretty (Debuggee e _) (Closure _ closure) = do
+closurePretty (Debuggee e) (Closure _ closure) = do
   closure' <- GD.tritraverse toConstrDesc pure pure (unDCS closure)
   return $ HG.ppClosure
     "??"
@@ -308,11 +306,9 @@ closurePretty (Debuggee e _) (Closure _ closure) = do
 -- see http://kohlerm.blogspot.com/2009/02/memory-leaks-are-easy-to-find.html
 
 -- | The roots of the dominator tree.
-dominatorRootClosures :: Debuggee -> IO [Closure]
-dominatorRootClosures (Debuggee e analysisIORef) = run e $ do
-  domRoots <- liftIO
-            $ fmap (maybe (error "NotPaused") analysisDominatorRoots)
-            $ readIORef analysisIORef
+dominatorRootClosures :: Debuggee -> Analysis -> IO [Closure]
+dominatorRootClosures (Debuggee e) analysis = run e $ do
+  let domRoots = analysisDominatorRoots analysis
   closures <- dereferenceClosures domRoots
   return [ Closure closurePtr' closure
             | closurePtr' <- domRoots
@@ -320,13 +316,11 @@ dominatorRootClosures (Debuggee e analysisIORef) = run e $ do
             ]
 
 -- | Get the dominatess of a closure i.e. the children in the dominator tree.
-closureDominatees :: Debuggee -> Closure -> IO [Closure]
-closureDominatees _ (Stack{}) = error "TODO dominator tree does not yet support STACKs"
-closureDominatees (Debuggee e analysisIORef) (Closure cPtr _) = run e $ do
-  cPtrToDominatees <- liftIO
-            $ fmap (maybe (error "NotPaused") analysisDominatees)
-            $ readIORef analysisIORef
-  let cPtrs = cPtrToDominatees cPtr
+closureDominatees :: Debuggee -> Analysis -> Closure -> IO [Closure]
+closureDominatees _ _ (Stack{}) = error "TODO dominator tree does not yet support STACKs"
+closureDominatees (Debuggee e) analysis (Closure cPtr _) = run e $ do
+  let cPtrToDominatees = analysisDominatees analysis
+      cPtrs = cPtrToDominatees cPtr
   closures <- dereferenceClosures cPtrs
   return [ Closure closurePtr' closure
             | closurePtr' <- cPtrs
@@ -407,7 +401,7 @@ lookupInfoTable rc = do
     return (itbl,rit, rc)
 
 pauseThen :: Debuggee -> DebugM b -> IO b
-pauseThen dbg@(Debuggee e _) d =
+pauseThen dbg@(Debuggee e) d =
   pause dbg >> run e d
 
 dereferenceClosure :: ClosurePtr -> DebugM GD.Closure

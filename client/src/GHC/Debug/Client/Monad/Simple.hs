@@ -34,7 +34,7 @@ data Debuggee = Debuggee { debuggeeFilename :: FilePath
                          , debuggeeRequestCount :: Maybe (IORef (HM.HashMap CommandId FetchStats))
                          , debuggeeBlockCache :: IORef BlockCache
                          , debuggeeRequestCache :: MVar RequestCache
-                         , debuggeeHandle :: Handle
+                         , debuggeeHandle :: MVar Handle
                          }
 
 data FetchStats = FetchStats { _networkRequests :: !Int, _cachedRequests :: !Int }
@@ -88,7 +88,8 @@ mkEnv exeName _sockName h = do
   mcount <- if enable_stats then Just <$> newIORef HM.empty else return Nothing
   bc <- newIORef emptyBlockCache
   rc <- newMVar emptyRequestCache
-  return $ Debuggee exeName mcount bc rc h
+  mhdl <-  newMVar h
+  return $ Debuggee exeName mcount bc rc mhdl
 
 simpleReq :: Request resp -> DebugM resp
 simpleReq req = do

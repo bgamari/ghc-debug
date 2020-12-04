@@ -39,8 +39,7 @@ allow-newer:
   ghc,
   ghc-prim,
   integer-gmp,
-  template-haskell,
-  time
+  template-haskell
 
 constraints:
   Cabal ==2.4.1.0 || ==3.0.2.0 || ==3.2.0.0,

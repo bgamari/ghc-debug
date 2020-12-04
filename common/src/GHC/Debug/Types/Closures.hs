@@ -26,6 +26,7 @@ module GHC.Debug.Types.Closures (
     , RetainerSize(..)
     , DebugClosureWithExtra(..)
     , noSize
+    , dcSize
     , StgInfoTable(..)
     , StgInfoTableWithPtr(..)
     , FieldValue(..)
@@ -189,7 +190,7 @@ newtype InclusiveSize = InclusiveSize { getInclusiveSize :: Int }
   deriving (Semigroup, Monoid) via (Sum Int)
 
 newtype RetainerSize = RetainerSize { getRetainerSize :: Int }
-  deriving stock (Show, Generic)
+  deriving stock (Show, Generic, Ord, Eq)
   deriving (Semigroup, Monoid) via (Sum Int)
 
 

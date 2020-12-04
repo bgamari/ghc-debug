@@ -18,6 +18,7 @@ import GHC.Word
 import System.Endian
 import Data.Hashable
 import Data.IORef
+import Control.Concurrent
 import System.IO
 import GHC.Debug.Decode
 import Data.Bits
@@ -61,7 +62,7 @@ instance Hashable (BlockCacheRequest a) where
   hashWithSalt s (LookupClosure cpt) = s `hashWithSalt` (1 :: Int) `hashWithSalt` cpt
   hashWithSalt s PopulateBlockCache  = s `hashWithSalt` (2 :: Int)
 
-handleBlockReq :: Handle -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
+handleBlockReq :: MVar Handle -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
 handleBlockReq h ref (LookupClosure cp) = do
   bc <- readIORef ref
   let mrb = lookupClosure cp bc

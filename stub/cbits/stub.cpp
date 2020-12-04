@@ -281,7 +281,6 @@ static void write_blocks(Response& resp, bdescr * bd){
 
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
-    printf("GENERATIONS %lu", generations[1].n_blocks);
     trace("HANDLE: %d\n", cmd_len);
     Parser p(buf, cmd_len);
     Response resp(sock);

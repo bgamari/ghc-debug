@@ -39,7 +39,7 @@ foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
 data AllocStrategy = AllocByPtr | AllocByCopy
 
 allocStrategy :: AllocStrategy
-allocStrategy = AllocByPtr
+allocStrategy = AllocByCopy
 
 getClosureRaw :: StgInfoTable -> Ptr a -> IO (GenClosure Word, Size)
 getClosureRaw itb (Ptr closurePtr) = do

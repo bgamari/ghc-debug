@@ -75,8 +75,8 @@ data ClosureDetails = ClosureDetails
   , _sourceLocation :: Maybe Text
   , _closureType :: Maybe Text
   , _constructor :: Maybe Text
-  , _excSize :: Int
-  , _retainerSize :: Int
+  , _excSize :: Size
+  , _retainerSize :: Maybe RetainerSize
   }
 
 data TreeMode = Dominator | SavedAndGCRoots
@@ -87,16 +87,20 @@ data ConnectedMode
   -- | Debuggee is paused and we're exploring the heap
   | PausedMode
     { _treeMode :: TreeMode
-    , _treeDominator :: IOTree ClosureDetails Name
+    , _treeDominator :: Maybe DominatorAnalysis
     -- ^ Tree corresponding to Dominator mode
     , _treeSavedAndGCRoots :: IOTree ClosureDetails Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
     }
 
+data DominatorAnalysis = DominatorAnalysis { _getDominatorAnalysis :: Analysis
+                                           , _getDominatorTree :: IOTree ClosureDetails Name
+                                           }
+
 pauseModeTree :: ConnectedMode -> IOTree ClosureDetails Name
 pauseModeTree RunningMode = error "Not Paused"
 pauseModeTree (PausedMode mode dom roots) = case mode of
-  Dominator -> dom
+  Dominator -> maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> roots
 
 makeLenses ''AppState
@@ -104,3 +108,4 @@ makeLenses ''MajorState
 makeLenses ''ClosureDetails
 makeLenses ''ConnectedMode
 makeLenses ''SocketInfo
+makeLenses ''DominatorAnalysis

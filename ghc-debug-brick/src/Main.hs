@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main where
 import Control.Applicative
@@ -12,7 +13,7 @@ import Control.Monad (forever)
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
 import Data.Ord (comparing)
 import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
@@ -37,6 +38,7 @@ import Model
 
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
+  | DominatorTreeReady DominatorAnalysis -- A signal when the dominator tree has been computed
 
 myAppDraw :: AppState -> [Widget Name]
 myAppDraw (AppState majorState') =
@@ -65,17 +67,17 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      pm@(PausedMode treeMode' _ _) -> let
+      pm@(PausedMode treeMode' dtree _) -> let
         tree' = pauseModeTree pm
         in mainBorder "ghc-debug - Paused" $ vBox
           [ hBox
             [ border $ vBox
-              [ txt "Resume          (r)"
+              ([ txt "Resume          (r)"
               , txt "Parent          (<-)"
               , txt "Child           (->)"
-              , txt "Dominator Tree  (F1)"
-              , txt "Saved/GC Roots  (F2)"
-              ]
+              , txt "Saved/GC Roots  (F1)"
+              ] ++
+              [ txt "Dominator Tree  (F2)" | Just {} <- [dtree] ] )
             , -- Current closure details
               borderWithLabel (txt "Closure Details") $ renderClosureDetails (ioTreeSelection tree')
             ]
@@ -101,14 +103,14 @@ myAppDraw (AppState majorState') =
       -- , txt $ "Constructor      "
       --       <> fromMaybe "" (_constructor =<< cd)
       , txt $ "Exclusive Size   "
-            <> maybe "" (pack . show) (_excSize <$> cd) <> " bytes"
+            <> maybe "" (pack . show @Int . GD.getSize) (_excSize <$> cd) <> " bytes"
       , txt $ "Retained Size    "
-            <> maybe "" (pack . show) (_retainerSize <$> cd) <> " bytes"
+            <> maybe "" (pack . show @Int . GD.getRetainerSize) (_retainerSize =<< cd) <> " bytes"
       , fill ' '
       ]
 
-myAppHandleEvent :: AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
-myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
+myAppHandleEvent :: BChan Event -> AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
+myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case brickEvent of
   VtyEvent (Vty.EvKey KEsc []) -> halt appState
   _ -> case majorState' of
     Setup knownDebuggees' -> case brickEvent of
@@ -156,7 +158,6 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
                       knownDebuggees'
 
           continue $ appState & majorState . knownDebuggees .~ knownDebuggees''
-
       _ -> continue appState
 
     Connected _socket' debuggee' mode' -> case mode' of
@@ -165,9 +166,9 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          domTree <- mkDominatorIOTree
-          rootsTree <- mkSavedAndGCRootsIOTree
-          continue (appState & majorState . mode .~ PausedMode Dominator domTree rootsTree)
+          domTree <- liftIO $ mkDominatorIOTree
+          rootsTree <- mkSavedAndGCRootsIOTree Nothing
+          continue (appState & majorState . mode .~ PausedMode SavedAndGCRoots Nothing rootsTree)
 
         _ -> continue appState
 
@@ -179,12 +180,14 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
           continue (appState & majorState . mode .~ RunningMode)
 
         -- Change Modes
-        VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ appState
+        VtyEvent (Vty.EvKey (KFun 2) _)
+          -- Only switch if the dominator view is ready
+          | Just {} <- domTree -> continue $ appState
             & majorState
             . mode
             . treeMode
             .~ Dominator
-        VtyEvent (Vty.EvKey (KFun 2) _) -> continue $ appState
+        VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ appState
             & majorState
             . mode
             . treeMode
@@ -193,19 +196,37 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
           Dominator -> do
-            newTree <- handleIOTreeEvent event domTree
+            newTree <- traverseOf (_Just . getDominatorTree) (handleIOTreeEvent event) domTree
+
             continue (appState & majorState . mode . treeDominator .~ newTree)
           SavedAndGCRoots -> do
             newTree <- handleIOTreeEvent event rootsTree
             continue (appState & majorState . mode . treeSavedAndGCRoots .~ newTree)
 
+          -- Once the computation is finished, store the result of the
+          -- analysis in the state.
+        AppEvent (DominatorTreeReady dt) -> do
+          -- TODO: This should retain the state of the rootsTree, whilst
+          -- adding the new information.
+          rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
+          continue (appState & majorState . mode .~ PausedMode SavedAndGCRoots (Just dt) rootsTree)
+
         _ -> continue appState
 
       where
-      getClosureDetails :: Text -> Closure -> IO ClosureDetails
-      getClosureDetails label c = do
-        excSize' <- closureExclusiveSize debuggee' c
-        retSize' <- closureRetainerSize debuggee' c
+
+      mkDominatorIOTree = forkIO $ do
+        analysis <- runAnalysis debuggee'
+        rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "") =<< GD.dominatorRootClosures debuggee' analysis
+        let ioTree = mkIOTree (Just analysis) rootClosures'
+                      (\dbg c -> fmap ("",) <$> closureDominatees debuggee' analysis c)
+                      (List.sortOn (Ord.Down . _retainerSize))
+        writeBChan eventChan (DominatorTreeReady (DominatorAnalysis analysis ioTree))
+
+      getClosureDetails :: Maybe Analysis -> Text -> Closure -> IO ClosureDetails
+      getClosureDetails manalysis label c = do
+        let excSize' = closureExclusiveSize c
+            retSize' = closureRetainerSize <$> manalysis <*> pure c
         sourceLoc <- closureSourceLocation debuggee' c
         pretty' <- closurePretty debuggee' c
         return ClosureDetails
@@ -219,22 +240,17 @@ myAppHandleEvent appState@(AppState majorState') brickEvent = case brickEvent of
           , _retainerSize = retSize'
           }
 
-      mkDominatorIOTree = do
-        rootClosures' <- liftIO $ mapM (getClosureDetails "") =<< GD.dominatorRootClosures debuggee'
-        return $ mkIOTree rootClosures'
-                  (\dbg c -> fmap ("",) <$> closureDominatees dbg c)
-                  (List.sortOn (Ord.Down . _retainerSize))
+      mkSavedAndGCRootsIOTree manalysis = do
+        rootClosures' <- liftIO $ mapM (getClosureDetails manalysis "GC Root") =<< GD.rootClosures debuggee'
+        savedClosures' <- liftIO $ mapM (getClosureDetails manalysis "Saved Object") =<< GD.savedClosures debuggee'
+        return $ mkIOTree manalysis (savedClosures' ++ rootClosures') closureReferences id
 
-      mkSavedAndGCRootsIOTree = do
-        rootClosures' <- liftIO $ mapM (getClosureDetails "GC Root") =<< GD.rootClosures debuggee'
-        savedClosures' <- liftIO $ mapM (getClosureDetails "Saved Object") =<< GD.savedClosures debuggee'
-        return $ mkIOTree (savedClosures' ++ rootClosures') closureReferences id
-
-      mkIOTree cs getChildren sort = ioTree Connected_Paused_ClosureTree
+      mkIOTree :: Maybe Analysis -> [ClosureDetails] -> (Debuggee -> Closure -> IO [(String, Closure)]) -> ([ClosureDetails] -> [ClosureDetails]) -> IOTree ClosureDetails Name
+      mkIOTree manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
         (\c -> do
             children <- getChildren debuggee' (_closure c)
-            cDets <- mapM (\(lbl, child) -> getClosureDetails (pack lbl) child) children
+            cDets <- mapM (\(lbl, child) -> getClosureDetails manalysis (pack lbl) child) children
             return (sort cDets)
         )
         (\selected depth closureDesc -> hBox
@@ -271,7 +287,7 @@ main = do
       app = App
         { appDraw = myAppDraw
         , appChooseCursor = showFirstCursor
-        , appHandleEvent = myAppHandleEvent
+        , appHandleEvent = (myAppHandleEvent eventChan)
         , appStartEvent = myAppStartEvent
         , appAttrMap = myAppAttrMap
         }

@@ -25,6 +25,7 @@ import Data.Hashable
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
 import GHC.Debug.Decode
+import Control.Concurrent
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
@@ -342,8 +343,8 @@ throwStream = f
 concatStream :: Stream BS.ByteString (Maybe Error) -> BSL.ByteString
 concatStream = BSL.fromChunks . throwStream
 
-doRequest :: Handle -> Request a -> IO a
-doRequest hdl req = do
+doRequest :: MVar Handle -> Request a -> IO a
+doRequest mhdl req = withMVar mhdl $ \hdl -> do
     BSL.hPutStr hdl $ runPut $ putRequest req
     bframes <- readFrames hdl
     let x = runGet (getResponse req) (concatStream bframes)
