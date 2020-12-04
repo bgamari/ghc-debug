@@ -90,7 +90,8 @@ multiBuildHeapGraph
     -> Maybe Int -- ^ Search limit
     -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
-multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref limit (HeapGraph rs M.empty) rs
+multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref (HeapGraph rs M.empty) rs
+{-# INLINE multiBuildHeapGraph #-}
 
 -- | Adds an entry to an existing 'HeapGraph'.
 --
@@ -104,8 +105,9 @@ addHeapGraph
     -> HeapGraph a -- ^ Graph to extend
     -> m (HeapGraphIndex, HeapGraph a)
 addHeapGraph deref limit d box hg = do
-    (hg', (NE.head -> i)) <- generalBuildHeapGraph deref limit hg (NE.singleton box)
+    (hg', (NE.head -> i)) <- generalBuildHeapGraph deref hg (NE.singleton box)
     return (i, hg')
+{-# INLINABLE addHeapGraph #-}
 
 -- | Adds the given annotation to the entry at the given index, using the
 -- 'mappend' operation of its 'Monoid' instance.
@@ -114,38 +116,38 @@ annotateHeapGraph f i (HeapGraph rs hg) = HeapGraph rs $ M.update go i hg
   where
     go hge = Just $ hge { hgeData = f (hgeData hge) }
 
+{-# INLINE generalBuildHeapGraph #-}
 generalBuildHeapGraph
     :: (Monad m)
     => DerefFunction m a
-    -> Maybe Int
+    -- -> Maybe Int
     -> HeapGraph a
     -> NonEmpty ClosurePtr
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
-generalBuildHeapGraph _deref (Just limit) _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
-generalBuildHeapGraph deref limit (HeapGraph rs hg) addBoxes = do
+--generalBuildHeapGraph _deref (Just limit) _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
+generalBuildHeapGraph deref (HeapGraph rs hg) addBoxes = do
     -- First collect all boxes from the existing heap graph
-    (is, hg') <- runStateT run hg
-    return (HeapGraph rs hg', is)
+    (is, hg') <- runStateT (mapM add addBoxes) hg
+    return (HeapGraph rs hg', fromJust <$> is)
   where
-    run = do
-        forM addBoxes $ \b -> do
+--        mapM add addBoxes
             -- Cannot fail, as limit is not zero here
-            i <- fromJust <$> (add limit b)
-            return i
+--            i <- add b
+--            return i
 
-    add (Just 0)  _ = return Nothing
-    add n b = do
+--    add (Just 0)  _ = return Nothing
+    add b = do
         -- If the box is in the map, return the index
         hm <- get
         case M.lookup b hm of
-            Just {} -> return $ Just b
+            Just {} -> return (Just b)
             Nothing -> do
                 -- Look up the closure
                 c <- lift $ deref b
-                DCS e c' <- tritraverse pure (traverse (add (subtract 1 <$> n))) (add (subtract 1 <$> n)) c
+                DCS e c' <- tritraverse pure (traverse add) add c
                 -- Add add the resulting closure to the map
                 modify' (M.insert b (HeapGraphEntry b c' True e))
-                return $ Just b
+                return (Just b)
 
 -- | This function updates a heap graph to reflect the current state of
 -- closures on the heap, conforming to the following specification.
