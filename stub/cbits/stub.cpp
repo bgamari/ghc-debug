@@ -266,7 +266,7 @@ static void write_string(Response& resp, const char * s){
 }
 
 
-static void write_block(Response& resp, bdescr * bd){
+static void write_block(Response& resp, StgClosure * bd){
   resp.write(bd);
   uint32_t len_payload = htonl(BLOCK_SIZE);
   resp.write(len_payload);
@@ -275,7 +275,7 @@ static void write_block(Response& resp, bdescr * bd){
 
 static void write_blocks(Response& resp, bdescr * bd){
     for (; bd != NULL; bd = bd->link){
-      write_block(resp, bd);
+      write_block(resp, ((StgClosure *) bd->start));
     }
 }
 
@@ -564,7 +564,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_BLOCK:
         {
         StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-        bdescr * bd = (bdescr *) (((W_) ptr) & ~BLOCK_MASK);
+        StgClosure * bd = (StgClosure *) (((W_) ptr) & ~BLOCK_MASK);
         trace("BD_ADDR: %p, %p", ptr,bd);
         write_block(resp, bd);
         resp.finish(RESP_OKAY);

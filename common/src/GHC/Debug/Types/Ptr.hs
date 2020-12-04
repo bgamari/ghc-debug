@@ -114,6 +114,9 @@ data RawBlock = RawBlock BlockPtr BS.ByteString
 rawBlockSize :: RawBlock -> Int
 rawBlockSize (RawBlock _ bs) = BS.length bs
 
+rawBlockAddr :: RawBlock -> BlockPtr
+rawBlockAddr (RawBlock addr _) = addr
+
 tAG_MASK :: Word64
 tAG_MASK = 0b111
 

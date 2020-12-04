@@ -1,4 +1,11 @@
 let
+  np2 = import ((import <nixpkgs> { }).fetchFromGitHub {
+    owner  = "NixOS";
+    repo   = "nixpkgs";
+    rev =  "51d115ac89d676345b05a0694b23bd2691bf708a";
+    sha256 = "1gfjaa25nq4vprs13h30wasjxh79i67jj28v54lkj4ilqjhgh2rs";
+  }) { overlays = [(sel: sup: { allCabalHashes = newHashes sup; })]; };
+
   np = import ((import <nixpkgs> { }).fetchFromGitHub {
     owner  = "NixOS";
     repo   = "nixpkgs";

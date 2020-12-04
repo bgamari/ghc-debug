@@ -43,12 +43,12 @@ lookupClosure :: ClosurePtr -> BlockCache -> Maybe RawBlock
 lookupClosure (ClosurePtr (fromBE64 -> cp)) (BlockCache b) =
   HM.lookup (cp .&. complement bLOCK_MASK) b
 
-applyBlockMask (ClosurePtr (fromBE64 -> cp)) = ClosurePtr (toBE64 (cp .&. complement bLOCK_MASK))
+_applyBlockMask (ClosurePtr (fromBE64 -> cp)) = ClosurePtr (toBE64 (cp .&. complement bLOCK_MASK))
 
 bcSize :: BlockCache -> Int
 bcSize (BlockCache b) = HM.size b
 
-bcKeys (BlockCache b) = sort $ map (ClosurePtr . toBE64) (HM.keys b)
+_bcKeys (BlockCache b) = sort $ map (ClosurePtr . toBE64) (HM.keys b)
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
@@ -67,18 +67,16 @@ handleBlockReq h ref (LookupClosure cp) = do
   let mrb = lookupClosure cp bc
   rb <- case mrb of
                Nothing -> do
-                 --let cp' = applyBlockMask cp
-                 --error (show ("MISS", cp', filter (<= cp') (bcKeys bc)))
                  rb <- doRequest h (RequestBlock cp)
-                 print ("NEW_BLOCK", bcSize bc, cp)
+                 --print ("MISS", rawBlockAddr rb)
                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
                  return rb
                Just rb -> do
-                 --print ("HIT", cp)
                  return rb
   return (extractFromBlock cp rb)
 handleBlockReq h ref PopulateBlockCache = do
   blocks <- doRequest h RequestAllBlocks
+--  mapM_ (\rb -> print ("NEW", rawBlockAddr rb)) blocks
   print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
   return (length blocks)
