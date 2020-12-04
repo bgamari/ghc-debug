@@ -325,3 +325,5 @@ p24 e = do
     case retainerSize hg of
       rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
 
+p25 e = runTrace e $ precacheBlocks >>= traceWrite
+

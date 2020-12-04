@@ -21,6 +21,7 @@ import Data.IORef
 import System.IO
 import GHC.Debug.Decode
 import Data.Bits
+import Data.List
 
 data BlockCache = BlockCache (HM.HashMap Word64 RawBlock)
 
@@ -41,10 +42,13 @@ addBlocks bc bs = Prelude.foldr addBlock bs bc
 lookupClosure :: ClosurePtr -> BlockCache -> Maybe RawBlock
 lookupClosure (ClosurePtr (fromBE64 -> cp)) (BlockCache b) =
   HM.lookup (cp .&. complement bLOCK_MASK) b
---  snd <$> listToMaybe (toAscList (I.containing b cp))
+
+applyBlockMask (ClosurePtr (fromBE64 -> cp)) = ClosurePtr (toBE64 (cp .&. complement bLOCK_MASK))
 
 bcSize :: BlockCache -> Int
 bcSize (BlockCache b) = HM.size b
+
+bcKeys (BlockCache b) = sort $ map (ClosurePtr . toBE64) (HM.keys b)
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
@@ -63,16 +67,19 @@ handleBlockReq h ref (LookupClosure cp) = do
   let mrb = lookupClosure cp bc
   rb <- case mrb of
                Nothing -> do
+                 --let cp' = applyBlockMask cp
+                 --error (show ("MISS", cp', filter (<= cp') (bcKeys bc)))
                  rb <- doRequest h (RequestBlock cp)
-                 --print ("NEW_BLOCK", bcSize bc, p)
+                 print ("NEW_BLOCK", bcSize bc, cp)
                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
                  return rb
                Just rb -> do
+                 --print ("HIT", cp)
                  return rb
   return (extractFromBlock cp rb)
 handleBlockReq h ref PopulateBlockCache = do
   blocks <- doRequest h RequestAllBlocks
-  --print ("CACHING", length blocks)
+  print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
   return (length blocks)
 

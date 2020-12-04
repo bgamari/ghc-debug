@@ -44,8 +44,11 @@ instance Show InfoTablePtr where
   show (InfoTablePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
 newtype ClosurePtr = ClosurePtr Word64
-                   deriving (Eq, Ord)
+                   deriving (Eq)
                    deriving newtype (Binary, Hashable)
+
+instance Ord ClosurePtr where
+  (ClosurePtr x) `compare` (ClosurePtr y) = fromBE64 x `compare` fromBE64 y
 
 instance Show ClosurePtr where
   show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""

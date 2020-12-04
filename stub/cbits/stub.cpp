@@ -20,6 +20,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#if !defined(THREADED_RTS)
+#error You must use a patched version of cabal-install which includes - https://github.com/haskell/cabal/pull/7183
+#endif
+
 // This used to be 4096 but that was too small
 #define MAX_CMD_SIZE 10000
 
@@ -261,8 +265,23 @@ static void write_string(Response& resp, const char * s){
     }
 }
 
+
+static void write_block(Response& resp, bdescr * bd){
+  resp.write(bd);
+  uint32_t len_payload = htonl(BLOCK_SIZE);
+  resp.write(len_payload);
+  resp.write((const char *) bd, BLOCK_SIZE);
+}
+
+static void write_blocks(Response& resp, bdescr * bd){
+    for (; bd != NULL; bd = bd->link){
+      write_block(resp, bd);
+    }
+}
+
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
+    printf("GENERATIONS %lu", generations[1].n_blocks);
     trace("HANDLE: %d\n", cmd_len);
     Parser p(buf, cmd_len);
     Response resp(sock);
@@ -522,27 +541,20 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
 
         for (n = 0; n < n_capabilities; n ++){
           bd = cap[n]->r.rNursery->blocks;
-          for (; bd != NULL; bd = bd->link){
-            trace("BDN: %p\n", bd);
-            resp.write(bd);
-            uint32_t len_payload = htonl(BLOCK_SIZE);
-            resp.write(len_payload);
-            resp.write((const char *) bd, BLOCK_SIZE);
-          }
+          write_blocks(resp, bd);
 
         }
 
         for (g = 0; g < RtsFlags.GcFlags.generations; g++) {
           gen = &generations[g];
-          bd = gen->blocks;
-          trace("BD_START %p", bd);
-          for (; bd != NULL; bd = bd->link){
-            trace("BD: %p\n", bd);
-            resp.write(bd);
-            uint32_t len_payload = htonl(BLOCK_SIZE);
-            resp.write(len_payload);
-            resp.write((const char *) bd, BLOCK_SIZE);
-          }
+          printf("GEN %d - %lu\n", g, generations[g].n_blocks);
+          printf("GEN %d - %lu\n", g, generations[g].n_old_blocks);
+          bd = generations[g].blocks;
+          printf("BD_START %p\n", bd);
+          printf("BD_START_OLD %p\n", generations[g].old_blocks);
+          write_blocks(resp,generations[g].blocks);
+          write_blocks(resp,generations[g].large_objects);
+          write_blocks(resp,generations[g].compact_objects);
 
         }
         resp.finish(RESP_OKAY);
@@ -554,11 +566,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
         bdescr * bd = (bdescr *) (((W_) ptr) & ~BLOCK_MASK);
         trace("BD_ADDR: %p, %p", ptr,bd);
-        resp.write(bd);
-        uint32_t len_payload = htonl(BLOCK_SIZE);
-        resp.write(len_payload);
-        resp.write((const char *) bd, BLOCK_SIZE);
-
+        write_block(resp, bd);
         resp.finish(RESP_OKAY);
         break;
         }
