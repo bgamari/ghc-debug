@@ -6,6 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Main where
 import Control.Applicative
@@ -216,8 +217,8 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
       where
 
       mkDominatorIOTree = forkIO $ do
-        analysis <- runAnalysis debuggee'
-        rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "") =<< GD.dominatorRootClosures debuggee' analysis
+        !analysis <- runAnalysis debuggee'
+        !rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "") =<< GD.dominatorRootClosures debuggee' analysis
         let ioTree = mkIOTree (Just analysis) rootClosures'
                       (\dbg c -> fmap ("",) <$> closureDominatees debuggee' analysis c)
                       (List.sortOn (Ord.Down . _retainerSize))

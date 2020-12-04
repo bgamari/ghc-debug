@@ -7,6 +7,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RecordWildCards #-}
 -- | This module provides a simple implementation, which can be a lot faster if
 -- network latency is not an issue.
 module GHC.Debug.Client.Monad.Simple
@@ -92,6 +93,10 @@ mkEnv exeName _sockName h = do
   return $ Debuggee exeName mcount bc rc mhdl
 
 simpleReq :: Request resp -> DebugM resp
+simpleReq req | isWriteRequest req = ask >>= \Debuggee{..} -> liftIO $ do
+  atomicModifyIORef' debuggeeBlockCache (const (emptyBlockCache, ()))
+  modifyMVar_ debuggeeRequestCache (return . const emptyRequestCache)
+  doRequest debuggeeHandle req
 simpleReq req = do
   rc_var <- asks debuggeeRequestCache
   rc <- liftIO $ readMVar rc_var
