@@ -51,8 +51,8 @@ type StackHI = GenStack (Maybe HeapGraphIndex)
 -- as the internal representation may change. Nevertheless, we export it here:
 -- Sometimes the user knows better what he needs than we do.
 data HeapGraph a = HeapGraph
-                      { roots :: NE.NonEmpty ClosurePtr
-                      , graph :: (M.HashMap ClosurePtr (HeapGraphEntry a)) }
+                      { roots :: !(NE.NonEmpty ClosurePtr)
+                      , graph :: !(IM.IntMap (HeapGraphEntry a)) }
     deriving (Show, Foldable, Traversable, Functor)
 
 traverseHeapGraph :: Applicative m =>
@@ -63,7 +63,18 @@ traverseHeapGraph f (HeapGraph r im) = HeapGraph r <$> traverse f im
 
 
 lookupHeapGraph :: HeapGraphIndex -> HeapGraph a -> Maybe (HeapGraphEntry a)
-lookupHeapGraph i (HeapGraph _r m) = M.lookup i m
+lookupHeapGraph (ClosurePtr i) (HeapGraph _r m) = IM.lookup (fromIntegral i) m
+
+insertHeapGraph :: HeapGraphIndex -> HeapGraphEntry a -> HeapGraph a -> HeapGraph a
+insertHeapGraph (ClosurePtr i) a (HeapGraph r m) = HeapGraph r (IM.insert (fromIntegral i) a m)
+
+updateHeapGraph :: (HeapGraphEntry a -> Maybe (HeapGraphEntry a))
+                -> HeapGraphIndex
+                -> HeapGraph a
+                -> HeapGraph a
+updateHeapGraph f (ClosurePtr i) (HeapGraph r m) = HeapGraph r (IM.update f (fromIntegral i) m)
+
+heapGraphSize (HeapGraph _ g) = IM.size g
 
 -- | Creates a 'HeapGraph' for the value in the box, but not recursing further
 -- than the given limit. The initial value has index 'heapGraphRoot'.
@@ -90,7 +101,7 @@ multiBuildHeapGraph
     -> Maybe Int -- ^ Search limit
     -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
-multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref (HeapGraph rs M.empty) rs
+multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref (HeapGraph rs IM.empty) rs
 {-# INLINE multiBuildHeapGraph #-}
 
 -- | Adds an entry to an existing 'HeapGraph'.
@@ -112,7 +123,7 @@ addHeapGraph deref limit d box hg = do
 -- | Adds the given annotation to the entry at the given index, using the
 -- 'mappend' operation of its 'Monoid' instance.
 annotateHeapGraph ::  (a -> a) -> HeapGraphIndex -> HeapGraph a -> HeapGraph a
-annotateHeapGraph f i (HeapGraph rs hg) = HeapGraph rs $ M.update go i hg
+annotateHeapGraph f i hg = updateHeapGraph go i hg
   where
     go hge = Just $ hge { hgeData = f (hgeData hge) }
 
@@ -125,10 +136,10 @@ generalBuildHeapGraph
     -> NonEmpty ClosurePtr
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
 --generalBuildHeapGraph _deref (Just limit) _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
-generalBuildHeapGraph deref (HeapGraph rs hg) addBoxes = do
+generalBuildHeapGraph deref hg addBoxes = do
     -- First collect all boxes from the existing heap graph
     (is, hg') <- runStateT (mapM add addBoxes) hg
-    return (HeapGraph rs hg', fromJust <$> is)
+    return (hg', fromJust <$> is)
   where
 --        mapM add addBoxes
             -- Cannot fail, as limit is not zero here
@@ -136,37 +147,18 @@ generalBuildHeapGraph deref (HeapGraph rs hg) addBoxes = do
 --            return i
 
 --    add (Just 0)  _ = return Nothing
-    add b = do
+    add cp = do
         -- If the box is in the map, return the index
         hm <- get
-        case M.lookup b hm of
-            Just {} -> return (Just b)
+        case lookupHeapGraph cp hg of
+            Just {} -> return (Just cp)
             Nothing -> do
                 -- Look up the closure
-                c <- lift $ deref b
+                c <- lift $ deref cp
                 DCS e c' <- tritraverse pure (traverse add) add c
                 -- Add add the resulting closure to the map
-                modify' (M.insert b (HeapGraphEntry b c' True e))
-                return (Just b)
-
--- | This function updates a heap graph to reflect the current state of
--- closures on the heap, conforming to the following specification.
---
---  * Every entry whose value has been garbage collected by now is marked as
---    dead by setting 'hgeLive' to @False@
---  * Every entry whose value is still live gets the 'hgeClosure' field updated
---    and newly referenced closures are, up to the given depth, added to the graph.
---  * A map mapping previous indicies to the corresponding new indicies is returned as well.
---  * The closure at 'heapGraphRoot' stays at 'heapGraphRoot'
-updateHeapGraph :: (Monad m) => DerefFunction m a-> Maybe Int -> HeapGraph a -> m (HeapGraph a, HeapGraphIndex -> HeapGraphIndex)
-updateHeapGraph deref limit (HeapGraph rs startHG) = do
-    (hg', indexMap) <- runWriterT $ foldM go (HeapGraph rs M.empty) (M.toList startHG)
-    return (hg', (M.!) indexMap)
-  where
-    go hg (i, hge) = do
-        (j, hg') <- liftH $ addHeapGraph deref limit (hgeData hge) (hgeClosurePtr hge) hg
-        tell (M.singleton i j)
-        return hg'
+                modify' (insertHeapGraph cp (HeapGraphEntry cp c' True e))
+                return (Just cp)
 
 liftH :: (Monad m, Monoid w) => m a -> WriterT w m a
 liftH = lift
@@ -217,11 +209,11 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
     ppRef _ Nothing = "..."
     ppRef prec (Just i) | i `elem` bindings = ppVar i
                         | otherwise = ppEntry prec (iToE i)
-    iToE i = m M.! i
+    iToE (ClosurePtr i) = m IM.! (fromIntegral i)
 
-    iToUnboundE i
-        | i `elem` bindings = Nothing
-        | otherwise         = M.lookup i m
+    iToUnboundE cp@(ClosurePtr i)
+        | cp `elem` bindings = Nothing
+        | otherwise         = IM.lookup (fromIntegral i) m
 
     isList :: HeapGraphEntry a -> Maybe [Maybe HeapGraphIndex]
     isList hge
@@ -248,7 +240,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
 -- second parameter adds external references, commonly @[heapGraphRoot]@.
 boundMultipleTimes :: HeapGraph a -> [HeapGraphIndex] -> [HeapGraphIndex]
 boundMultipleTimes (HeapGraph rs m) roots = map head $ filter (not.null) $ map tail $ group $ sort $
-     roots ++ concatMap (catMaybes . allClosures . hgeClosure) (M.elems m)
+     roots ++ concatMap (catMaybes . allClosures . hgeClosure) (IM.elems m)
 
 -- Utilities
 
@@ -373,8 +365,8 @@ convertToDom :: HeapGraph a -> DO.Rooted
 convertToDom  (HeapGraph roots is) = (0, graph)
   where
     rootNodes = IS.fromList (map closurePtrToInt (NE.toList roots))
-    graph = IM.insert 0 rootNodes (M.foldlWithKey' collectNodes IM.empty is)
-    collectNodes newMap (ClosurePtr k) h =  IM.insert (fromIntegral k) (IS.fromList (map closurePtrToInt (catMaybes (allClosures (hgeClosure h))))) newMap
+    graph = IM.insert 0 rootNodes (IM.foldlWithKey' collectNodes IM.empty is)
+    collectNodes newMap k h =  IM.insert k (IS.fromList (map closurePtrToInt (catMaybes (allClosures (hgeClosure h))))) newMap
 
 computeDominators :: HeapGraph a -> [Tree.Tree (HeapGraphEntry a)]
 computeDominators hg = map (fmap (fromJust . flip lookupHeapGraph hg . intToClosurePtr)) entries
@@ -401,6 +393,6 @@ bottomUpSize (Tree.Node rl sf) =
       rl' = rl { hgeData = (s', inclusive_size) }
   in Tree.Node rl' ts
 
-convertToHeapGraph ::  Tree.Tree (HeapGraphEntry a) -> M.HashMap ClosurePtr (HeapGraphEntry a)
-convertToHeapGraph t = M.fromList ([(hgeClosurePtr c, c) | c <- F.toList t ])
+convertToHeapGraph ::  Tree.Tree (HeapGraphEntry a) -> IM.IntMap (HeapGraphEntry a)
+convertToHeapGraph t = IM.fromList ([(fromIntegral cp, c) | c <- F.toList t, let ClosurePtr cp = hgeClosurePtr c ])
 

@@ -37,7 +37,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p24 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p26 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -293,10 +293,12 @@ p22 e = do
   runTrace e $ do
     precacheBlocks
     rs <- request RequestRoots
-    forM_ rs $ \r -> do
+    s <- forM rs $ \r -> do
       traceWrite r
       c <- fullTraversalViaBlocks r
       traceWrite ("DONE", countNodes c)
+      return $ countNodes c
+    traceWrite (sum s)
 
 p23 e = do
   run e $ request RequestPause
@@ -326,4 +328,15 @@ p24 e = do
       rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
 
 p25 e = runTrace e $ precacheBlocks >>= traceWrite
+
+p26 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestSavedObjects
+    (hg, rs') <- case rs of
+      [] -> error "Empty roots"
+      (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+    traceWrite (heapGraphSize hg)
+
 
