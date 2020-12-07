@@ -140,16 +140,10 @@ generalBuildHeapGraph deref hg addBoxes = do
     (is, hg') <- runStateT (mapM add addBoxes) hg
     return (hg', fromJust <$> is)
   where
---        mapM add addBoxes
-            -- Cannot fail, as limit is not zero here
---            i <- add b
---            return i
-
---    add (Just 0)  _ = return Nothing
     add cp = do
         -- If the box is in the map, return the index
         hm <- get
-        case lookupHeapGraph cp hg of
+        case lookupHeapGraph cp hm of
             Just {} -> return (Just cp)
             Nothing -> do
                 -- Look up the closure
