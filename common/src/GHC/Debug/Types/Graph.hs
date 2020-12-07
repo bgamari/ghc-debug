@@ -40,7 +40,6 @@ import Debug.Trace
 data HeapGraphEntry a = HeapGraphEntry {
         hgeClosurePtr :: ClosurePtr,
         hgeClosure :: DebugClosure ConstrDesc StackHI (Maybe HeapGraphIndex),
-        hgeLive :: Bool,
         hgeData :: a}
     deriving (Show, Functor, Foldable, Traversable)
 type HeapGraphIndex = ClosurePtr
@@ -157,11 +156,8 @@ generalBuildHeapGraph deref hg addBoxes = do
                 c <- lift $ deref cp
                 DCS e c' <- tritraverse pure (traverse add) add c
                 -- Add add the resulting closure to the map
-                modify' (insertHeapGraph cp (HeapGraphEntry cp c' True e))
+                modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
                 return (Just cp)
-
-liftH :: (Monad m, Monoid w) => m a -> WriterT w m a
-liftH = lift
 
 -- | Pretty-prints a HeapGraph. The resulting string contains newlines. Example
 -- for @let s = \"Ki\" in (s, s, cycle \"Ho\")@:
