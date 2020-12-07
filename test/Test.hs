@@ -270,7 +270,7 @@ p19 e = do
 annotateWithSource :: HeapGraph a -> DebugM (HeapGraph (Maybe [String]))
 annotateWithSource hg = traverseHeapGraph go2 hg
   where
-    go2 (HeapGraphEntry a1 a2 a3 a4) = HeapGraphEntry a1 a2 a3 <$> go a2
+    go2 (HeapGraphEntry a1 a2 _) = HeapGraphEntry a1 a2 <$> go a2
     go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = do
       Just <$> request (RequestSourceInfo i)
     go _ = return Nothing
