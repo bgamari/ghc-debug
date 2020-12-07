@@ -9,6 +9,8 @@ module IOTree
   ( IOTree
   , IOTreePath
   , ioTree
+  , setIOTreeRoots
+  , getIOTreeRoots
   , renderIOTree
   , handleIOTreeEvent
   , ioTreeSelection
@@ -41,6 +43,7 @@ import Brick
 data IOTree node name = IOTree
     { _name :: name
     , _roots :: [IOTreeNode node name]
+    , _getChildren :: (node -> IO [node])
     , _renderRow :: Bool         -- Is row selected
                  -> Int          -- Tree depth
                  -> node         -- the node to render
@@ -56,6 +59,13 @@ data IOTree node name = IOTree
     -- ^ Indices along the path to the current selection. Empty list means no
     -- selection.
     }
+
+setIOTreeRoots :: [node] -> IOTree node name ->  IOTree node name
+setIOTreeRoots newRoots iot = iot { _roots = (nodeToTreeNode (_getChildren iot) <$> newRoots) }
+
+getIOTreeRoots :: IOTree node name -> [node]
+getIOTreeRoots iot = map _node (_roots iot)
+
 
 
 type IOTreePath node = [(Int, node)]
@@ -91,7 +101,8 @@ ioTree
 ioTree name rootNodes getChildrenIO renderRow renderFirstChild
   = IOTree
     { _name = name
-    , _roots = nodeToTreeNode <$> rootNodes
+    , _roots = nodeToTreeNode getChildrenIO <$> rootNodes
+    , _getChildren = getChildrenIO
     , _renderRow = renderRow
     , _renderFirstChild = renderFirstChild
     , _selection = []
@@ -99,11 +110,12 @@ ioTree name rootNodes getChildrenIO renderRow renderFirstChild
     -- that path with IO
     }
   where
-  nodeToTreeNode :: node -> IOTreeNode node name
-  nodeToTreeNode n = IOTreeNode n (Left (fmap nodeToTreeNode <$> getChildrenIO n))
+
+nodeToTreeNode :: (node -> IO [node]) -> node -> IOTreeNode node name
+nodeToTreeNode k n = IOTreeNode n (Left (fmap (nodeToTreeNode k) <$> k n))
 
 renderIOTree :: (Show name, Ord name) => IOTree node name -> Widget name
-renderIOTree (IOTree widgetName rs renderRow renderFirstChild pathTop)
+renderIOTree (IOTree widgetName rs _ renderRow renderFirstChild pathTop)
   = viewport widgetName Both $ vBox $ renderTree 0 0 rs pathTop
   where
   -- Render the tree of nodes

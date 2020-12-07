@@ -16,6 +16,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:     GHC.Debug.Client,
                        GHC.Debug.Client.Retainers,
+                       GHC.Debug.Client.Search,
                        GHC.Debug.Client.Monad,
                        GHC.Debug.Client.BlockCache,
                        GHC.Debug.Client.RequestCache,

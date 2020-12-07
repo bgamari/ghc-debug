@@ -345,6 +345,8 @@ ppClosure herald showBox prec c = case c of
     shorten xs = if length xs > 20 then take 20 xs ++ ["(and more)"] else xs
 
 
+-- Dominators
+
 closurePtrToInt :: ClosurePtr -> Int
 closurePtrToInt (ClosurePtr p) = fromIntegral p
 
@@ -385,4 +387,24 @@ bottomUpSize (Tree.Node rl sf) =
 
 convertToHeapGraph ::  Tree.Tree (HeapGraphEntry a) -> IM.IntMap (HeapGraphEntry a)
 convertToHeapGraph t = IM.fromList ([(fromIntegral cp, c) | c <- F.toList t, let ClosurePtr cp = hgeClosurePtr c ])
+
+
+-- Reverse Edges
+
+newtype ReverseGraph = ReverseGraph (IM.IntMap IS.IntSet)
+
+reverseEdges :: ClosurePtr -> ReverseGraph -> Maybe [ClosurePtr]
+reverseEdges cp (ReverseGraph rg) =
+  map intToClosurePtr . IS.toList <$> IM.lookup (closurePtrToInt cp) rg
+
+mkReverseGraph :: HeapGraph a -> ReverseGraph
+mkReverseGraph (HeapGraph _ hg) = ReverseGraph graph
+  where
+    graph = IM.foldlWithKey' collectNodes IM.empty hg
+    collectNodes newMap k h =
+      let bs = allClosures (hgeClosure h)
+      in foldl' (\m ma ->
+                    case ma of
+                      Nothing -> m
+                      Just a -> IM.insertWith IS.union (closurePtrToInt a) (IS.singleton k) m) newMap bs
 

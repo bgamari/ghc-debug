@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Model
   ( module Model
@@ -67,8 +68,11 @@ data MajorState
     , _mode     :: ConnectedMode
     }
 
-data ClosureDetails = ClosureDetails
-  { _closure :: Closure
+forgetClosure :: DebugClosure ConstrDesc s c -> DebugClosure ConstrDesc () ()
+forgetClosure = trimap id (const ()) (const ())
+
+data ClosureDetails s c = ClosureDetails
+  { _closure :: DebugClosure ConstrDesc s c
   , _labelInParent :: Text -- ^ A label describing the relationship to the parent
   -- Stuff  that requires IO to calculate
   , _pretty :: Text
@@ -79,7 +83,7 @@ data ClosureDetails = ClosureDetails
   , _retainerSize :: Maybe RetainerSize
   }
 
-data TreeMode = Dominator | SavedAndGCRoots
+data TreeMode = Dominator | SavedAndGCRoots | Reverse
 
 data ConnectedMode
   -- | Debuggee is running
@@ -89,19 +93,26 @@ data ConnectedMode
     { _treeMode :: TreeMode
     , _treeDominator :: Maybe DominatorAnalysis
     -- ^ Tree corresponding to Dominator mode
-    , _treeSavedAndGCRoots :: IOTree ClosureDetails Name
+    , _treeSavedAndGCRoots :: IOTree (ClosureDetails StackCont ClosurePtr) Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
+    , _treeReverse :: Maybe ReverseAnalysis
+    -- ^ Tree corresponding to Dominator mode
     }
 
-data DominatorAnalysis = DominatorAnalysis { _getDominatorAnalysis :: Analysis
-                                           , _getDominatorTree :: IOTree ClosureDetails Name
-                                           }
+data DominatorAnalysis =
+  DominatorAnalysis { _getDominatorAnalysis :: Analysis
+                    , _getDominatorTree :: IOTree (ClosureDetails StackCont ClosurePtr) Name
+                    }
 
-pauseModeTree :: ConnectedMode -> IOTree ClosureDetails Name
-pauseModeTree RunningMode = error "Not Paused"
-pauseModeTree (PausedMode mode dom roots) = case mode of
-  Dominator -> maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
-  SavedAndGCRoots -> roots
+data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails StackHI (Maybe HeapGraphIndex)) Name
+                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure ConstrDesc StackHI (Maybe HeapGraphIndex)) }
+
+pauseModeTree :: (forall s c . IOTree (ClosureDetails s c) Name -> r) -> ConnectedMode -> r
+pauseModeTree _ RunningMode = error "Not Paused"
+pauseModeTree k (PausedMode mode dom roots reverseA) = case mode of
+  Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
+  SavedAndGCRoots -> k roots
+  Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
 
 makeLenses ''AppState
 makeLenses ''MajorState
@@ -109,3 +120,4 @@ makeLenses ''ClosureDetails
 makeLenses ''ConnectedMode
 makeLenses ''SocketInfo
 makeLenses ''DominatorAnalysis
+makeLenses ''ReverseAnalysis

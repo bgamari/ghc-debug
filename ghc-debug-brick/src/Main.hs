@@ -10,7 +10,7 @@
 
 module Main where
 import Control.Applicative
-import Control.Monad (forever)
+import Control.Monad (forever, (<=<))
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
@@ -18,13 +18,13 @@ import Data.Maybe (fromMaybe, fromJust)
 import Data.Ord (comparing)
 import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
-import Data.Text
 import Graphics.Vty(defaultConfig, mkVty, defAttr)
 import qualified Graphics.Vty.Input.Events as Vty
 import Graphics.Vty.Input.Events (Key(..))
 import Lens.Micro.Platform
 import System.Directory
 import System.FilePath
+import Data.Text (Text, pack)
 import qualified Data.Text as T
 
 import IOTree
@@ -40,6 +40,7 @@ import Model
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
   | DominatorTreeReady DominatorAnalysis -- A signal when the dominator tree has been computed
+  | ReverseAnalysisReady ReverseAnalysis
 
 myAppDraw :: AppState -> [Widget Name]
 myAppDraw (AppState majorState') =
@@ -68,8 +69,7 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      pm@(PausedMode treeMode' dtree _) -> let
-        tree' = pauseModeTree pm
+      pm@(PausedMode treeMode' dtree _ reverseTree) -> let
         in mainBorder "ghc-debug - Paused" $ vBox
           [ hBox
             [ border $ vBox
@@ -78,23 +78,26 @@ myAppDraw (AppState majorState') =
               , txt "Child           (->)"
               , txt "Saved/GC Roots  (F1)"
               ] ++
-              [ txt "Dominator Tree  (F2)" | Just {} <- [dtree] ] )
+              [ txt "Dominator Tree  (F2)" | Just {} <- [dtree] ]
+                ++
+              [ txt "Reverse Analysis (F3)" | Just {} <- [reverseTree] ] )
             , -- Current closure details
-              borderWithLabel (txt "Closure Details") $ renderClosureDetails (ioTreeSelection tree')
+              borderWithLabel (txt "Closure Details") $ pauseModeTree (renderClosureDetails . ioTreeSelection) pm
             ]
           , -- Tree
             borderWithLabel
               (txt $ case treeMode' of
                 Dominator -> "Dominator Tree"
                 SavedAndGCRoots -> "Root Closures"
+                Reverse -> "Reverse Edges"
               )
-              (renderIOTree tree')
+              (pauseModeTree renderIOTree pm)
           ]
   ]
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
 
-  renderClosureDetails :: Maybe ClosureDetails -> Widget Name
+  renderClosureDetails :: Maybe (ClosureDetails s c) -> Widget Name
   renderClosureDetails cd = vLimit 9 $ vBox $
       [ txt "SourceLocation   "
             <+> txt (fromMaybe "" (_sourceLocation =<< cd))
@@ -167,13 +170,14 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          domTree <- liftIO $ mkDominatorIOTree
+          liftIO $ initialiseViews
           rootsTree <- mkSavedAndGCRootsIOTree Nothing
-          continue (appState & majorState . mode .~ PausedMode SavedAndGCRoots Nothing rootsTree)
+          continue (appState & majorState . mode .~
+                      PausedMode SavedAndGCRoots Nothing rootsTree Nothing)
 
         _ -> continue appState
 
-      PausedMode treeMode' domTree rootsTree -> case brickEvent of
+      PausedMode treeMode' domTree rootsTree reverseA -> case brickEvent of
 
         -- Resume the debuggee
         VtyEvent (Vty.EvKey (KChar 'r') _) -> do
@@ -193,16 +197,35 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             . mode
             . treeMode
             .~ SavedAndGCRoots
+        VtyEvent (Vty.EvKey (KFun 2) _)
+          -- Only switch if the dominator view is ready
+          | Just {} <- domTree -> continue $ appState
+            & majorState
+            . mode
+            . treeMode
+            .~ Dominator
+        VtyEvent (Vty.EvKey (KFun 3) _)
+          -- Only switch if the reverse view is ready
+          | Just ra <- reverseA -> do
+            -- Get roots from rootTree and use those for the reverse view
+            let rs = getIOTreeRoots rootsTree
+                convert cd = cd & closure %~ do_one
+                do_one cd  = fromJust (view convertPtr ra $ _closurePtr cd)
+                rs' = map convert rs
+            continue $ appState & majorState . mode . treeMode .~ Reverse
+                                & majorState . mode . treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
 
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
           Dominator -> do
             newTree <- traverseOf (_Just . getDominatorTree) (handleIOTreeEvent event) domTree
-
             continue (appState & majorState . mode . treeDominator .~ newTree)
           SavedAndGCRoots -> do
             newTree <- handleIOTreeEvent event rootsTree
             continue (appState & majorState . mode . treeSavedAndGCRoots .~ newTree)
+          Reverse -> do
+            newTree <- traverseOf (_Just . reverseIOTree) (handleIOTreeEvent event) reverseA
+            continue (appState & majorState . mode . treeReverse .~ newTree)
 
           -- Once the computation is finished, store the result of the
           -- analysis in the state.
@@ -210,26 +233,47 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           -- TODO: This should retain the state of the rootsTree, whilst
           -- adding the new information.
           rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
-          continue (appState & majorState . mode .~ PausedMode SavedAndGCRoots (Just dt) rootsTree)
+          continue (appState & majorState . mode . treeDominator .~ Just dt)
+
+        AppEvent (ReverseAnalysisReady ra) -> do
+          continue (appState & majorState . mode . treeReverse .~ Just ra)
 
         _ -> continue appState
 
       where
 
-      mkDominatorIOTree = forkIO $ do
-        !analysis <- runAnalysis debuggee'
-        !rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "") =<< GD.dominatorRootClosures debuggee' analysis
+      initialiseViews = forkIO $ do
+        !hg <- initialTraversal debuggee'
+        mkDominatorTreeIO hg
+        mkReversalTreeIO hg
+        return ()
+
+      mkDominatorTreeIO hg = forkIO $ do
+        !analysis <- runAnalysis debuggee' hg
+        !rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
         let ioTree = mkIOTree (Just analysis) rootClosures'
-                      (\dbg c -> fmap ("",) <$> closureDominatees debuggee' analysis c)
+                      (getChildren analysis)
+
                       (List.sortOn (Ord.Down . _retainerSize))
         writeBChan eventChan (DominatorTreeReady (DominatorAnalysis analysis ioTree))
+        where
+          getChildren analysis dbg c = do
+            cs <- closureDominatees debuggee' analysis c
+            fmap (("",)) <$> mapM (fillConstrDesc debuggee') cs
 
-      getClosureDetails :: Maybe Analysis -> Text -> Closure -> IO ClosureDetails
+
+      mkReversalTreeIO hg = forkIO $ do
+        let !revg = mkReverseGraph hg
+        let ioTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
+        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis ioTree (lookupHeapGraph hg)))
+
+      getClosureDetails :: Show c => Maybe Analysis -> Text -> DebugClosure ConstrDesc s c
+                                                  -> IO (ClosureDetails s c)
       getClosureDetails manalysis label c = do
         let excSize' = closureExclusiveSize c
             retSize' = closureRetainerSize <$> manalysis <*> pure c
         sourceLoc <- closureSourceLocation debuggee' c
-        pretty' <- closurePretty debuggee' c
+        let pretty' = closurePretty c
         return ClosureDetails
           { _closure = c
           , _pretty = pack pretty'
@@ -242,11 +286,17 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           }
 
       mkSavedAndGCRootsIOTree manalysis = do
-        rootClosures' <- liftIO $ mapM (getClosureDetails manalysis "GC Root") =<< GD.rootClosures debuggee'
-        savedClosures' <- liftIO $ mapM (getClosureDetails manalysis "Saved Object") =<< GD.savedClosures debuggee'
-        return $ mkIOTree manalysis (savedClosures' ++ rootClosures') closureReferences id
+        rootClosures' <- liftIO $ mapM (getClosureDetails manalysis "GC Root" <=< fillConstrDesc debuggee') =<< GD.rootClosures debuggee'
+        savedClosures' <-
+          liftIO $ mapM (getClosureDetails manalysis "Saved Object" <=< fillConstrDesc debuggee') =<< GD.savedClosures debuggee'
+        return $ mkIOTree manalysis (savedClosures' ++ rootClosures') getChildren id
+        where
+          getChildren d c = do
+            children <- closureReferences d c
+            mapM (mapM (fillConstrDesc d)) children
 
-      mkIOTree :: Maybe Analysis -> [ClosureDetails] -> (Debuggee -> Closure -> IO [(String, Closure)]) -> ([ClosureDetails] -> [ClosureDetails]) -> IOTree ClosureDetails Name
+
+      mkIOTree :: Show c => Maybe Analysis -> [ClosureDetails s c] -> (Debuggee -> DebugClosure ConstrDesc s c -> IO [(String, DebugClosure ConstrDesc s c)]) -> ([ClosureDetails s c] -> [ClosureDetails s c]) -> IOTree (ClosureDetails s c) Name
       mkIOTree manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
         (\c -> do

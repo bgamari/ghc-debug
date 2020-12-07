@@ -33,6 +33,7 @@ module GHC.Debug.Client
   , closureSourceLocation
   , closureReferences
   , closurePretty
+  , fillConstrDesc
 
     -- * Dominator Tree
   , dominatorRootClosures
@@ -41,6 +42,17 @@ module GHC.Debug.Client
   , Analysis(..)
   , Size(..)
   , RetainerSize(..)
+  , initialTraversal
+  , HG.mkReverseGraph
+  , reverseClosureReferences
+  , ConstrDesc(..)
+  , ConstrDescCont(..)
+  , StackCont
+  , ClosurePtr
+  , HG.StackHI
+  , HG.HeapGraphIndex
+  , trimap
+  , lookupHeapGraph
     --
     -- $dominatorTree
 
@@ -74,14 +86,15 @@ import           Control.Monad (forM)
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Graph as G
 import           Data.IORef
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified GHC.Debug.Types as GD
-import           GHC.Debug.Types hiding (Closure, Stack)
+import           GHC.Debug.Types hiding (Closure, Stack, DebugClosure)
 import           GHC.Debug.Decode
 import           GHC.Debug.Decode.Stack
 import           GHC.Debug.Convention (socketDirectory)
 import           GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
 import qualified GHC.Debug.Client.Monad as GD
+import qualified GHC.Debug.Types.Closures as GD
 import           GHC.Debug.Client.BlockCache
 import qualified GHC.Debug.Types.Graph as HG
 
@@ -103,8 +116,8 @@ data Analysis = Analysis
 mkDebuggee :: DebugEnv DebugM -> Debuggee
 mkDebuggee e = Debuggee e
 
-runAnalysis :: Debuggee -> IO Analysis
-runAnalysis (Debuggee e) = run e $ do
+initialTraversal :: Debuggee -> IO (HG.HeapGraph Size)
+initialTraversal (Debuggee e) = run e $ do
     -- Calculate the dominator tree with retainer sizes
     -- TODO perhaps this conversion to a graph can be done in GHC.Debug.Types.Graph
     precacheBlocks
@@ -115,6 +128,10 @@ runAnalysis (Debuggee e) = run e $ do
     (hg, _) <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+    return hg
+
+runAnalysis :: Debuggee -> HG.HeapGraph Size -> IO Analysis
+runAnalysis (Debuggee e) hg = run e $ do
     let drs :: [G.Tree (ClosurePtr, (Size, RetainerSize))]
         drs = fmap (\ent -> (HG.hgeClosurePtr ent, HG.hgeData ent)) <$> HG.retainerSize hg
 
@@ -222,30 +239,36 @@ savedClosures (Debuggee e) = run e $ do
 -- requestClosures :: Debuggee -> [ClosurePtr] -> IO [RawClosure]
 -- requestClosures (Debuggee e _) = run e $ request RequestClosures
 
-data Closure
+type Closure = DebugClosure ConstrDescCont StackCont ClosurePtr
+
+data DebugClosure cd s c
   = Closure
     { _closurePtr :: ClosurePtr
-    , _closureSized :: SizedClosure
+    , _closureSized :: DebugClosureWithSize cd s c
     }
   | Stack
     { _stackPtr :: StackCont
-    , _stackStack :: GD.Stack
+    , _stackStack :: GD.GenStack c
     }
 
-closureShowAddress :: Closure -> String
+instance Tritraversable DebugClosure where
+  tritraverse f g h (Closure cp c) = Closure cp <$> tritraverse f g h c
+  tritraverse _ _ h (Stack sp s) = Stack sp <$> traverse h s
+
+closureShowAddress :: DebugClosure cd s c -> String
 closureShowAddress (Closure c _) = show c
 closureShowAddress (Stack   s _) = show s
 
 -- | Get the exclusive size (not including any referenced closures) of a closure.
-closureExclusiveSize :: Closure -> Size
+closureExclusiveSize :: DebugClosure cd s c -> Size
 closureExclusiveSize (Stack{}) = Size (-1)
 closureExclusiveSize (Closure _ c) = (GD.dcSize c)
 
 -- | Get the retained size (including all dominated closures) of a closure.
-closureRetainerSize :: Analysis -> Closure -> RetainerSize
+closureRetainerSize :: Analysis -> DebugClosure cd s c -> RetainerSize
 closureRetainerSize analysis c = snd (closureExcAndRetainerSizes analysis c)
 
-closureExcAndRetainerSizes :: Analysis -> Closure -> (Size, RetainerSize)
+closureExcAndRetainerSizes :: Analysis -> DebugClosure cd s c -> (Size, RetainerSize)
 closureExcAndRetainerSizes _ Stack{} = (Size (-1), RetainerSize (-1))
   -- ^ TODO How should we handle stack size? only used space on the stack?
   -- Include underflow frames? Return Maybe?
@@ -253,7 +276,7 @@ closureExcAndRetainerSizes analysis (Closure cPtr _) =
   let getSizes = analysisSizes analysis
   in getSizes cPtr
 
-closureSourceLocation :: Debuggee -> Closure -> IO [String]
+closureSourceLocation :: Debuggee -> DebugClosure cd s c -> IO [String]
 closureSourceLocation _ (Stack _ _) = return []
 closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
   case lookupStgInfoTableWithPtr (noSize c) of
@@ -261,7 +284,7 @@ closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
     Just infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
 
 -- | Get the directly referenced closures (with a label) of a closure.
-closureReferences :: Debuggee -> Closure -> IO [(String, Closure)]
+closureReferences :: Debuggee -> DebugClosure ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
 closureReferences (Debuggee e) (Stack _ stack) = run e $ do
   let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
                      , ptr
@@ -283,18 +306,45 @@ closureReferences (Debuggee e) (Closure _ closure) = run e $ do
       refStack' <- dereferenceStack sPtr
       return (label, Stack sPtr refStack')
 
+reverseClosureReferences :: HG.HeapGraph Size
+                         -> HG.ReverseGraph
+                         -> Debuggee
+                         -> DebugClosure ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex)
+                         -> IO [(String, DebugClosure
+                                            ConstrDesc HG.StackHI
+                                            (Maybe HG.HeapGraphIndex))]
+reverseClosureReferences hg rm _ c =
+  case c of
+    Stack {} -> error "Nope - Stack"
+    Closure cp _ -> case (HG.reverseEdges cp rm) of
+                      Nothing -> return []
+                      Just es ->
+                        let revs = mapMaybe (flip HG.lookupHeapGraph hg) es
+                        in return [(show n, Closure (HG.hgeClosurePtr hge)
+                                               (DCS (HG.hgeData hge) (HG.hgeClosure hge) ))
+                                    | (n, hge) <- zip [0..] revs]
+
+lookupHeapGraph :: HG.HeapGraph Size -> ClosurePtr -> Maybe (DebugClosure ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex))
+lookupHeapGraph hg cp =
+  case HG.lookupHeapGraph cp hg of
+    Just (HG.HeapGraphEntry ptr d s) -> Just (Closure ptr (DCS s d))
+    Nothing -> Nothing
+
+fillConstrDesc :: Debuggee -> DebugClosure ConstrDescCont s c -> IO (DebugClosure ConstrDesc s c)
+fillConstrDesc (Debuggee e) closure = do
+  GD.tritraverse toConstrDesc pure pure closure
+    where
+    toConstrDesc = run e . dereferenceConDesc
+
 -- | Pretty print a closure
-closurePretty :: Debuggee -> Closure -> IO String
-closurePretty _ (Stack _ _) = return "STACK"
-closurePretty (Debuggee e) (Closure _ closure) = do
-  closure' <- GD.tritraverse toConstrDesc pure pure (unDCS closure)
-  return $ HG.ppClosure
+closurePretty :: Show c => DebugClosure ConstrDesc s c ->  String
+closurePretty (Stack _ _) = "STACK"
+closurePretty (Closure _ closure) =
+  HG.ppClosure
     "??"
     (\_ refPtr -> show refPtr)
     0
-    closure'
-    where
-    toConstrDesc = run e . dereferenceConDesc
+    (unDCS closure)
 
 -- $dominatorTree
 --
@@ -316,7 +366,7 @@ dominatorRootClosures (Debuggee e) analysis = run e $ do
             ]
 
 -- | Get the dominatess of a closure i.e. the children in the dominator tree.
-closureDominatees :: Debuggee -> Analysis -> Closure -> IO [Closure]
+closureDominatees :: Debuggee -> Analysis -> DebugClosure cd s ClosurePtr -> IO [Closure]
 closureDominatees _ _ (Stack{}) = error "TODO dominator tree does not yet support STACKs"
 closureDominatees (Debuggee e) analysis (Closure cPtr _) = run e $ do
   let cPtrToDominatees = analysisDominatees analysis
@@ -331,7 +381,7 @@ closureDominatees (Debuggee e) analysis (Closure cPtr _) = run e $ do
 -- Internal Stuff
 --
 
-closureReferencesAndLabels :: DebugClosure string stack pointer -> [(String, Either pointer stack)]
+closureReferencesAndLabels :: GD.DebugClosure string stack pointer -> [(String, Either pointer stack)]
 closureReferencesAndLabels closure = case closure of
   TSOClosure {..} ->
     [ ("Stack", Right tsoStack)
