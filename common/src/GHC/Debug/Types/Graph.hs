@@ -87,6 +87,10 @@ buildHeapGraph
 buildHeapGraph deref limit initialBox =
     fst <$> multiBuildHeapGraph deref limit (NE.singleton initialBox)
 
+-- TODO: It is a bit undesirable that the ConstrDesc field is already
+-- dereferenced, but also, not such a big deal. It could lead to additional
+-- requests to the debuggee which are not necessary and causes a mismatch
+-- with the step-by-step decoding functions in `Client.hs`
 type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a ConstrDesc StackFrames ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
