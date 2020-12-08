@@ -81,12 +81,13 @@ module GHC.Debug.Client
   , fullTraversalViaBlocks
   , Tritraversable(..)
   , precacheBlocks
+  , traceFrom
   , DebugEnv
   , DebugM
   ) where
 
 import           Control.Exception
-import           Control.Monad (forM)
+import           Control.Monad (forM, unless)
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Graph as G
 import           Data.IORef
@@ -101,6 +102,8 @@ import qualified GHC.Debug.Client.Monad as GD
 import qualified GHC.Debug.Types.Closures as GD
 import           GHC.Debug.Client.BlockCache
 import qualified GHC.Debug.Types.Graph as HG
+import qualified Data.IntSet as IS
+import Control.Monad.State
 
 import Debug.Trace
 
@@ -540,4 +543,27 @@ dereferenceClosureFromBlock cp
 
 precacheBlocks :: DebugM Int
 precacheBlocks = requestBlock PopulateBlockCache
+
+-- Traverse the tree from GC roots, to populate the caches
+-- with everything necessary.
+traceFrom :: [ClosurePtr] -> DebugM ()
+traceFrom cps = evalStateT (mapM_ go cps) IS.empty
+  where
+  go cp@(ClosurePtr c) = do
+    m <- get
+    unless (IS.member (fromIntegral c) m) $ do
+      modify (IS.insert (fromIntegral c))
+      sc <- lift $ dereferenceClosureFromBlock cp
+      tritraverse traceConstrDesc traceStackFrom go sc
+      case lookupStgInfoTableWithPtr (noSize sc) of
+        Nothing -> return Nothing
+        Just infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
+      return ()
+
+traceStackFrom :: StackCont -> StateT s DebugM ()
+traceStackFrom st = lift $ () <$ dereferenceStack st
+
+traceConstrDesc :: ConstrDescCont -> StateT s DebugM ()
+traceConstrDesc d = lift $ () <$ dereferenceConDesc d
+
 
