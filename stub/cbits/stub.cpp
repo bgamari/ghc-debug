@@ -266,17 +266,22 @@ static void write_string(Response& resp, const char * s){
 }
 
 
-static void write_block(Response& resp, StgClosure * bd){
-  resp.write(bd);
+static void write_block(Response * resp, StgClosure * bd){
+  resp->write(bd);
   uint32_t len_payload = htonl(BLOCK_SIZE);
-  resp.write(len_payload);
-  resp.write((const char *) bd, BLOCK_SIZE);
+  resp->write(len_payload);
+  resp->write((const char *) bd, BLOCK_SIZE);
 }
 
-static void write_blocks(Response& resp, bdescr * bd){
+static void write_blocks(Response * resp, bdescr * bd){
     for (; bd != NULL; bd = bd->link){
       write_block(resp, ((StgClosure *) bd->start));
     }
+}
+
+void list_blocks_callback(void *user, bdescr * bd){
+  printf("WRITING: %p", bd);
+  write_blocks((Response *) user, bd);
 }
 
 /* return non-zero on error */
@@ -531,31 +536,8 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       }
       case CMD_BLOCKS:
         {
-        uint32_t g, n;
-        generation * gen;
-        bdescr * bd;
-        CapabilityPublic ** cap;
-        cap = (CapabilityPublic **) capabilities;
-        trace("GENERATIONS %d\n", RtsFlags.GcFlags.generations);
-
-        for (n = 0; n < n_capabilities; n ++){
-          bd = cap[n]->r.rNursery->blocks;
-          write_blocks(resp, bd);
-
-        }
-
-        for (g = 0; g < RtsFlags.GcFlags.generations; g++) {
-          gen = &generations[g];
-          printf("GEN %d - %lu\n", g, generations[g].n_blocks);
-          printf("GEN %d - %lu\n", g, generations[g].n_old_blocks);
-          bd = generations[g].blocks;
-          printf("BD_START %p\n", bd);
-          printf("BD_START_OLD %p\n", generations[g].old_blocks);
-          write_blocks(resp,generations[g].blocks);
-          write_blocks(resp,generations[g].large_objects);
-          write_blocks(resp,generations[g].compact_objects);
-
-        }
+        printf("BD");
+        listAllBlocks(list_blocks_callback, (void *) &resp);
         resp.finish(RESP_OKAY);
         break;
         }
@@ -565,7 +547,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
         StgClosure * bd = (StgClosure *) (((W_) ptr) & ~BLOCK_MASK);
         trace("BD_ADDR: %p, %p", ptr,bd);
-        write_block(resp, bd);
+        write_block(&resp, bd);
         resp.finish(RESP_OKAY);
         break;
         }
