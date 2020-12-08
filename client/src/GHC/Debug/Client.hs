@@ -35,6 +35,8 @@ module GHC.Debug.Client
   , closurePretty
   , fillConstrDesc
 
+    -- * Common initialisation
+  , initialTraversal
     -- * Dominator Tree
   , dominatorRootClosures
   , closureDominatees
@@ -42,17 +44,18 @@ module GHC.Debug.Client
   , Analysis(..)
   , Size(..)
   , RetainerSize(..)
-  , initialTraversal
+    -- * Reverse Edge Map
   , HG.mkReverseGraph
   , reverseClosureReferences
+  , lookupHeapGraph
+
+  -- * Types
   , ConstrDesc(..)
   , ConstrDescCont(..)
   , StackCont
   , ClosurePtr
   , HG.StackHI
   , HG.HeapGraphIndex
-  , trimap
-  , lookupHeapGraph
     --
     -- $dominatorTree
 

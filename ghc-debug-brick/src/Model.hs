@@ -68,9 +68,6 @@ data MajorState
     , _mode     :: ConnectedMode
     }
 
-forgetClosure :: DebugClosure ConstrDesc s c -> DebugClosure ConstrDesc () ()
-forgetClosure = trimap id (const ()) (const ())
-
 data ClosureDetails s c = ClosureDetails
   { _closure :: DebugClosure ConstrDesc s c
   , _labelInParent :: Text -- ^ A label describing the relationship to the parent

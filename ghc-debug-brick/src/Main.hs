@@ -7,6 +7,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE NumericUnderscores #-}
 
 module Main where
 import Control.Applicative
@@ -162,6 +163,8 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
                       knownDebuggees'
 
           continue $ appState & majorState . knownDebuggees .~ knownDebuggees''
+        DominatorTreeReady {} ->  continue appState
+        ReverseAnalysisReady {} -> continue appState
       _ -> continue appState
 
     Connected _socket' debuggee' mode' -> case mode' of
@@ -170,7 +173,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          liftIO $ initialiseViews
+          _ <- liftIO $ initialiseViews
           rootsTree <- mkSavedAndGCRootsIOTree Nothing
           continue (appState & majorState . mode .~
                       PausedMode SavedAndGCRoots Nothing rootsTree Nothing)
@@ -185,13 +188,6 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           continue (appState & majorState . mode .~ RunningMode)
 
         -- Change Modes
-        VtyEvent (Vty.EvKey (KFun 2) _)
-          -- Only switch if the dominator view is ready
-          | Just {} <- domTree -> continue $ appState
-            & majorState
-            . mode
-            . treeMode
-            .~ Dominator
         VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ appState
             & majorState
             . mode
@@ -232,7 +228,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         AppEvent (DominatorTreeReady dt) -> do
           -- TODO: This should retain the state of the rootsTree, whilst
           -- adding the new information.
-          rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
+          -- rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
           continue (appState & majorState . mode . treeDominator .~ Just dt)
 
         AppEvent (ReverseAnalysisReady ra) -> do
@@ -244,28 +240,30 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
 
       initialiseViews = forkIO $ do
         !hg <- initialTraversal debuggee'
-        mkDominatorTreeIO hg
-        mkReversalTreeIO hg
+        _ <- mkDominatorTreeIO hg
+        _ <- mkReversalTreeIO hg
         return ()
 
+      -- This is really slow on big heaps, needs to be made more efficient
+      -- or some progress/timeout indicator
       mkDominatorTreeIO hg = forkIO $ do
         !analysis <- runAnalysis debuggee' hg
         !rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
-        let ioTree = mkIOTree (Just analysis) rootClosures'
+        let domIoTree = mkIOTree (Just analysis) rootClosures'
                       (getChildren analysis)
 
                       (List.sortOn (Ord.Down . _retainerSize))
-        writeBChan eventChan (DominatorTreeReady (DominatorAnalysis analysis ioTree))
+        writeBChan eventChan (DominatorTreeReady (DominatorAnalysis analysis domIoTree))
         where
-          getChildren analysis dbg c = do
+          getChildren analysis _dbg c = do
             cs <- closureDominatees debuggee' analysis c
             fmap (("",)) <$> mapM (fillConstrDesc debuggee') cs
 
 
       mkReversalTreeIO hg = forkIO $ do
         let !revg = mkReverseGraph hg
-        let ioTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
-        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis ioTree (lookupHeapGraph hg)))
+        let revIoTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
+        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis revIoTree (lookupHeapGraph hg)))
 
       getClosureDetails :: Show c => Maybe Analysis -> Text -> DebugClosure ConstrDesc s c
                                                   -> IO (ClosureDetails s c)
@@ -331,7 +329,8 @@ main = do
   eventChan <- newBChan 10
   _ <- forkIO $ forever $ do
     writeBChan eventChan PollTick
-    threadDelay 2000000
+    -- 2s
+    threadDelay 2_000_000
   let buildVty = mkVty defaultConfig
   initialVty <- buildVty
   let app :: App AppState Event Name
