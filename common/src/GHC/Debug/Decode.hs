@@ -48,7 +48,8 @@ getClosureRaw itb (Ptr closurePtr) = do
       end_ptrs = fromIntegral nelems_ptrs - 1
       rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
       raw_size = I# (sizeofByteArray# datArr)
-  gen_closure <- getClosureDataFromHeapRepPrim (return ("", "", "")) itb datArr  rawPtrs
+  gen_closure <- getClosureDataFromHeapRepPrim (return ("", "", ""))
+                                               (\_ -> return Nothing) itb datArr  rawPtrs
   return (gen_closure, Size raw_size)
 
 -- | Allow access directly to the chunk of memory used by a bytestring
