@@ -122,8 +122,8 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
                         ClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
-    stackCont :: Word64 -> StackCont
-    stackCont sp =  StackCont (StackPtr sp)
+    stackCont :: () -> StackCont
+    stackCont _ =  StackCont (coerce ptr)
       --(getRawStack (StackPtr sp) ptr rc)
 
 

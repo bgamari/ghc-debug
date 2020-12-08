@@ -289,7 +289,7 @@ closureReferences (Debuggee e) (Stack _ stack) = run e $ do
   let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
                      , ptr
                      )
-                      | (frameIx, frame) <- zip [(0::Int)..] (GD.frames stack)
+                      | (frameIx, frame) <- zip [(0::Int)..] (GD.getFrames stack)
                       , (ptrIx  , ptr  ) <- zip [(0::Int)..] [ptr | GD.SPtr ptr <- GD.values frame]
                    ]
   closures <- dereferenceClosures (snd <$> lblAndPtrs)
@@ -384,13 +384,14 @@ closureDominatees (Debuggee e) analysis (Closure cPtr _) = run e $ do
 closureReferencesAndLabels :: GD.DebugClosure string stack pointer -> [(String, Either pointer stack)]
 closureReferencesAndLabels closure = case closure of
   TSOClosure {..} ->
-    [ ("Stack", Right tsoStack)
+    [ ("Stack", Left tsoStack)
     , ("Link", Left _link)
     , ("Global Link", Left global_link)
     , ("TRec", Left trec)
     , ("Blocked Exceptions", Left blocked_exceptions)
     , ("Blocking Queue", Left bq)
     ]
+  StackClosure{..} -> [("Frames", Right frames )]
   WeakClosure {..} -> [ ("Key", Left key)
                       , ("Value", Left value)
                       , ("C Finalizers", Left cfinalizers)

@@ -19,9 +19,7 @@ decodeStack :: Monad m
             -> RawStack
             -> m Stack
 decodeStack decodeInfoTable getBitmap rs = do
-  stack_frames <- get_frames rs
-  -- TODO: Fill in these fields properly
-  return (Stack 0 0 0 stack_frames)
+  GenStack <$> get_frames rs
   where
     get_frames raw@(RawStack c) = do
       st_it <- decodeInfoTable (coerce rs)

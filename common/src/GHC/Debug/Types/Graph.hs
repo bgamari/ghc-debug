@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module GHC.Debug.Types.Graph where
 
 import Data.Char
@@ -128,7 +129,7 @@ annotateHeapGraph f i hg = updateHeapGraph go i hg
 
 {-# INLINE generalBuildHeapGraph #-}
 generalBuildHeapGraph
-    :: (Monad m)
+    :: forall m a .  (Monad m)
     => DerefFunction m a
     -- -> Maybe Int
     -> HeapGraph a
@@ -140,6 +141,7 @@ generalBuildHeapGraph deref hg addBoxes = do
     (is, hg') <- runStateT (mapM add addBoxes) hg
     return (hg', fromJust <$> is)
   where
+    add :: ClosurePtr -> StateT (HeapGraph a) m (Maybe ClosurePtr)
     add cp = do
         -- If the box is in the map, return the index
         hm <- get
@@ -333,6 +335,7 @@ ppClosure herald showBox prec c = case c of
     OtherClosure {} ->
         "_other"
     TSOClosure {..} -> "TSO"
+    StackClosure {..} -> app ["Stack(", show stack_size, ")"]
     WeakClosure {..} -> "_wk"
     UnsupportedClosure {} ->
         "_unsupported"

@@ -125,8 +125,7 @@ treeSize =
               closSize
   where
     stackSize :: GenStack Size -> Size
-    stackSize s = Size (fromIntegral (stack_size s))
-                    `mappend` (getConst (traverse Const s))
+    stackSize s = (getConst (traverse Const s))
 
     closSize :: DebugClosureWithSize Size Size Size ->  Size
     closSize d = (dcSize d) `mappend` getConst (tritraverse Const Const Const d)
@@ -367,7 +366,7 @@ data DebugClosure string s b
       -- pointers
       , _link :: !b
       , global_link :: !b
-      , tsoStack :: !s -- ^ stackobj from StgTSO
+      , tsoStack :: !b -- ^ stackobj from StgTSO
       , trec :: !b
       , blocked_exceptions :: !b
       , bq :: !b
@@ -382,6 +381,14 @@ data DebugClosure string s b
       , tot_stack_size :: Word32
       , prof :: Maybe ProfTypes.StgTSOProfInfo
       }
+
+ | StackClosure
+     { info :: !StgInfoTableWithPtr
+     , stack_size :: !Word32 -- ^ stack size in *words*
+     , stack_dirty :: !Word8 -- ^ non-zero => dirty
+     , stack_marking :: !Word8
+     , frames :: s
+     }
 
 
   | WeakClosure
@@ -448,13 +455,8 @@ data DebugClosure string s b
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
 type Stack = GenStack ClosurePtr
-
-data GenStack b = Stack
-     { stack_size :: !Word32 -- ^ stack size in *words*
-     , stack_dirty :: !Word8 -- ^ non-zero => dirty
-     , stack_marking :: Word8
-     , frames :: [DebugStackFrame b]
-     } deriving (Functor, Show, Generic, Foldable, Traversable)
+newtype GenStack b = GenStack { getFrames :: [DebugStackFrame b] }
+  deriving (Functor, Foldable, Traversable, Show)
 
 data DebugStackFrame b
   = DebugStackFrame
@@ -538,9 +540,9 @@ instance Tritraversable DebugClosure where
       BlockingQueueClosure a1 b1 b2 b3 b4 ->
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
       TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
-        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> f b3 <*> g b4 <*> g b5 <*> g b6
+        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
       -- Stack closures are handled specially.. for now.
-      --StackClosure a1 a2 a3 a4 a5 -> StackClosure a1 a2 a3 a4 <$> traverse (traverse g) a5
+      StackClosure a1 a2 a3 a4 a5 -> StackClosure a1 a2 a3 a4 <$> f a5
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
       IntClosure p i -> pure (IntClosure p i)
@@ -581,6 +583,7 @@ lookupStgInfoTableWithPtr dc = case dc of
   MutVarClosure         { info } -> Just info
   BlockingQueueClosure  { info } -> Just info
   TSOClosure            { info } -> Just info
+  StackClosure          { info } -> Just info
   WeakClosure           { info } -> Just info
   OtherClosure          { info } -> Just info
   UnsupportedClosure    { info } -> Just info
