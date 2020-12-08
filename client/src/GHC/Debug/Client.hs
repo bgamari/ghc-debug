@@ -134,6 +134,7 @@ initialTraversal (Debuggee e) = run e $ do
       (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     return hg
 
+-- This function is very very very slow, it needs to be optimised.
 runAnalysis :: Debuggee -> HG.HeapGraph Size -> IO Analysis
 runAnalysis (Debuggee e) hg = run e $ do
     let drs :: [G.Tree (ClosurePtr, (Size, RetainerSize))]

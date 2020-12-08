@@ -277,7 +277,8 @@ getIPE = do
       len <- getInt32be
       res <- C8.unpack <$> getByteString (fromIntegral len)
       return res
-    -- All constructor nodes get 0
+    -- All constructor nodes get 0, this is a wibble in the implementation
+    -- of IPEs
     readCTy "0" = CONSTR
     readCTy n   = toEnum (read @Int n)
 
