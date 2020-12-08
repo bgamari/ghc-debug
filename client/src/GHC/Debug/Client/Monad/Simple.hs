@@ -11,7 +11,7 @@
 -- | This module provides a simple implementation, which can be a lot faster if
 -- network latency is not an issue.
 module GHC.Debug.Client.Monad.Simple
-  ( Debuggee(..)
+  ( Debuggee
   , DebugM
   ) where
 
@@ -51,7 +51,7 @@ logRequestIO cached hmref req =
       | cached = FetchStats nr (cr + 1)
       | otherwise = FetchStats (nr + 1) cr
 
-logRequest :: Bool -> Request resp -> DebugM ()
+logRequest :: Bool -> Request resp -> ReaderT Debuggee IO ()
 logRequest cached req = do
   mhm <- asks debuggeeRequestCount
   case mhm of
@@ -67,9 +67,9 @@ ppRequestLog hm = unlines (map row items)
 
 instance DebugMonad DebugM where
   type DebugEnv DebugM = Debuggee
-  request = simpleReq
+  request = DebugM . simpleReq
   requestBlock = blockReq
-  traceMsg = liftIO . putStrLn
+  traceMsg = DebugM . liftIO . putStrLn
   printRequestLog e = do
     case debuggeeRequestCount e of
       Just hm_ref -> do
@@ -92,7 +92,7 @@ mkEnv exeName _sockName h = do
   mhdl <-  newMVar h
   return $ Debuggee exeName mcount bc rc mhdl
 
-simpleReq :: Request resp -> DebugM resp
+simpleReq :: Request resp -> ReaderT Debuggee IO resp
 simpleReq req | isWriteRequest req = ask >>= \Debuggee{..} -> liftIO $ do
   atomicModifyIORef' debuggeeBlockCache (const (emptyBlockCache, ()))
   modifyMVar_ debuggeeRequestCache (return . const emptyRequestCache)
@@ -112,12 +112,13 @@ simpleReq req = do
       return res
 
 blockReq :: BlockCacheRequest resp -> DebugM resp
-blockReq req = do
+blockReq req = DebugM $ do
   hdl <- asks debuggeeHandle
   bc  <- asks debuggeeBlockCache
   liftIO $ handleBlockReq hdl bc req
 
 newtype DebugM a = DebugM (ReaderT Debuggee IO a)
-                    deriving (MonadReader Debuggee, MonadFail, MonadIO, Functor, Applicative, Monad)
+                   -- Only derive the instances that DebugMonad needs
+                    deriving (MonadFail, Functor, Applicative, Monad)
 
 
