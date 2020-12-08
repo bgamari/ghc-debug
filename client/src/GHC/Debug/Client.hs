@@ -31,6 +31,7 @@ module GHC.Debug.Client
   , closureExclusiveSize
   , closureRetainerSize
   , closureSourceLocation
+  , SourceInformation(..)
   , closureReferences
   , closurePretty
   , fillConstrDesc
@@ -279,11 +280,11 @@ closureExcAndRetainerSizes analysis (Closure cPtr _) =
   let getSizes = analysisSizes analysis
   in getSizes cPtr
 
-closureSourceLocation :: Debuggee -> DebugClosure cd s c -> IO [String]
-closureSourceLocation _ (Stack _ _) = return []
+closureSourceLocation :: Debuggee -> DebugClosure cd s c -> IO (Maybe SourceInformation)
+closureSourceLocation _ (Stack _ _) = return Nothing
 closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
   case lookupStgInfoTableWithPtr (noSize c) of
-    Nothing -> return []
+    Nothing -> return Nothing
     Just infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
 
 -- | Get the directly referenced closures (with a label) of a closure.

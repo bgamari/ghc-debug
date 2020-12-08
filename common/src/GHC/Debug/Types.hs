@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types) where
 
@@ -24,6 +25,7 @@ import Data.Hashable
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
+import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
 
@@ -59,11 +61,19 @@ data Request a where
     -- The `InfoTablePtr` is just used for the equality
     RequestConstrDesc :: PayloadWithKey InfoTablePtr ClosurePtr -> Request ConstrDesc
     -- | Lookup source information of an info table
-    RequestSourceInfo :: InfoTablePtr -> Request [String]
+    RequestSourceInfo :: InfoTablePtr -> Request (Maybe SourceInformation)
     -- | Copy all blocks from the process at once
     RequestAllBlocks :: Request [RawBlock]
     -- | Request the block which contains a specific pointer
     RequestBlock :: ClosurePtr -> Request RawBlock
+
+data SourceInformation = SourceInformation { infoName        :: !String
+                                         , infoClosureType :: !ClosureType
+                                         , infoType        :: !String
+                                         , infoLabel       :: !String
+                                         , infoModule      :: !String
+                                         , infoPosition    :: !String }
+                                         deriving (Show, Eq)
 
 eq1request :: Request a -> Request b -> Bool
 eq1request r1 r2 =
@@ -253,15 +263,23 @@ getConstrDesc = do
   len <- getInt32be
   parseConstrDesc . C8.unpack <$> getByteString (fromIntegral len)
 
-getIPE :: Get [String]
+getIPE :: Get (Maybe SourceInformation)
 getIPE = do
   num <- getInt32be
-  replicateM (fromIntegral num) getOne
+  res <- replicateM (fromIntegral num) getOne
+  case res of
+    (id_name:cty:ty:lab:modu:loc:[]) ->
+      return . Just $ SourceInformation id_name (readCTy cty) ty lab modu loc
+    [] -> return Nothing
+    fs -> fail (show ("Expecting 6 or 0 fields in IPE",  fs,num))
   where
     getOne = do
       len <- getInt32be
       res <- C8.unpack <$> getByteString (fromIntegral len)
       return res
+    -- All constructor nodes get 0
+    readCTy "0" = CONSTR
+    readCTy n   = toEnum (read @Int n)
 
 
 getPtrBitmap :: Get PtrBitmap

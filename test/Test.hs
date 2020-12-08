@@ -264,15 +264,14 @@ p19 e = do
           (so:_) <- request RequestSavedObjects
           hg <- buildHeapGraph derefFuncM Nothing so
           annotateWithSource hg
-  putStrLn $ ppHeapGraph (maybe "" concat) hg
+  putStrLn $ ppHeapGraph (maybe "" show) hg
 
 -- | Lookup the source location of THUNKs
-annotateWithSource :: HeapGraph a -> DebugM (HeapGraph (Maybe [String]))
+annotateWithSource :: HeapGraph a -> DebugM (HeapGraph (Maybe SourceInformation))
 annotateWithSource hg = traverseHeapGraph go2 hg
   where
     go2 (HeapGraphEntry a1 a2 _) = HeapGraphEntry a1 a2 <$> go a2
-    go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = do
-      Just <$> request (RequestSourceInfo i)
+    go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = request (RequestSourceInfo i)
     go _ = return Nothing
 
 p20 e = do

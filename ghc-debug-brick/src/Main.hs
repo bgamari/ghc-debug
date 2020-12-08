@@ -15,7 +15,7 @@ import Control.Monad (forever, (<=<))
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
-import Data.Maybe (fromMaybe, fromJust)
+import Data.Maybe (fromJust)
 import Data.Ord (comparing)
 import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
@@ -101,7 +101,7 @@ myAppDraw (AppState majorState') =
   renderClosureDetails :: Maybe (ClosureDetails s c) -> Widget Name
   renderClosureDetails cd = vLimit 9 $ vBox $
       [ txt "SourceLocation   "
-            <+> txt (fromMaybe "" (_sourceLocation =<< cd))
+            <+> txt (maybe "" renderSourceInformation (_sourceLocation =<< cd))
       -- TODO these aren't actually implemented yet
       -- , txt $ "Type             "
       --       <> fromMaybe "" (_closureType =<< cd)
@@ -113,6 +113,9 @@ myAppDraw (AppState majorState') =
             <> maybe "" (pack . show @Int . GD.getRetainerSize) (_retainerSize =<< cd) <> " bytes"
       , fill ' '
       ]
+  renderSourceInformation :: SourceInformation -> T.Text
+  renderSourceInformation (SourceInformation name cty ty label modu loc) =
+      T.pack $ unlines [name, show cty, ty, label, modu, loc]
 
 myAppHandleEvent :: BChan Event -> AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case brickEvent of
@@ -276,7 +279,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           { _closure = c
           , _pretty = pack pretty'
           , _labelInParent = label
-          , _sourceLocation = Just (pack $ Prelude.unlines sourceLoc)
+          , _sourceLocation = sourceLoc
           , _closureType = Nothing
           , _constructor = Nothing
           , _excSize = excSize'

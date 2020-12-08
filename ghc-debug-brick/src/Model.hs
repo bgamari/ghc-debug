@@ -73,7 +73,7 @@ data ClosureDetails s c = ClosureDetails
   , _labelInParent :: Text -- ^ A label describing the relationship to the parent
   -- Stuff  that requires IO to calculate
   , _pretty :: Text
-  , _sourceLocation :: Maybe Text
+  , _sourceLocation :: Maybe SourceInformation
   , _closureType :: Maybe Text
   , _constructor :: Maybe Text
   , _excSize :: Size
