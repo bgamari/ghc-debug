@@ -191,8 +191,8 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
     ppBinding i = ppVar i ++ "(" ++ printData (hgeData (iToE i)) ++  ") = " ++ ppEntry 0 (iToE i)
 
     ppEntry prec hge
-        | Just s <- isString hge = show s
-        | Just l <- isList hge   = "[" ++ intercalate "," (map (ppRef 0) l) ++ "]"
+        | Just s <- isString (hgeClosure hge) = show s
+        | Just l <- isList (hgeClosure hge)   = "[" ++ intercalate "," (map (ppRef 0) l) ++ "]"
         | otherwise = ppClosure (printData (hgeData hge)) ppRef prec (hgeClosure hge)
       where
         _app [a] = a  ++ "()"
@@ -207,18 +207,18 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
         | cp `elem` bindings = Nothing
         | otherwise         = IM.lookup (fromIntegral i) m
 
-    isList :: HeapGraphEntry a -> Maybe [Maybe HeapGraphIndex]
-    isList hge
-        | isNil (hgeClosure hge) =
+    isList :: DebugClosure ConstrDesc s (Maybe HeapGraphIndex) -> Maybe [Maybe HeapGraphIndex]
+    isList c
+        | isNil c =
             return []
         | otherwise = do
-            (h,t) <- isCons (hgeClosure hge)
+            (h,t) <- isCons c
             ti <- t
             e <- iToUnboundE ti
-            t' <- isList e
+            t' <- isList (hgeClosure e)
             return $ (:) h t'
 
-    isString :: HeapGraphEntry a -> Maybe String
+    isString :: DebugClosure ConstrDesc s (Maybe HeapGraphIndex) -> Maybe String
     isString e = do
         list <- isList e
         -- We do not want to print empty lists as "" as we do not know that they
