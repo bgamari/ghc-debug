@@ -31,8 +31,8 @@ module GHC.Debug.Types.Closures (
     , StgInfoTableWithPtr(..)
     , FieldValue(..)
     , DebugStackFrame(..)
-    , GenStack(..)
-    , Stack
+    , GenStackFrames(..)
+    , StackFrames
     , GHC.PrimType(..)
     , lookupStgInfoTableWithPtr
     , allClosures
@@ -86,8 +86,8 @@ instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
-type UClosure = Fix1 ConstrDesc GenStack DebugClosureWithSize
-type UStack   = Fix2 ConstrDesc GenStack DebugClosureWithSize
+type UClosure = Fix1 ConstrDesc GenStackFrames DebugClosureWithSize
+type UStack   = Fix2 ConstrDesc GenStackFrames DebugClosureWithSize
 
 foldFix1 :: (Functor f, Tritraversable g)
          => (string -> r_string)
@@ -124,7 +124,7 @@ treeSize =
               stackSize
               closSize
   where
-    stackSize :: GenStack Size -> Size
+    stackSize :: GenStackFrames Size -> Size
     stackSize s = (getConst (traverse Const s))
 
     closSize :: DebugClosureWithSize Size Size Size ->  Size
@@ -134,9 +134,9 @@ fullSize :: UClosure_Inclusive -> InclusiveSize
 fullSize (MkFix1 (DCS (_, i) _)) = i
 
 -- | A tree annotation with inclusive size of subtrees
-type UClosure_Inclusive = Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+type UClosure_Inclusive = Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 
-inclusive :: UClosure -> Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+inclusive :: UClosure -> Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 inclusive =
   foldFix1 stringSize stackSize closSize
   where
@@ -145,13 +145,13 @@ inclusive =
     stringSize x = x
 
     -- No where to put inclusive size on stacks yet
-    stackSize :: GenStack (Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize)))
-              -> Fix2 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+    stackSize :: GenStackFrames (Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize)))
+              -> Fix2 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
     stackSize s = MkFix2 s
 
     closSize :: DebugClosureWithSize
-                  ConstrDesc (Fix2 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
-                      -> Fix1 ConstrDesc GenStack (DebugClosureWithExtra (Size, InclusiveSize))
+                  ConstrDesc (Fix2 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
+                      -> Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 
     closSize (DCS s b) =
       let new_size = coerce s `mappend` getConst (tritraverse (const (Const (InclusiveSize 0))) stack (Const . fullSize) b)
@@ -454,8 +454,8 @@ data DebugClosure string s b
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
-type Stack = GenStack ClosurePtr
-newtype GenStack b = GenStack { getFrames :: [DebugStackFrame b] }
+type StackFrames = GenStackFrames ClosurePtr
+newtype GenStackFrames b = GenStackFrames { getFrames :: [DebugStackFrame b] }
   deriving (Functor, Foldable, Traversable, Show)
 
 data DebugStackFrame b
@@ -510,7 +510,7 @@ trimap = coerce
               -> (c -> Identity d)
               -> (e -> Identity f) -> t a c e -> Identity (t b d f))
 
-allClosures :: DebugClosure a (GenStack c) c -> [c]
+allClosures :: DebugClosure a (GenStackFrames c) c -> [c]
 allClosures c = getConst $ tritraverse (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b

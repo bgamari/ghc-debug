@@ -45,7 +45,7 @@ data HeapGraphEntry a = HeapGraphEntry {
     deriving (Show, Functor, Foldable, Traversable)
 type HeapGraphIndex = ClosurePtr
 
-type StackHI = GenStack (Maybe HeapGraphIndex)
+type StackHI = GenStackFrames (Maybe HeapGraphIndex)
 
 -- | The whole graph. The suggested interface is to only use 'lookupHeapGraph',
 -- as the internal representation may change. Nevertheless, we export it here:
@@ -87,7 +87,7 @@ buildHeapGraph
 buildHeapGraph deref limit initialBox =
     fst <$> multiBuildHeapGraph deref limit (NE.singleton initialBox)
 
-type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a ConstrDesc Stack ClosurePtr)
+type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a ConstrDesc StackFrames ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.

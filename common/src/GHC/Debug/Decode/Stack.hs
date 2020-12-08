@@ -17,9 +17,9 @@ decodeStack :: Monad m
             => (RawClosure -> m StgInfoTableWithPtr)
             -> (RawClosure -> m PtrBitmap)
             -> RawStack
-            -> m Stack
+            -> m StackFrames
 decodeStack decodeInfoTable getBitmap rs = do
-  GenStack <$> get_frames rs
+  GenStackFrames <$> get_frames rs
   where
     get_frames raw@(RawStack c) = do
       st_it <- decodeInfoTable (coerce rs)

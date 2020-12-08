@@ -248,7 +248,7 @@ data DebugClosure cd s c
     }
   | Stack
     { _stackPtr :: StackCont
-    , _stackStack :: GD.GenStack c
+    , _stackStack :: GD.GenStackFrames c
     }
 
 instance Tritraversable DebugClosure where
@@ -469,7 +469,7 @@ dereferenceClosures cs = do
     raw_its <- request (RequestInfoTables its)
     return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
 
-dereferenceStack :: StackCont -> DebugM GD.Stack
+dereferenceStack :: StackCont -> DebugM GD.StackFrames
 dereferenceStack (StackCont sp) = do
   stack <- request (RequestStack sp)
   let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
