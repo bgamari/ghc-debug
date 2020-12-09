@@ -148,7 +148,7 @@ main = withGhcDebug $ do
 
         saveClosures [Box weight_movies]
         putStrLn "Pausing"
-        pause
+        getLine
 
             -- (Movie ID, rating) sorted by rating.
         let movieRatings :: [(MovieID, Double)]

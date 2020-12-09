@@ -47,34 +47,32 @@ let
   # If this fails, please update url and hash for the lastest successful build
   # of wip/ghc-debug.
   ghc = mkGhc
-        { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/427334/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
-          hash = "116dm1hqi7bmz4zh65miyhw2rzlv2ajlhrv6namfhgrdcj048gal";
+        { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/516526/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
+          hash = "0gl3hrl108zj4r5lwrcvp29xvaxzyn5zpfkbzm6a034ad9md9d2a";
         };
   ghc-utils = import ../ghc-utils {};
 
 in
-  np.mkShell { buildInputs = [
-                               ghc-utils
+  np2.mkShell { buildInputs = [ghc-utils
                                fixedCabal
                                np.linuxPackages.perf
-                               np.ncurses
+                               np2.ncurses
                                np.wget  # Used by cabal-install for https support when communicating with head.hackage
-                               np.cabal-install
-                               np.zlib.dev
-                               np.zlib.out
-                               np.elfutils
-                               np.git
-                               np.numactl
-                               np.pkg-config
+                               np2.zlib.dev
+                               np2.zlib.out
+                               np2.elfutils
+                               np2.git
+                               np2.numactl
+                               np2.pkg-config
 
-                               np.gmp
-                               np.gmp.dev
+                               np2.gmp
+                               np2.gmp.dev
                               ];
 
                 # Export the location of the SSL CA bundle
                 SSL_CERT_FILE = "${np.cacert}/etc/ssl/certs/ca-bundle.crt";
                 NIX_SSL_CERT_FILE = "${np.cacert}/etc/ssl/certs/ca-bundle.crt";
                 shellHook = ''
-                  export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${np.lib.makeLibraryPath [np.numactl np.gmp]}";
+                  export LD_LIBRARY_PATH=${np2.gmp}/lib:${np2.zlib}/lib:${np2.ncurses}/lib:${np2.numactl}/lib
                 '';
               }
