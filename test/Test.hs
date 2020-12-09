@@ -332,10 +332,16 @@ p26 e = do
   run e $ request RequestPause
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestSavedObjects
+    rs <- request RequestRoots
     (hg, rs') <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     traceWrite (heapGraphSize hg)
 
+p27 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    traceFrom rs
 
