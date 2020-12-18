@@ -9,6 +9,7 @@
 module Model
   ( module Model
   , module Namespace
+  , module Common
   ) where
 
 import Data.Sequence as Seq
@@ -20,10 +21,13 @@ import Data.Text(Text, pack)
 
 import Brick.Widgets.List
 import IOTree
+import TextCursor
 
 import GHC.Debug.Client
 
 import Namespace
+import Common
+
 
 initialAppState :: AppState
 initialAppState = AppState
@@ -82,12 +86,24 @@ data ClosureDetails s c = ClosureDetails
 
 data TreeMode = Dominator | SavedAndGCRoots | Reverse
 
+data FooterMode = FooterInfo
+                | FooterMessage Text
+                | FooterInput FooterInputMode TextCursor
+
+data FooterInputMode = FSearch
+
+formatFooterMode :: FooterInputMode -> Text
+formatFooterMode FSearch = "search"
+
 data ConnectedMode
   -- | Debuggee is running
   = RunningMode
   -- | Debuggee is paused and we're exploring the heap
-  | PausedMode
+  | PausedMode { _pausedMode :: OperationalState }
+
+data OperationalState = OperationalState
     { _treeMode :: TreeMode
+    , _footerMode :: FooterMode
     , _treeDominator :: Maybe DominatorAnalysis
     -- ^ Tree corresponding to Dominator mode
     , _treeSavedAndGCRoots :: IOTree (ClosureDetails StackCont ClosurePtr) Name
@@ -104,17 +120,18 @@ data DominatorAnalysis =
 data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails StackHI (Maybe HeapGraphIndex)) Name
                                           , _convertPtr :: ClosurePtr -> Maybe (DebugClosure ConstrDesc StackHI (Maybe HeapGraphIndex)) }
 
-pauseModeTree :: (forall s c . IOTree (ClosureDetails s c) Name -> r) -> ConnectedMode -> r
-pauseModeTree _ RunningMode = error "Not Paused"
-pauseModeTree k (PausedMode mode dom roots reverseA) = case mode of
+pauseModeTree :: (forall s c . IOTree (ClosureDetails s c) Name -> r) -> OperationalState -> r
+pauseModeTree k (OperationalState mode _footer dom roots reverseA) = case mode of
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots
   Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
+
 
 makeLenses ''AppState
 makeLenses ''MajorState
 makeLenses ''ClosureDetails
 makeLenses ''ConnectedMode
+makeLenses ''OperationalState
 makeLenses ''SocketInfo
 makeLenses ''DominatorAnalysis
 makeLenses ''ReverseAnalysis

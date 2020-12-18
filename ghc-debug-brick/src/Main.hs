@@ -29,6 +29,7 @@ import Data.Text (Text, pack)
 import qualified Data.Text as T
 
 import IOTree
+import TextCursor
 import Brick
 import Brick.BChan
 import Brick.Widgets.Border
@@ -70,7 +71,7 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      pm@(PausedMode treeMode' dtree _ reverseTree) -> let
+      (PausedMode os@(OperationalState treeMode' fmode dtree _ reverseTree)) -> let
         in mainBorder "ghc-debug - Paused" $ vBox
           [ hBox
             [ border $ vBox
@@ -83,7 +84,7 @@ myAppDraw (AppState majorState') =
                 ++
               [ txt "Reverse Analysis (F3)" | Just {} <- [reverseTree] ] )
             , -- Current closure details
-              borderWithLabel (txt "Closure Details") $ pauseModeTree (renderClosureDetails . ioTreeSelection) pm
+              borderWithLabel (txt "Closure Details") $ pauseModeTree (renderClosureDetails . ioTreeSelection) os
             ]
           , -- Tree
             borderWithLabel
@@ -92,7 +93,9 @@ myAppDraw (AppState majorState') =
                 SavedAndGCRoots -> "Root Closures"
                 Reverse -> "Reverse Edges"
               )
-              (pauseModeTree renderIOTree pm)
+              (pauseModeTree renderIOTree os)
+          , hBorder
+          , renderFooter fmode
           ]
   ]
   where
@@ -116,6 +119,17 @@ myAppDraw (AppState majorState') =
   renderSourceInformation :: SourceInformation -> T.Text
   renderSourceInformation (SourceInformation name cty ty label modu loc) =
       T.pack $ unlines [name, show cty, ty, label, modu, loc]
+
+renderFooter :: FooterMode -> Widget Name
+renderFooter _ = txt "footer"
+
+footer :: FooterMode -> Widget Name
+footer m = vLimit 1 $
+ case m of
+   FooterMessage t -> txt t
+   FooterInfo -> txt "info"
+   FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
+
 
 myAppHandleEvent :: BChan Event -> AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case brickEvent of
@@ -179,52 +193,12 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           _ <- liftIO $ initialiseViews
           rootsTree <- mkSavedAndGCRootsIOTree Nothing
           continue (appState & majorState . mode .~
-                      PausedMode SavedAndGCRoots Nothing rootsTree Nothing)
+                      PausedMode
+                        (OperationalState SavedAndGCRoots FooterInfo Nothing rootsTree Nothing))
 
         _ -> continue appState
 
-      PausedMode treeMode' domTree rootsTree reverseA -> case brickEvent of
-
-        -- Resume the debuggee
-        VtyEvent (Vty.EvKey (KChar 'r') _) -> do
-          liftIO $ resume debuggee'
-          continue (appState & majorState . mode .~ RunningMode)
-
-        -- Change Modes
-        VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ appState
-            & majorState
-            . mode
-            . treeMode
-            .~ SavedAndGCRoots
-        VtyEvent (Vty.EvKey (KFun 2) _)
-          -- Only switch if the dominator view is ready
-          | Just {} <- domTree -> continue $ appState
-            & majorState
-            . mode
-            . treeMode
-            .~ Dominator
-        VtyEvent (Vty.EvKey (KFun 3) _)
-          -- Only switch if the reverse view is ready
-          | Just ra <- reverseA -> do
-            -- Get roots from rootTree and use those for the reverse view
-            let rs = getIOTreeRoots rootsTree
-                convert cd = cd & closure %~ do_one
-                do_one cd  = fromJust (view convertPtr ra $ _closurePtr cd)
-                rs' = map convert rs
-            continue $ appState & majorState . mode . treeMode .~ Reverse
-                                & majorState . mode . treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
-
-        -- Navigate the tree of closures
-        VtyEvent event -> case treeMode' of
-          Dominator -> do
-            newTree <- traverseOf (_Just . getDominatorTree) (handleIOTreeEvent event) domTree
-            continue (appState & majorState . mode . treeDominator .~ newTree)
-          SavedAndGCRoots -> do
-            newTree <- handleIOTreeEvent event rootsTree
-            continue (appState & majorState . mode . treeSavedAndGCRoots .~ newTree)
-          Reverse -> do
-            newTree <- traverseOf (_Just . reverseIOTree) (handleIOTreeEvent event) reverseA
-            continue (appState & majorState . mode . treeReverse .~ newTree)
+      PausedMode os -> case brickEvent of
 
           -- Once the computation is finished, store the result of the
           -- analysis in the state.
@@ -232,12 +206,20 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           -- TODO: This should retain the state of the rootsTree, whilst
           -- adding the new information.
           -- rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
-          continue (appState & majorState . mode . treeDominator .~ Just dt)
+          continue (appState & majorState . mode . pausedMode . treeDominator .~ Just dt)
 
         AppEvent (ReverseAnalysisReady ra) -> do
-          continue (appState & majorState . mode . treeReverse .~ Just ra)
+          continue (appState & majorState . mode . pausedMode . treeReverse .~ Just ra)
 
-        _ -> continue appState
+        -- Resume the debuggee
+        VtyEvent (Vty.EvKey (KChar 'r') _) -> do
+          liftIO $ resume debuggee'
+          continue (appState & majorState . mode .~ RunningMode)
+
+        _ -> liftHandler (majorState . mode) os PausedMode (handleMain debuggee')
+              appState (() <$ brickEvent)
+
+
 
       where
 
@@ -320,6 +302,75 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             then txt $ T.replicate (depth + 2) "  " <> "<Empty>"
             else emptyWidget
         )
+
+-- Event handling when the main window has focus
+
+handleMain :: Debuggee -> Handler OperationalState
+handleMain dbg os e =
+  case view footerMode os of
+    FooterInput fm tc ->  inputFooterHandler fm tc (handleMainWindowEvent dbg) os e
+    _ -> handleMainWindowEvent dbg os e
+
+handleMainWindowEvent :: Debuggee
+                      -> Handler OperationalState
+handleMainWindowEvent _debuggee os@(OperationalState treeMode' _footerMode domTree rootsTree reverseA)
+  brickEvent =
+      case brickEvent of
+
+
+
+        -- Change Modes
+        VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ os & treeMode .~ SavedAndGCRoots
+        VtyEvent (Vty.EvKey (KFun 2) _)
+          -- Only switch if the dominator view is ready
+          | Just {} <- domTree -> continue $ os & treeMode .~ Dominator
+        VtyEvent (Vty.EvKey (KFun 3) _)
+          -- Only switch if the reverse view is ready
+          | Just ra <- reverseA -> do
+            -- Get roots from rootTree and use those for the reverse view
+            let rs = getIOTreeRoots rootsTree
+                convert cd = cd & closure %~ do_one
+                do_one cd  = fromJust (view convertPtr ra $ _closurePtr cd)
+                rs' = map convert rs
+            continue $ os & treeMode .~ Reverse
+                          & treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
+
+        -- Navigate the tree of closures
+        VtyEvent event -> case treeMode' of
+          Dominator -> do
+            newTree <- traverseOf (_Just . getDominatorTree) (handleIOTreeEvent event) domTree
+            continue (os & treeDominator .~ newTree)
+          SavedAndGCRoots -> do
+            newTree <- handleIOTreeEvent event rootsTree
+            continue (os & treeSavedAndGCRoots .~ newTree)
+          Reverse -> do
+            newTree <- traverseOf (_Just . reverseIOTree) (handleIOTreeEvent event) reverseA
+            continue (os & treeReverse .~ newTree)
+        _ -> continue os
+
+inputFooterHandler :: FooterInputMode
+                   -> TextCursor
+                   -> Handler OperationalState
+                   -> Handler OperationalState
+inputFooterHandler m tc _k l re@(VtyEvent e) =
+  case e of
+    Vty.EvKey KEsc [] -> continue (resetFooter l)
+    Vty.EvKey KEnter [] -> dispatchFooterInput m tc l
+    _ ->
+      handleTextCursorEvent
+        (\tc' -> continue (set footerMode (FooterInput m tc') l))
+        tc re
+inputFooterHandler _ _ k l re = k l re
+
+-- | What happens when we press enter in footer input mode
+dispatchFooterInput :: FooterInputMode
+                    -> TextCursor
+                    -> OperationalState
+                    -> EventM n (Next OperationalState)
+dispatchFooterInput FSearch tc l = continue l
+
+resetFooter :: OperationalState -> OperationalState
+resetFooter l = (set footerMode FooterInfo l)
 
 myAppStartEvent :: AppState -> EventM Name AppState
 myAppStartEvent = return

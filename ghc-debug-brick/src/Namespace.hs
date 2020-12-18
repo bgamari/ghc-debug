@@ -10,4 +10,5 @@ module Namespace where
 data Name
   = Setup_KnownDebuggeesList
   | Connected_Paused_ClosureTree
+  | Footer
   deriving (Eq, Ord, Show)

@@ -21,9 +21,12 @@ executable tui
   other-modules:       Model
                      , Namespace
                      , IOTree
+                     , TextCursor
+                     , Common
   -- other-extensions:
   build-depends:       base >=4.10 && <5
                      , brick
+                     , cursor
                      , containers
                      , directory
                      , filepath
@@ -32,6 +35,7 @@ executable tui
                      , text
                      , vty
                      , time
+                     , microlens
   hs-source-dirs:    src
   default-language:    Haskell2010
   ghc-options: -threaded -Wall

@@ -30,6 +30,12 @@ source-repository-package
   location: https://github.com/mpickering/bifunctors.git
   tag: 110666d9740a9c2e5a3fbf2b06e7be38524f25ab
 
+source-repository-package
+  type: git
+  location: https://github.com/mpickering/validity.git
+  tag: e450057a89054aa8f483edb91bf94764b1e3c19e
+  subdir: validity
+
 package haxl
   ghc-options: -w
 
