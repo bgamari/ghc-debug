@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns #-}
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
     Debuggee(..)
@@ -103,7 +104,9 @@ import qualified GHC.Debug.Types.Closures as GD
 import           GHC.Debug.Client.BlockCache
 import qualified GHC.Debug.Types.Graph as HG
 import qualified Data.IntSet as IS
+import qualified Data.HashMap.Strict as HM
 import Control.Monad.State
+import Data.Tree
 
 import Debug.Trace
 
@@ -113,10 +116,10 @@ data Debuggee = Debuggee
   }
 
 data Analysis = Analysis
-  { analysisDominatorRoots :: [ClosurePtr]
-  , analysisDominatees :: ClosurePtr -> [ClosurePtr]
+  { analysisDominatorRoots :: ![ClosurePtr]
+  , analysisDominatees :: !(ClosurePtr -> [ClosurePtr])
   -- ^ Unsorted dominatees of a closure
-  , analysisSizes :: ClosurePtr -> (Size, RetainerSize)
+  , analysisSizes :: !(ClosurePtr -> (Size, RetainerSize))
   -- ^ Size and retainer size (via dominator tree) of closures
   }
 
@@ -143,26 +146,27 @@ runAnalysis (Debuggee e) hg = run e $ do
     let drs :: [G.Tree (ClosurePtr, (Size, RetainerSize))]
         drs = fmap (\ent -> (HG.hgeClosurePtr ent, HG.hgeData ent)) <$> HG.retainerSize hg
 
-        dAllSubTrees :: [G.Tree (ClosurePtr, (Size, RetainerSize))]
-        dAllSubTrees = concatMap go drs
-          where
-          go t@(G.Node _ ts) = t : concatMap go ts
+        !hmGraph = HM.unions (map snd $ foldTree buildGraphNode <$> (HG.retainerSize hg))
 
-        (_, vertexToData, cPtrToVertex) = G.graphFromEdges
-              [ (extraData, cPtr, [neighbor | G.Node (neighbor, _) _ <- neighbors])
-              | G.Node (cPtr, extraData) neighbors <- dAllSubTrees
-              ]
+        buildGraphNode :: HG.HeapGraphEntry v
+                       -> [(ClosurePtr, HM.HashMap ClosurePtr (v, [ClosurePtr]))]
+                       -> (ClosurePtr, HM.HashMap ClosurePtr (v, [ClosurePtr]))
+        buildGraphNode hge subtrees =
+            (cptr, HM.insert cptr v (HM.unions submaps))
+          where
+            cptr = HG.hgeClosurePtr hge
+            v = (HG.hgeData hge, children)
+            (children, submaps) = unzip subtrees
 
         cPtrToData
-          = fromMaybe ((-12221, RetainerSize (-12221)), ClosurePtr 0, [])
+          = fromMaybe ((-12221, RetainerSize (-12221)), [])
           -- ^ TODO I would expect the mapping to be complete unless out analysis misses some closures.
-          . fmap vertexToData
-          . cPtrToVertex
+          . flip HM.lookup hmGraph
 
     return $ Analysis
               [drPtr | G.Node (drPtr, _) _ <- drs]
-              ((\(_,_,x) -> x) . cPtrToData)
-              ((\(x,_,_) -> x) . cPtrToData)
+              ((\(_,x) -> x) . cPtrToData)
+              ((\(x,_) -> x) . cPtrToData)
 
 -- | Bracketed version of @debuggeeRun@. Runs a debuggee, connects to it, runs
 -- the action, kills the process, then closes the debuggee.
