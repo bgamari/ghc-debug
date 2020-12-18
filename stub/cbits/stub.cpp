@@ -275,6 +275,7 @@ static void write_block(Response * resp, StgClosure * bd){
 
 static void write_blocks(Response * resp, bdescr * bd){
     for (; bd != NULL; bd = bd->link){
+      resp->write(bd->flags);
       write_block(resp, ((StgClosure *) bd->start));
     }
 }

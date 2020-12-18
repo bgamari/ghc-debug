@@ -30,7 +30,7 @@ emptyBlockCache :: BlockCache
 emptyBlockCache = BlockCache HM.empty
 
 addBlock :: RawBlock -> BlockCache -> BlockCache
-addBlock rb@(RawBlock (BlockPtr (fromBE64 -> bp)) _) (BlockCache bc) =
+addBlock rb@(RawBlock (BlockPtr (fromBE64 -> bp)) _ _) (BlockCache bc) =
   BlockCache (HM.insert bp rb bc)
 
 -- 12 bits

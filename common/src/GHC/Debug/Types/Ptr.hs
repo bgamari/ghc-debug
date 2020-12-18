@@ -108,14 +108,14 @@ newtype BlockPtr = BlockPtr Word64
                    deriving newtype (Binary, Hashable)
                    deriving Show via StackPtr
 
-data RawBlock = RawBlock BlockPtr BS.ByteString
+data RawBlock = RawBlock BlockPtr Word16 BS.ByteString
                     deriving (Show)
 
 rawBlockSize :: RawBlock -> Int
-rawBlockSize (RawBlock _ bs) = BS.length bs
+rawBlockSize (RawBlock _ _ bs) = BS.length bs
 
 rawBlockAddr :: RawBlock -> BlockPtr
-rawBlockAddr (RawBlock addr _) = addr
+rawBlockAddr (RawBlock addr _ _) = addr
 
 tAG_MASK :: Word64
 tAG_MASK = 0b111

@@ -151,7 +151,7 @@ decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
 extractFromBlock :: ClosurePtr
                 -> RawBlock
                 -> RawClosure
-extractFromBlock cp (RawBlock bp b) =
+extractFromBlock cp (RawBlock bp _ b) =
 --  Calling closureSize doesn't work as the info table addresses are bogus
 --  clos_size_w <- withForeignPtr fp' (\p -> return $ closureSize (ptrToBox p))
 --  let clos_size = clos_size_w * 8

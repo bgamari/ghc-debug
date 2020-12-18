@@ -253,10 +253,11 @@ getResponse RequestBlock {}  = getBlock
 -- Ptr, size then raw block
 getBlock :: Get RawBlock
 getBlock = do
+  flags <- getWord16be
   bptr <- BlockPtr <$> getWord64be
   len <- getInt32be
   rb <- getByteString (fromIntegral len)
-  return (RawBlock bptr rb)
+  return (RawBlock bptr flags rb)
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do
