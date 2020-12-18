@@ -36,6 +36,7 @@ import Brick.Widgets.Border
 import Brick.Widgets.List
 
 import GHC.Debug.Client as GD
+import GHC.Debug.Client.Search as GD
 
 import Model
 
@@ -43,6 +44,7 @@ data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
   | DominatorTreeReady DominatorAnalysis -- A signal when the dominator tree has been computed
   | ReverseAnalysisReady ReverseAnalysis
+  | HeapGraphReady (HeapGraph GD.Size)
 
 myAppDraw :: AppState -> [Widget Name]
 myAppDraw (AppState majorState') =
@@ -71,18 +73,20 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      (PausedMode os@(OperationalState treeMode' fmode dtree _ reverseTree)) -> let
+      (PausedMode os@(OperationalState treeMode' fmode _ro dtree _ reverseTree hg)) -> let
         in mainBorder "ghc-debug - Paused" $ vBox
           [ hBox
             [ border $ vBox
-              ([ txt "Resume          (r)"
+              ([ txt "Resume          (F12)"
               , txt "Parent          (<-)"
               , txt "Child           (->)"
               , txt "Saved/GC Roots  (F1)"
               ] ++
               [ txt "Dominator Tree  (F2)" | Just {} <- [dtree] ]
                 ++
-              [ txt "Reverse Analysis (F3)" | Just {} <- [reverseTree] ] )
+              [ txt "Reverse Analysis (F3)" | Just {} <- [reverseTree] ]
+                ++
+              [ txt "Search for Constructor (F8)" | Just {} <- [hg] ] )
             , -- Current closure details
               borderWithLabel (txt "Closure Details") $ pauseModeTree (renderClosureDetails . ioTreeSelection) os
             ]
@@ -95,7 +99,7 @@ myAppDraw (AppState majorState') =
               )
               (pauseModeTree renderIOTree os)
           , hBorder
-          , renderFooter fmode
+          , footer fmode
           ]
   ]
   where
@@ -120,14 +124,11 @@ myAppDraw (AppState majorState') =
   renderSourceInformation (SourceInformation name cty ty label modu loc) =
       T.pack $ unlines [name, show cty, ty, label, modu, loc]
 
-renderFooter :: FooterMode -> Widget Name
-renderFooter _ = txt "footer"
-
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
    FooterMessage t -> txt t
-   FooterInfo -> txt "info"
+   FooterInfo -> txt ""
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 
@@ -182,6 +183,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           continue $ appState & majorState . knownDebuggees .~ knownDebuggees''
         DominatorTreeReady {} ->  continue appState
         ReverseAnalysisReady {} -> continue appState
+        HeapGraphReady {} -> continue appState
       _ -> continue appState
 
     Connected _socket' debuggee' mode' -> case mode' of
@@ -191,10 +193,16 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
           _ <- liftIO $ initialiseViews
-          rootsTree <- mkSavedAndGCRootsIOTree Nothing
+          (rootsTree, initRoots) <- liftIO $ mkSavedAndGCRootsIOTree Nothing
           continue (appState & majorState . mode .~
                       PausedMode
-                        (OperationalState SavedAndGCRoots FooterInfo Nothing rootsTree Nothing))
+                        (OperationalState SavedAndGCRoots
+                                          FooterInfo
+                                          (DefaultRoots initRoots)
+                                          Nothing
+                                          rootsTree
+                                          Nothing
+                                          Nothing))
 
         _ -> continue appState
 
@@ -211,8 +219,11 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         AppEvent (ReverseAnalysisReady ra) -> do
           continue (appState & majorState . mode . pausedMode . treeReverse .~ Just ra)
 
+        AppEvent (HeapGraphReady hg) -> do
+          continue (appState & majorState . mode . pausedMode . heapGraph .~ Just hg)
+
         -- Resume the debuggee
-        VtyEvent (Vty.EvKey (KChar 'r') _) -> do
+        VtyEvent (Vty.EvKey (KFun 12) _) -> do
           liftIO $ resume debuggee'
           continue (appState & majorState . mode .~ RunningMode)
 
@@ -225,6 +236,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
 
       initialiseViews = forkIO $ do
         !hg <- initialTraversal debuggee'
+        writeBChan eventChan (HeapGraphReady hg)
         _ <- mkDominatorTreeIO hg
         _ <- mkReversalTreeIO hg
         return ()
@@ -233,7 +245,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
       -- or some progress/timeout indicator
       mkDominatorTreeIO hg = forkIO $ do
         !analysis <- runAnalysis debuggee' hg
-        !rootClosures' <- liftIO $ mapM (getClosureDetails (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
+        !rootClosures' <- liftIO $ mapM (getClosureDetails debuggee' (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
         let domIoTree = mkIOTree (Just analysis) rootClosures'
                       (getChildren analysis)
 
@@ -250,29 +262,14 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         let revIoTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
         writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis revIoTree (lookupHeapGraph hg)))
 
-      getClosureDetails :: Show c => Maybe Analysis -> Text -> DebugClosure ConstrDesc s c
-                                                  -> IO (ClosureDetails s c)
-      getClosureDetails manalysis label c = do
-        let excSize' = closureExclusiveSize c
-            retSize' = closureRetainerSize <$> manalysis <*> pure c
-        sourceLoc <- closureSourceLocation debuggee' c
-        let pretty' = closurePretty c
-        return ClosureDetails
-          { _closure = c
-          , _pretty = pack pretty'
-          , _labelInParent = label
-          , _sourceLocation = sourceLoc
-          , _closureType = Nothing
-          , _constructor = Nothing
-          , _excSize = excSize'
-          , _retainerSize = retSize'
-          }
 
       mkSavedAndGCRootsIOTree manalysis = do
-        rootClosures' <- liftIO $ mapM (getClosureDetails manalysis "GC Root" <=< fillConstrDesc debuggee') =<< GD.rootClosures debuggee'
-        savedClosures' <-
-          liftIO $ mapM (getClosureDetails manalysis "Saved Object" <=< fillConstrDesc debuggee') =<< GD.savedClosures debuggee'
-        return $ mkIOTree manalysis (savedClosures' ++ rootClosures') getChildren id
+        raw_roots <- map ("GC Roots",) <$> GD.rootClosures debuggee'
+        rootClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_roots
+        raw_saved <- map ("Saved Object",) <$> GD.savedClosures debuggee'
+        savedClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_saved
+        return $ (mkIOTree manalysis (savedClosures' ++ rootClosures') getChildren id
+                 , fmap toPtr <$> (raw_roots ++ raw_saved))
         where
           getChildren d c = do
             children <- closureReferences d c
@@ -284,7 +281,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         (sort cs)
         (\c -> do
             children <- getChildren debuggee' (_closure c)
-            cDets <- mapM (\(lbl, child) -> getClosureDetails manalysis (pack lbl) child) children
+            cDets <- mapM (\(lbl, child) -> getClosureDetails debuggee' manalysis (pack lbl) child) children
             return (sort cDets)
         )
         (\selected depth closureDesc -> hBox
@@ -302,22 +299,47 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             then txt $ T.replicate (depth + 2) "  " <> "<Empty>"
             else emptyWidget
         )
+completeClosureDetails :: Show c => Debuggee -> Maybe Analysis
+                                            -> (Text, DebugClosure ConstrDescCont s c)
+                                            -> IO (ClosureDetails s c)
+
+completeClosureDetails dbg manalysis (label, clos)  =
+  getClosureDetails dbg manalysis label =<< fillConstrDesc dbg clos
+
+
+
+getClosureDetails :: Show c => Debuggee -> Maybe Analysis -> Text -> DebugClosure ConstrDesc s c
+                                            -> IO (ClosureDetails s c)
+getClosureDetails debuggee' manalysis label c = do
+  let excSize' = closureExclusiveSize c
+      retSize' = closureRetainerSize <$> manalysis <*> pure c
+  sourceLoc <- closureSourceLocation debuggee' c
+  let pretty' = closurePretty c
+  return ClosureDetails
+    { _closure = c
+    , _pretty = pack pretty'
+    , _labelInParent = label
+    , _sourceLocation = sourceLoc
+    , _closureType = Nothing
+    , _constructor = Nothing
+    , _excSize = excSize'
+    , _retainerSize = retSize'
+    }
+
 
 -- Event handling when the main window has focus
 
 handleMain :: Debuggee -> Handler OperationalState
 handleMain dbg os e =
   case view footerMode os of
-    FooterInput fm tc ->  inputFooterHandler fm tc (handleMainWindowEvent dbg) os e
+    FooterInput fm tc ->  inputFooterHandler dbg fm tc (handleMainWindowEvent dbg) os e
     _ -> handleMainWindowEvent dbg os e
 
 handleMainWindowEvent :: Debuggee
                       -> Handler OperationalState
-handleMainWindowEvent _debuggee os@(OperationalState treeMode' _footerMode domTree rootsTree reverseA)
+handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots domTree rootsTree reverseA _hg)
   brickEvent =
       case brickEvent of
-
-
 
         -- Change Modes
         VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ os & treeMode .~ SavedAndGCRoots
@@ -334,6 +356,8 @@ handleMainWindowEvent _debuggee os@(OperationalState treeMode' _footerMode domTr
                 rs' = map convert rs
             continue $ os & treeMode .~ Reverse
                           & treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
+        VtyEvent (Vty.EvKey (KFun 8) _) ->
+          continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
 
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
@@ -348,26 +372,43 @@ handleMainWindowEvent _debuggee os@(OperationalState treeMode' _footerMode domTr
             continue (os & treeReverse .~ newTree)
         _ -> continue os
 
-inputFooterHandler :: FooterInputMode
+inputFooterHandler :: Debuggee
+                   -> FooterInputMode
                    -> TextCursor
                    -> Handler OperationalState
                    -> Handler OperationalState
-inputFooterHandler m tc _k l re@(VtyEvent e) =
+inputFooterHandler dbg m tc _k l re@(VtyEvent e) =
   case e of
     Vty.EvKey KEsc [] -> continue (resetFooter l)
-    Vty.EvKey KEnter [] -> dispatchFooterInput m tc l
+    Vty.EvKey KEnter [] -> dispatchFooterInput dbg m tc l
     _ ->
       handleTextCursorEvent
         (\tc' -> continue (set footerMode (FooterInput m tc') l))
         tc re
-inputFooterHandler _ _ k l re = k l re
+inputFooterHandler _ _ _ k l re = k l re
 
 -- | What happens when we press enter in footer input mode
-dispatchFooterInput :: FooterInputMode
+dispatchFooterInput :: Debuggee
+                    -> FooterInputMode
                     -> TextCursor
                     -> OperationalState
                     -> EventM n (Next OperationalState)
-dispatchFooterInput FSearch tc l = continue l
+dispatchFooterInput dbg FSearch tc os = do
+  case view heapGraph os of
+    Just hg -> do
+      -- limit to 100 results
+      let new_roots = take 100 $ map (\cp -> ("Searched", CP (hgeClosurePtr cp)))
+                        (findConstructors (T.unpack (rebuildTextCursor tc)) hg)
+      let manalysis = view getDominatorAnalysis <$> view treeDominator os
+      raw_roots <- liftIO $ mapM (traverse (dereferencePtr dbg)) new_roots
+      root_details <-
+        liftIO $ mapM (completeClosureDetails dbg manalysis) raw_roots
+      continue (os & resetFooter
+                   & rootsFrom .~ SearchedRoots new_roots
+                   & treeMode .~ SavedAndGCRoots
+                   & treeSavedAndGCRoots %~ setIOTreeRoots root_details)
+    -- Should never happen
+    Nothing -> continue os
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set footerMode FooterInfo l)

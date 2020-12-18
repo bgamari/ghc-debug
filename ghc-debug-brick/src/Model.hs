@@ -93,7 +93,7 @@ data FooterMode = FooterInfo
 data FooterInputMode = FSearch
 
 formatFooterMode :: FooterInputMode -> Text
-formatFooterMode FSearch = "search"
+formatFooterMode FSearch = "search: "
 
 data ConnectedMode
   -- | Debuggee is running
@@ -101,15 +101,26 @@ data ConnectedMode
   -- | Debuggee is paused and we're exploring the heap
   | PausedMode { _pausedMode :: OperationalState }
 
+data RootsOrigin = DefaultRoots [(Text, Ptr)]
+                 | SearchedRoots [(Text, Ptr)]
+
+
+currentRoots :: RootsOrigin -> [(Text, Ptr)]
+currentRoots (DefaultRoots cp) = cp
+currentRoots (SearchedRoots cp) = cp
+
 data OperationalState = OperationalState
     { _treeMode :: TreeMode
     , _footerMode :: FooterMode
+    , _rootsFrom  :: RootsOrigin
     , _treeDominator :: Maybe DominatorAnalysis
     -- ^ Tree corresponding to Dominator mode
     , _treeSavedAndGCRoots :: IOTree (ClosureDetails StackCont ClosurePtr) Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
     , _treeReverse :: Maybe ReverseAnalysis
     -- ^ Tree corresponding to Dominator mode
+    , _heapGraph :: Maybe (HeapGraph Size)
+    -- ^ Raw heap graph
     }
 
 data DominatorAnalysis =
@@ -121,11 +132,10 @@ data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetail
                                           , _convertPtr :: ClosurePtr -> Maybe (DebugClosure ConstrDesc StackHI (Maybe HeapGraphIndex)) }
 
 pauseModeTree :: (forall s c . IOTree (ClosureDetails s c) Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState mode _footer dom roots reverseA) = case mode of
+pauseModeTree k (OperationalState mode _ _footer dom roots reverseA _) = case mode of
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots
   Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
-
 
 makeLenses ''AppState
 makeLenses ''MajorState

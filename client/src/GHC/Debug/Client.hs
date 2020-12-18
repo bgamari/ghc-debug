@@ -39,6 +39,7 @@ module GHC.Debug.Client
 
     -- * Common initialisation
   , initialTraversal
+  , HG.HeapGraph(..)
     -- * Dominator Tree
   , dominatorRootClosures
   , closureDominatees
@@ -72,6 +73,9 @@ module GHC.Debug.Client
   , decodeInfoTable
   , lookupInfoTable
   , DebugClosure(..)
+  , Ptr(..)
+  , toPtr
+  , dereferencePtr
   , dereferenceClosures
   , dereferenceClosure
   , dereferenceSizedClosure
@@ -262,6 +266,16 @@ data DebugClosure cd s c
     { _stackPtr :: StackCont
     , _stackStack :: GD.GenStackFrames c
     }
+
+toPtr :: DebugClosure cd s c -> Ptr
+toPtr (Closure cp _) = CP cp
+toPtr (Stack sc _)   = SP sc
+
+data Ptr = CP ClosurePtr | SP StackCont
+
+dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure ConstrDescCont StackCont ClosurePtr)
+dereferencePtr (Debuggee dbg) (CP cp) = run dbg (Closure <$> pure cp <*> dereferenceSizedClosure cp)
+dereferencePtr (Debuggee dbg) (SP sc) = run dbg (Stack <$> pure sc <*> dereferenceStack sc)
 
 instance Tritraversable DebugClosure where
   tritraverse f g h (Closure cp c) = Closure cp <$> tritraverse f g h c
