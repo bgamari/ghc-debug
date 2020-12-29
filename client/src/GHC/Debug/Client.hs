@@ -447,7 +447,7 @@ closureReferencesAndLabels closure = case closure of
   BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
 --  APClosure {..} -> ("Function", Left fun) : withArgLables payload
 --  PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
-  APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
+--  APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
   BCOClosure {..} -> [ ("Instructions", Left instrs)
                       , ("Literals", Left literals)
                       , ("Byte Code Objects", Left bcoptrs)

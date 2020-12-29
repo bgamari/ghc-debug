@@ -19,6 +19,7 @@ import Foreign.Storable
 
 import qualified Data.ByteString.Internal as BSI
 import Data.ByteString.Short.Internal (ShortByteString(..), toShort)
+import qualified Data.ByteString.Lazy as BSL
 
 import GHC.Exts.Heap hiding (Closure, closureSize#)
 import qualified GHC.Exts.Heap.InfoTable as Itbl
@@ -32,6 +33,8 @@ import Foreign.ForeignPtr       (withForeignPtr)
 import GHC.ForeignPtr
 import System.Endian
 import Debug.Trace
+import Data.Binary.Get as B
+import Control.Monad
 
 import qualified Data.ByteString as B
 
@@ -115,11 +118,30 @@ deriving instance Functor GenClosure
 decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeClosureWithSize itb (ptr, rc) = decodeClosure itb (ptr, rc)
 
+decodePAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodePAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+  _itbl <- getWord64le
+  arity <- getWord32le
+  nargs <- getWord32le
+  fun_ptr <- getWord64le
+  payload <- replicateM (fromIntegral nargs) getWord64le
+  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.PAPClosure info arity nargs (ClosurePtr (toBE64 fun_ptr)) ())
+
+decodeAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+  _itbl <- getWord64le
+  arity <- getWord32le
+  nargs <- getWord32le
+  fun_ptr <- getWord64le
+  payload <- replicateM (fromIntegral nargs) getWord64le
+  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.APClosure info arity nargs (ClosurePtr (toBE64 fun_ptr)) ())
+
+
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeClosure (itb, _) _
-  | (StgInfoTable { tipe = PAP }) <- decodedTable itb = DCS 0 (GHC.Debug.Types.Closures.PAPClosure itb)
-  | (StgInfoTable { tipe = AP }) <- decodedTable itb = DCS 0 (GHC.Debug.Types.Closures.APClosure itb)
+decodeClosure i@(itb, _) c
+  | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
+  | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
 decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do

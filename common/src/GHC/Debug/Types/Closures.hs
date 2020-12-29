@@ -256,10 +256,10 @@ data DebugClosure string s b
     -- | An unsaturated function application
   | PAPClosure
         { info       :: !StgInfoTableWithPtr
-       -- , arity      :: !HalfWord       -- ^ Arity of the partial application
-      --  , n_args     :: !HalfWord       -- ^ Size of the payload in words
-      --  , fun        :: !b              -- ^ Pointer to a 'FunClosure'
-      --  , payload    :: ![b]            -- ^ Sequence of already applied
+        , arity      :: !HalfWord       -- ^ Arity of the partial application
+        , n_args     :: !HalfWord       -- ^ Size of the payload in words
+        , fun        :: !b              -- ^ Pointer to a 'FunClosure'
+        , payload    :: !()            -- ^ Sequence of already applied
                                         --   arguments
         }
 
@@ -270,10 +270,10 @@ data DebugClosure string s b
     -- | A function application
   | APClosure
         { info       :: !StgInfoTableWithPtr
-     --   , arity      :: !HalfWord       -- ^ Always 0
-     --   , n_args     :: !HalfWord       -- ^ Size of payload in words
-     --   , fun        :: !b              -- ^ Pointer to a 'FunClosure'
-     --   , payload    :: ![b]            -- ^ Sequence of already applied
+        , arity      :: !HalfWord       -- ^ Always 0
+        , n_args     :: !HalfWord       -- ^ Size of payload in words
+        , fun        :: !b              -- ^ Pointer to a 'FunClosure'
+        , payload    :: !()            -- ^ Sequence of already applied
                                         --   arguments
         }
 
@@ -281,7 +281,7 @@ data DebugClosure string s b
   | APStackClosure
         { info       :: !StgInfoTableWithPtr
         , fun        :: !b              -- ^ Function closure
-        , payload    :: ![b]            -- ^ Stack right before suspension
+        , payload    :: !()            -- ^ Stack right before suspension
         }
 
     -- | A pointer to another closure, introduced when a thunk is updated
@@ -502,7 +502,11 @@ parseConstrDesc input =
 
 class Tritraversable m where
   tritraverse ::
-    Applicative f => (a -> f b) -> (c -> f d) -> (e -> f g) -> m a c e -> f (m b d g)
+    Applicative f => (a -> f b)
+                  -> (c -> f d)
+                  -> (e -> f g)
+                  -> m a c e
+                  -> f (m b d g)
 
 trimap :: forall a b c d e f t . Tritraversable t => (a -> b) -> (c -> d) -> (e -> f) -> t a c e -> t b d f
 trimap = coerce
@@ -525,9 +529,9 @@ instance Tritraversable DebugClosure where
       FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
       ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
-      PAPClosure a1 -> pure $ PAPClosure a1 -- a2 a3 <$> g b <*> traverse g bs
-      APClosure a1  -> pure $ APClosure a1
-      APStackClosure a1 b bs   -> APStackClosure a1 <$> g b <*> traverse g bs
+      PAPClosure a1 a2 a3 a4 a5 -> PAPClosure a1 a2 a3 <$> g a4 <*> pure a5
+      APClosure a1 a2 a3 a4 a5 -> APClosure a1 a2 a3 <$> g a4 <*> pure a5
+      APStackClosure a1 b bs   -> APStackClosure a1 <$> g b <*> pure bs
       IndClosure a1 b -> IndClosure a1 <$> g b
       BCOClosure a1 b1 b2 b3 a2 a3 a4 ->
         (\c1 c2 c3 -> BCOClosure a1 c1 c2 c3 a2 a3 a4) <$> g b1 <*> g b2 <*> g b3

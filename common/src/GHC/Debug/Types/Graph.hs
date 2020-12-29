@@ -303,8 +303,8 @@ ppClosure herald showBox prec c = case c of
      --   fun : payload
     --PAPClosure {..} -> app $ map (showBox 10) $
      --   fun : payload
-    APStackClosure {..} -> app $ map (showBox 10) $
-        fun : payload
+--    APStackClosure {..} -> app $ map (showBox 10) $
+--        fun : payload
     BCOClosure {..} -> app
         ["_bco", showBox 10 bcoptrs]
     ArrWordsClosure {..} -> app

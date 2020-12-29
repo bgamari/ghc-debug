@@ -20,7 +20,7 @@ convertClosure itb g =
     GHC.SelectorClosure _ a2           -> SelectorClosure itb a2
 --    GHC.PAPClosure _ a2 a3 a4 a5       -> PAPClosure itb a2 a3 a4 a5
 --    GHC.APClosure _ a2 a3 a4 a5        -> APClosure itb a2 a3 a4 a5
-    GHC.APStackClosure _ a2 a3         -> APStackClosure itb a2 a3
+    GHC.APStackClosure _ a2 a3         -> APStackClosure itb a2 ()
     GHC.IndClosure _ a2                -> IndClosure itb a2
     GHC.BCOClosure _ a2 a3 a4 a5 a6 a7 -> BCOClosure itb a2 a3 a4 a5 a6 a7
     GHC.BlackholeClosure _ a2          -> BlackholeClosure itb a2
