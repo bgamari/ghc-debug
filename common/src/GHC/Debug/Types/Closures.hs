@@ -182,7 +182,7 @@ data DebugClosureWithExtra x string s b = DCS { extraDCS :: x
 newtype Size = Size { getSize :: Int }
   deriving stock (Show, Generic)
   deriving (Semigroup, Monoid) via (Sum Int)
-  deriving newtype (Num)
+  deriving newtype (Num, Ord, Eq)
 
 newtype InclusiveSize = InclusiveSize { getInclusiveSize :: Int }
   deriving stock (Show, Generic)

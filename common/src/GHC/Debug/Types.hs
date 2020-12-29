@@ -6,7 +6,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeApplications #-}
 
-module GHC.Debug.Types(module T, module GHC.Debug.Types) where
+module GHC.Debug.Types(module T, module GHC.Debug.Types, ClosureType(..)) where
 
 import Control.Applicative
 import Control.Exception
