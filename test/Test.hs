@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE NumericUnderscores #-}
 module Main where
 
 import GHC.Debug.Client
@@ -37,7 +38,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p26 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p29 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -344,4 +345,22 @@ p27 e = do
     precacheBlocks
     rs <- request RequestRoots
     traceFrom rs
+
+p28 e = do
+  p27 e
+  run e $ request RequestResume
+  threadDelay 1_000_000
+  p28 e
+
+p29 e = do
+  run e $ request RequestPause
+  r <- runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    traceWrite (length rs)
+    censusClosureType rs
+  printCensusByClosureType r
+  run e $ request RequestResume
+  threadDelay 1_000_000
+  p29 e
 
