@@ -151,7 +151,7 @@ class Response {
 
     void write(const char *buf, size_t len) {
         if (len > this->buf_size) {
-            trace("LEN TOO BIG %d, %d\n", len, this->buf_size);
+            trace("LEN TOO BIG %lu, %lu\n", len, this->buf_size);
             this->flush(RESP_OKAY_CONTINUES);
             uint32_t len_payload;
             uint16_t status_payload;
@@ -274,7 +274,7 @@ static void write_string(Response& resp, const char * s){
     uint32_t len_payload;
     len_payload=htonl(strlen(s));
     resp.write(len_payload);
-    trace("SIZE: %d", strlen(s));
+    trace("SIZE: %lu", strlen(s));
     uint32_t i;
     trace("WRITING: %s\n", s);
     for (i = 0; i < strlen(s); i++){
@@ -298,7 +298,6 @@ static void write_blocks(Response * resp, bdescr * bd){
 }
 
 void list_blocks_callback(void *user, bdescr * bd){
-  printf("WRITING: %p", bd);
   write_blocks((Response *) user, bd);
 }
 
