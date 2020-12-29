@@ -32,7 +32,7 @@ decodeStack decodeInfoTable getBitmap rs = do
         Partial _inp -> error "Not enough input"
         Done more offset v
           | BS.null more -> return []
-          | otherwise -> (v:) <$> get_frames (sp + (fromIntegral offset)) (RawStack  more)
+          | otherwise -> (v:) <$> get_frames (sp + (fromIntegral offset)) (RawStack more)
 
 getFrame :: PtrBitmap
          -> StgInfoTableWithPtr
@@ -49,14 +49,14 @@ getFrame st_bitmap itbl =
         _itblPtr <- replicateM (headerSize ty) getWord64le
         fields <- traversePtrBitmap decodeField st_bitmap
         case ty of
-          RET_FUN -> traceShowM (st_bitmap, fields) >> getWord64le >> return ()
+          RET_FUN -> traceShowM (st_bitmap, fields) >> return ()
           _ -> return ()
         return (DebugStackFrame itbl fields)
   where
     decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord
     decodeField False = SNonPtr <$> getWord
 
-    headerSize RET_FUN = 2
+    headerSize RET_FUN = 3
     headerSize RET_BCO = 2
     headerSize _ = 1
 
