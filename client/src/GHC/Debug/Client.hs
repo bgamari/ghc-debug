@@ -91,8 +91,6 @@ module GHC.Debug.Client
   , traceFrom
   , DebugEnv
   , DebugM
-  , censusClosureType
-  , printCensusByClosureType
   ) where
 
 import           Control.Exception
@@ -595,73 +593,4 @@ traceStackFrom st = do
 
 traceConstrDesc :: ConstrDescCont -> StateT s DebugM ()
 traceConstrDesc d = lift $ () <$ dereferenceConDesc d
-
-data TraceState s = TraceState { visited :: !(IS.IntSet), user :: !s }
-
-addVisit :: ClosurePtr -> TraceState s -> TraceState s
-addVisit (ClosurePtr c) st = st { visited = IS.insert (fromIntegral c) (visited st) }
-
-checkVisit :: ClosurePtr -> TraceState s -> Bool
-checkVisit (ClosurePtr c) st = IS.member (fromIntegral c) (visited st)
-
-updUser :: (st -> st) -> TraceState st -> TraceState st
-updUser f st = st { user = (f (user st)) }
-
--- Traverse the tree from GC roots, to populate the caches
--- with everything necessary.
-traceFromM :: (SizedClosure -> st -> st) -> st -> [ClosurePtr] -> DebugM st
-traceFromM k i cps = user <$> execStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty i)
-
-traceClosureFromM :: (SizedClosure -> st -> st) -> ClosurePtr -> StateT (TraceState st) DebugM ()
-traceClosureFromM k cp = do
-    m <- get
-    unless (checkVisit cp m) $ do
-      modify (addVisit cp)
-      sc <- lift $ dereferenceClosureFromBlock cp
-      modify (updUser (k sc))
-      tritraverse traceConstrDescM traceStackFromM (traceClosureFromM k) sc
-      case lookupStgInfoTableWithPtr (noSize sc) of
-        Nothing -> return Nothing
-        Just infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
-      return ()
-
-traceStackFromM :: StackCont -> StateT s DebugM ()
-traceStackFromM st = lift $ () <$ dereferenceStack st
-
-traceConstrDescM :: ConstrDescCont -> StateT s DebugM ()
-traceConstrDescM d = lift $ () <$ dereferenceConDesc d
-
-newtype Count = Count Int
-                deriving (Semigroup, Monoid, Num) via Sum Int
-
-data CensusStats = CS { n :: Count, cssize :: Size  }
-
-instance Semigroup CensusStats where
-  (CS a b) <> (CS a1 b1) = CS (a <> a1) (b <> b1)
-
-type CensusByClosureType = IM.IntMap CensusStats
-
-censusClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
-censusClosureType = traceFromM go IM.empty
-  where
-    go :: SizedClosure -> CensusByClosureType -> CensusByClosureType
-    go d =
-      let s :: Size
-          s = dcSize d
-          v =  CS (Count 1) s
-      in case lookupStgInfoTableWithPtr (noSize d) of
-           Just itbl ->
-              let k :: ClosureType
-                  k = tipe (decodedTable itbl)
-              in IM.insertWith (<>) (fromEnum k) v
-           Nothing -> id
-
-
-printCensusByClosureType :: CensusByClosureType -> IO ()
-printCensusByClosureType c =
-  let res = reverse (sortBy (comparing (cssize . snd)) (IM.toList c))
-      showLine (k, (CS (Count n) (Size s))) =
-        concat [show @ClosureType (toEnum k), ":", show s,":", show n,":", show @Double (fromIntegral s / fromIntegral n)]
-  in mapM_ (putStrLn . showLine) res
-
 

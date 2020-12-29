@@ -17,6 +17,7 @@ library
   exposed-modules:     GHC.Debug.Client,
                        GHC.Debug.Client.Retainers,
                        GHC.Debug.Client.Search,
+                       GHC.Debug.Client.Profile,
                        GHC.Debug.Client.Monad,
                        GHC.Debug.Client.BlockCache,
                        GHC.Debug.Client.RequestCache,
@@ -31,7 +32,7 @@ library
                        unordered-containers,
                        ghc-debug-common, cpu,
                        text, process, filepath, directory,
-                       haxl, hashable, mtl
+                       haxl, hashable, mtl, eventlog2html >= 0.8.3
   hs-source-dirs:      src
   default-language:    Haskell2010
   default-extensions:  ApplicativeDo

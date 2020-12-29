@@ -4,6 +4,7 @@ module Main where
 
 import GHC.Debug.Client
 import GHC.Debug.Client.Retainers
+import GHC.Debug.Client.Profile
 import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
@@ -38,7 +39,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p29 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p30 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -364,3 +365,5 @@ p29 e = do
   threadDelay 1_000_000
   p29 e
 
+
+p30 e = profile 1_000_000 e
