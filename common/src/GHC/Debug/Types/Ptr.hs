@@ -73,6 +73,9 @@ subtractStackPtr :: StackPtr -> ClosurePtr -> Word64
 subtractStackPtr (StackPtr c) (ClosurePtr c2) =
   (fromBE64 c) - (fromBE64 c2)
 
+addStackPtr :: StackPtr -> Word64 -> StackPtr
+addStackPtr (StackPtr c) o = StackPtr (toBE64 (fromBE64 c + o))
+
 rawClosureSize :: RawClosure -> Int
 rawClosureSize (RawClosure s) = BS.length s
 

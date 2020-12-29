@@ -1,41 +1,69 @@
-
 #include "Cmm.h"
 
-unpackClosureWordszh ( P_ closure )
-{
-    W_ info, ptrs, nptrs, p, ptrs_arr, dat_arr;
-    info  = %GET_STD_INFO(UNTAG(closure));
 
-    ptrs  = TO_W_(%INFO_PTRS(info));
-    nptrs = TO_W_(%INFO_NPTRS(info));
+closureSizezh ( P_ closure )
+{
+    W_ clos;
+    clos = UNTAG(closure);
+
+    W_ len;
+    (len) = foreign "C" heap_view_closureSize(clos "ptr");
+    return (len);
+}
+
+unpackClosureDatzh ( P_ closure )
+{
+    W_ p, ptrs_arr, dat_arr;
 
     W_ clos;
     clos = UNTAG(closure);
 
     W_ len;
     (len) = foreign "C" heap_view_closureSize(clos "ptr");
+    foreign "C" printf("unpack %p %d\n", clos, len);
 
-    W_ ptrs_arr_sz, ptrs_arr_cards, dat_arr_sz;
+    W_ dat_arr_sz;
     dat_arr_sz = SIZEOF_StgArrBytes + WDS(len);
 
-    ALLOC_PRIM_N (dat_arr_sz, unpackClosureWordszh, closure);
+    ALLOC_PRIM_N (dat_arr_sz, unpackClosureDatzh, closure);
+    foreign "C" printf("unpack(2) %p %d\n", clos, len);
 
     dat_arr = Hp - dat_arr_sz + WDS(1);
 
-
     SET_HDR(dat_arr, stg_ARR_WORDS_info, CCCS);
     StgArrBytes_bytes(dat_arr) = WDS(len);
+    foreign "C" printf("unpack(3) %p %d\n", clos, len);
     p = 0;
 for:
     if(p < len) {
+         foreign "C" printf("unpack(3a) %p %d/%d %p\n", clos,p, len, clos + WDS(p));
          W_[BYTE_ARR_CTS(dat_arr) + WDS(p)] = W_[clos + WDS(p)];
          p = p + 1;
+
          goto for;
     }
+    foreign "C" printf("unpack(4) %p %d\n", clos, len);
+
+
+    return (dat_arr);
+}
+
+unpackClosureInfozh ( P_ closure )
+{
+    W_ info;
+    info = %GET_STD_INFO(UNTAG(closure));
+
+    return (info);
+}
+
+unpackClosurePtrzh ( P_ closure )
+{
+    W_ clos;
+    clos = UNTAG(closure);
 
     W_ ptrArray;
 
     ("ptr" ptrArray) = foreign "C" heap_view_closurePtrsAsWords(MyCapability() "ptr", clos "ptr");
 
-    return (info, dat_arr, ptrArray);
+    return (ptrArray);
 }

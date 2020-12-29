@@ -12,14 +12,15 @@
 module GHC.Debug.Decode (decodeClosure, decodeClosureWithSize, decodeInfoTable, extractFromBlock) where
 
 import GHC.Ptr (plusPtr, castPtr)
-import GHC.Exts -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
+import GHC.Exts hiding (closureSize#) -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
 import GHC.Word
 import GHC.IO.Unsafe
 import Foreign.Storable
 
 import qualified Data.ByteString.Internal as BSI
+import Data.ByteString.Short.Internal (ShortByteString(..), toShort)
 
-import GHC.Exts.Heap hiding (Closure)
+import GHC.Exts.Heap hiding (Closure, closureSize#)
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
@@ -30,24 +31,46 @@ import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import GHC.ForeignPtr
 import System.Endian
+import Debug.Trace
 
 import qualified Data.ByteString as B
 
-foreign import prim "unpackClosureWordszh" unpackClosureWords# ::
-              Addr# -> (# Addr#, ByteArray#, ByteArray# #)
+foreign import prim "unpackClosureInfozh" unpackClosureInfo# ::
+              Addr# -> (# Addr# #)
+
+foreign import prim "unpackClosureDatzh" unpackClosureDat# ::
+              Addr# -> (# ByteArray# #)
+
+foreign import prim "unpackClosurePtrzh" unpackClosurePtr# ::
+              Addr# -> (# ByteArray# #)
+
+foreign import prim "closureSizezh" closureSize# ::
+              Addr# -> (# Word# #)
+
+unpackClosureWords# c =
+  let
+    !(# itbl #) = unpackClosureInfo# c
+    !(# dat #)  = unpackClosureDat# c
+    !(# ptrs #) = unpackClosurePtr# c
+  in (# itbl, dat, ptrs #)
+
 
 data AllocStrategy = AllocByPtr | AllocByCopy
 
 allocStrategy :: AllocStrategy
 allocStrategy = AllocByCopy
 
-getClosureRaw :: StgInfoTable -> Ptr a -> IO (GenClosure Word, Size)
-getClosureRaw itb (Ptr closurePtr) = do
-  let !(# _infoTablePtr, datArr, pointers #) = unpackClosureWords# closurePtr
+getClosureRaw :: StgInfoTable -> Ptr a -> BSI.ByteString -> IO (GenClosure Word, Size)
+getClosureRaw itb (Ptr closurePtr) datString = do
+  let !(# pointers #) = unpackClosurePtr# closurePtr
+      !(# raw_size_wh #) = closureSize# closurePtr
+      raw_size = fromIntegral (W# raw_size_wh) * 8
+  -- Not strictly necessary to take the size of the raw string but its
+  -- a good sanity check. In particular it helps with stack decoding.
+  let !(SBS datArr) = (toShort (B.take raw_size datString))
   let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
       end_ptrs = fromIntegral nelems_ptrs - 1
       rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
-      raw_size = I# (sizeofByteArray# datArr)
   gen_closure <- getClosureDataFromHeapRepPrim (return ("", "", ""))
                                                (\_ -> return Nothing) itb datArr  rawPtrs
   return (gen_closure, Size raw_size)
@@ -116,7 +139,8 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
         -- Printing this return value can lead to segfaults because the
         -- pointer for constrDesc won't point to a string after being
         -- decoded.
-        (!r, !s) <- getClosureRaw (decodedTable itb) closPtr
+        --print (tipe (decodedTable itb), ptr, closPtr, itblPtr)
+        (!r, !s) <- getClosureRaw (decodedTable itb) closPtr clos
         -- Mutate back the ByteArray as if we attempt to use it again then
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space

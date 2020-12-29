@@ -10,27 +10,29 @@ import Data.Binary.Get as B
 import GHC.Debug.Types
 import GHC.Exts.Heap.ClosureTypes
 import System.Endian
+import Control.Monad
 
 import Data.Coerce
+import Debug.Trace
 
 decodeStack :: Monad m
             => (RawClosure -> m StgInfoTableWithPtr)
-            -> (RawClosure -> m PtrBitmap)
+            -> (Word32 -> m PtrBitmap)
             -> RawStack
             -> m StackFrames
 decodeStack decodeInfoTable getBitmap rs = do
-  GenStackFrames <$> get_frames rs
+  GenStackFrames <$> get_frames 0 rs
   where
-    get_frames raw@(RawStack c) = do
-      st_it <- decodeInfoTable (coerce rs)
-      bm <- getBitmap (coerce raw)
+    get_frames sp raw@(RawStack c) = do
+      st_it <- decodeInfoTable (coerce raw)
+      bm <- getBitmap sp
       let res = B.runGetIncremental (getFrame bm st_it) `pushChunk` c
       case res of
         Fail _rem _offset err -> error err
         Partial _inp -> error "Not enough input"
-        Done more _offset v
+        Done more offset v
           | BS.null more -> return []
-          | otherwise -> (v:) <$> get_frames (RawStack  more)
+          | otherwise -> (v:) <$> get_frames (sp + (fromIntegral offset)) (RawStack  more)
 
 getFrame :: PtrBitmap
          -> StgInfoTableWithPtr
@@ -40,15 +42,23 @@ getFrame st_bitmap itbl =
       RET_BCO ->
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
         error "getStack: RET_BCO"
-      _ -> do
+      ty -> do
         -- In all other cases we request the pointer bitmap from the debuggee
         -- and decode as appropriate.
-        _itblPtr <- getInfoTablePtr
+        --traceShowM (headerSize ty, ty, st_bitmap, itbl)
+        _itblPtr <- replicateM (headerSize ty) getWord64le
         fields <- traversePtrBitmap decodeField st_bitmap
+        case ty of
+          RET_FUN -> traceShowM (st_bitmap, fields) >> getWord64le >> return ()
+          _ -> return ()
         return (DebugStackFrame itbl fields)
   where
     decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord
     decodeField False = SNonPtr <$> getWord
+
+    headerSize RET_FUN = 2
+    headerSize RET_BCO = 2
+    headerSize _ = 1
 
 getInfoTablePtr :: Get InfoTablePtr
 getInfoTablePtr = InfoTablePtr <$> getWord64le -- TODO word size

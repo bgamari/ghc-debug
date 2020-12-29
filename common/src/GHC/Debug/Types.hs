@@ -56,7 +56,7 @@ data Request a where
 --    -- | Calls the debugging `findPtr` function and returns the retainers
 --    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
     -- | Request the pointer bitmap for an info table.
-    RequestBitmap :: InfoTablePtr -> Request PtrBitmap
+    RequestBitmap :: StackPtr -> Word32 -> Request PtrBitmap
     -- | Request the description for an info table.
     -- The `InfoTablePtr` is just used for the equality
     RequestConstrDesc :: PayloadWithKey InfoTablePtr ClosurePtr -> Request ConstrDesc
@@ -87,7 +87,7 @@ eq1request r1 r2 =
     RequestInfoTables itp -> case r2 of { (RequestInfoTables itp') ->  itp == itp'; _ -> False }
     RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
     RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
-    RequestBitmap itp      -> case r2 of {(RequestBitmap itp') -> itp == itp'; _ -> False }
+    RequestBitmap p o      -> case r2 of {(RequestBitmap p' o') -> p == p' && o == o'; _ -> False }
     RequestConstrDesc cp   -> case r2 of { (RequestConstrDesc cp') -> cp == cp'; _ -> False }
     RequestSourceInfo itp  -> case r2 of { (RequestSourceInfo itp') -> itp == itp'; _ -> False }
     RequestAllBlocks       -> case r2 of { RequestAllBlocks -> True; _ -> False }
@@ -119,7 +119,7 @@ instance Hashable (Request a) where
     RequestInfoTables itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
     RequestPoll           -> s `hashWithSalt` cmdRequestPoll
     RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
-    RequestBitmap itp      -> s `hashWithSalt` cmdRequestBitmap `hashWithSalt` itp
+    RequestBitmap p o      -> s `hashWithSalt` cmdRequestBitmap `hashWithSalt` p `hashWithSalt` o
     RequestConstrDesc cp   -> s `hashWithSalt` cmdRequestConstrDesc `hashWithSalt` cp
     RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
     RequestAllBlocks       -> s `hashWithSalt` cmdRequestAllBlocks
@@ -219,8 +219,8 @@ putRequest (RequestInfoTables ts) =
   putCommand cmdRequestInfoTables $ do
     putWord16be $ fromIntegral (length ts)
     foldMap put ts
-putRequest (RequestBitmap binfo)       =
-  putCommand cmdRequestBitmap $ put binfo
+putRequest (RequestBitmap sp o)       =
+  putCommand cmdRequestBitmap $ put sp >> putWord32be o
 putRequest (RequestConstrDesc (PayloadWithKey _ cinfo)) =
   putCommand cmdRequestConstrDesc $ put cinfo
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
@@ -240,7 +240,7 @@ getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
 getResponse (RequestInfoTables itps) =
     zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps <$> many getInfoTable
-getResponse (RequestBitmap _)    = getPtrBitmap
+getResponse (RequestBitmap st o)    = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
@@ -312,6 +312,7 @@ getInfoTable = do
 
 
 data Error = BadCommand
+           | BadStack
            | AlreadyPaused
            | NotPaused
            | NoResume
@@ -330,6 +331,7 @@ getResponseCode = getWord16be >>= f
     f 0x0   = pure Okay
     f 0x1   = pure OkayContinues
     f 0x100 = pure $ Error BadCommand
+    f 0x104 = pure $ Error BadStack
     f 0x101 = pure $ Error AlreadyPaused
     f 0x102 = pure $ Error NotPaused
     f 0x103 = pure $ Error NoResume

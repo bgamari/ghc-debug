@@ -507,7 +507,7 @@ dereferenceClosures cs = do
 dereferenceStack :: StackCont -> DebugM GD.StackFrames
 dereferenceStack (StackCont sp) = do
   stack <- request (RequestStack sp)
-  let get_bitmap p = request (RequestBitmap (getInfoTblPtr p))
+  let get_bitmap o = request (RequestBitmap sp o)
       get_info_table rc = (\(a, _, _) -> a) <$> lookupInfoTable rc
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack

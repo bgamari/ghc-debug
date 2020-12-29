@@ -70,6 +70,7 @@ enum response_code {
     RESP_OKAY_CONTINUES = 1,
     // Error responses
     RESP_BAD_COMMAND = 0x100,
+    RESP_BAD_STACK = 0x104,
     RESP_ALREADY_PAUSED = 0x101,
     RESP_NOT_PAUSED = 0x102,
     RESP_NO_RESUME = 0x103,
@@ -253,6 +254,22 @@ static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, Stg
     }
 }
 
+static void write_small_bitmap(Response& resp, StgWord bitmap, StgWord size) {
+    uint32_t i = 0;
+
+    // Small bitmap
+    uint32_t size_payload;
+    size_payload=htonl(size);
+    trace("SIZE %lu", size);
+    resp.write((uint32_t) size_payload);
+    while (size > 0) {
+        resp.write((uint8_t) ! (bitmap & 1));
+        bitmap = bitmap >> 1;
+        size--;
+    }
+}
+
+
 static void write_string(Response& resp, const char * s){
     uint32_t len_payload;
     len_payload=htonl(strlen(s));
@@ -418,11 +435,14 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_GET_BITMAP:
         {
             response_code code = RESP_OKAY;
-            StgInfoTable *ptr_end = (StgInfoTable *) p.get<uint64_t>();
+            StgStack *s = (StgStack *) p.get<uint64_t>();
+            uint32_t o = ntohl(p.get<uint32_t>());
             // TODO this offset is wrong sometimes
             // You have to subtract 1 so that you get the pointer to the
             // start of the info table.
-            StgInfoTable *info = ptr_end - 1;
+            StgClosure *c = (StgClosure *)((uint64_t (s->sp)) + ((uint64_t) o));
+            trace("BITMAP %p %d %p\n", s->sp, o, c);
+            const StgInfoTable *info = get_itbl(c);
             switch (info->type) {
               case CATCH_STM_FRAME:
               case CATCH_RETRY_FRAME:
@@ -430,20 +450,13 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
               case UNDERFLOW_FRAME:
               case STOP_FRAME:
               case CATCH_FRAME:
+              case UPDATE_FRAME:
               case RET_SMALL:
               {
                   // Small bitmap
                   StgWord bitmap = BITMAP_BITS(info->layout.bitmap);
                   StgWord size   = BITMAP_SIZE(info->layout.bitmap);
-                  uint32_t size_payload;
-                  size_payload=htonl(size);
-                  trace("SIZE %d", size);
-                  resp.write((uint32_t) size_payload);
-                  while (size > 0) {
-                      resp.write((uint8_t) ! (bitmap & 1));
-                      bitmap = bitmap >> 1;
-                      size--;
-                  }
+                  write_small_bitmap(resp, bitmap, size);
                   break;
               }
 
@@ -460,9 +473,32 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                   write_large_bitmap(resp, bitmap, bitmap->size);
                   break;
               }
+              case RET_FUN:
+              {
+                  const StgFunInfoTable *fun_info;
+                  StgRetFun *ret_fun;
+
+                  ret_fun = (StgRetFun *)c;
+                  fun_info = get_fun_itbl(UNTAG_CONST_CLOSURE(ret_fun->fun));
+                  StgWord size = ret_fun->size;
+                  switch (fun_info->f.fun_type) {
+                  case ARG_GEN:
+                      write_small_bitmap
+                          (resp, BITMAP_BITS(fun_info->f.b.bitmap), size);
+                      break;
+                  case ARG_GEN_BIG:
+                      write_large_bitmap(resp, GET_FUN_LARGE_BITMAP(fun_info), size);
+                      break;
+                  default:
+                      write_small_bitmap(resp, BITMAP_BITS(stg_arg_bitmaps[fun_info->f.fun_type]), size);
+                      break;
+                  }
+                  break;
+              }
 
               default:
-                  code = RESP_BAD_COMMAND;
+                  trace("INFO %p %d", info, info->type);
+                  code = RESP_BAD_STACK;
             }
             resp.finish(code);
             break;
