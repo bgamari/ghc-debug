@@ -447,8 +447,8 @@ closureReferencesAndLabels closure = case closure of
   SelectorClosure {..} -> [("Selectee", Left selectee)]
   IndClosure {..} -> [("Indirectee", Left indirectee)]
   BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
-  APClosure {..} -> ("Function", Left fun) : withArgLables payload
-  PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
+--  APClosure {..} -> ("Function", Left fun) : withArgLables payload
+--  PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
   APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
   BCOClosure {..} -> [ ("Instructions", Left instrs)
                       , ("Literals", Left literals)

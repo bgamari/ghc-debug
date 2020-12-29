@@ -256,10 +256,10 @@ data DebugClosure string s b
     -- | An unsaturated function application
   | PAPClosure
         { info       :: !StgInfoTableWithPtr
-        , arity      :: !HalfWord       -- ^ Arity of the partial application
-        , n_args     :: !HalfWord       -- ^ Size of the payload in words
-        , fun        :: !b              -- ^ Pointer to a 'FunClosure'
-        , payload    :: ![b]            -- ^ Sequence of already applied
+       -- , arity      :: !HalfWord       -- ^ Arity of the partial application
+      --  , n_args     :: !HalfWord       -- ^ Size of the payload in words
+      --  , fun        :: !b              -- ^ Pointer to a 'FunClosure'
+      --  , payload    :: ![b]            -- ^ Sequence of already applied
                                         --   arguments
         }
 
@@ -270,10 +270,10 @@ data DebugClosure string s b
     -- | A function application
   | APClosure
         { info       :: !StgInfoTableWithPtr
-        , arity      :: !HalfWord       -- ^ Always 0
-        , n_args     :: !HalfWord       -- ^ Size of payload in words
-        , fun        :: !b              -- ^ Pointer to a 'FunClosure'
-        , payload    :: ![b]            -- ^ Sequence of already applied
+     --   , arity      :: !HalfWord       -- ^ Always 0
+     --   , n_args     :: !HalfWord       -- ^ Size of payload in words
+     --   , fun        :: !b              -- ^ Pointer to a 'FunClosure'
+     --   , payload    :: ![b]            -- ^ Sequence of already applied
                                         --   arguments
         }
 
@@ -525,8 +525,8 @@ instance Tritraversable DebugClosure where
       FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
       ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
-      PAPClosure a1 a2 a3 b bs -> PAPClosure a1 a2 a3 <$> g b <*> traverse g bs
-      APClosure a1 a2 a3 b bs  -> APClosure a1 a2 a3 <$> g b <*> traverse g bs
+      PAPClosure a1 -> pure $ PAPClosure a1 -- a2 a3 <$> g b <*> traverse g bs
+      APClosure a1  -> pure $ APClosure a1
       APStackClosure a1 b bs   -> APStackClosure a1 <$> g b <*> traverse g bs
       IndClosure a1 b -> IndClosure a1 <$> g b
       BCOClosure a1 b1 b2 b3 a2 a3 a4 ->

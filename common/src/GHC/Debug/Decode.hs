@@ -94,6 +94,9 @@ decodeClosureWithSize itb (ptr, rc) = decodeClosure itb (ptr, rc)
 
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeClosure (itb, _) _
+  | (StgInfoTable { tipe = PAP }) <- decodedTable itb = DCS 0 (GHC.Debug.Types.Closures.PAPClosure itb)
+  | (StgInfoTable { tipe = AP }) <- decodedTable itb = DCS 0 (GHC.Debug.Types.Closures.APClosure itb)
 decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do

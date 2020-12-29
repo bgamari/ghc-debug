@@ -299,10 +299,10 @@ ppClosure herald showBox prec c = case c of
         ["_ind", showBox 10 indirectee]
     BlackholeClosure {..} -> app
         ["_bh",  showBox 10 indirectee]
-    APClosure {..} -> app $ map (showBox 10) $
-        fun : payload
-    PAPClosure {..} -> app $ map (showBox 10) $
-        fun : payload
+    --APClosure {..} -> app $ map (showBox 10) $
+     --   fun : payload
+    --PAPClosure {..} -> app $ map (showBox 10) $
+     --   fun : payload
     APStackClosure {..} -> app $ map (showBox 10) $
         fun : payload
     BCOClosure {..} -> app
