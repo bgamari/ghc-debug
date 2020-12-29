@@ -23,8 +23,9 @@ let
     repo = "old-ghc-nix";
     rev = "093fe8273876ab1b746f6f3301a27aa2dd93ed75";
     sha256 = "186j36idapllxllwcw8svkzf8zvadvls2y4kw0mx4syc6ap4glrx";
-  }) { pkgs = np; }).mkGhc;
+  }) { pkgs = np2; }).mkGhc;
 
+  # Required for https://github.com/haskell/cabal/pull/7183
   cabalFork = (np.fetchFromGitHub {
     owner = "bgamari";
     repo = "cabal";
@@ -45,15 +46,25 @@ let
 
   # Cached artifacts do not last forever!
   # If this fails, please update url and hash for the lastest successful build
-  # of wip/ghc-debug.
+  # of wip/ghc-debug-ghc.
   ghc = mkGhc
-        { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/516526/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
-          hash = "0gl3hrl108zj4r5lwrcvp29xvaxzyn5zpfkbzm6a034ad9md9d2a";
+        { url = "https://gitlab.haskell.org/ghc/ghc/-/jobs/527948/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz";
+          hash = "1xycyvnrn5d9ygmp36lzdlz9lwxz3bip0gmhvnymr0r0yafblz4w";
         };
-  ghc-utils = import ../ghc-utils {};
+
+
+
+  ghc-utils = import (np.fetchFromGitLab {
+    domain = "gitlab.haskell.org";
+    owner = "bgamari";
+    repo = "ghc-utils";
+    rev = "8ff33a41efdab01cb94e25648bc2a25864995466";
+    sha256 = "0s745qvi26lbisz1y6zxdz0c10f69pvlrb87myv229f5k0vdp3vq";
+  }) {};
 
 in
   np2.mkShell { buildInputs = [ghc-utils
+                               ghc
                                fixedCabal
                                np.linuxPackages.perf
                                np2.ncurses
