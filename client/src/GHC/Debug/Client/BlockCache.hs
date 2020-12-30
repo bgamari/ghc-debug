@@ -68,8 +68,8 @@ handleBlockReq h ref (LookupClosure cp) = do
   let mrb = lookupClosure cp bc
   rb <- case mrb of
                Nothing -> do
+                 -- print ("MISS", cp)
                  rb <- doRequest h (RequestBlock cp)
-                 --print ("MISS", rawBlockAddr rb)
                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
                  return rb
                Just rb -> do

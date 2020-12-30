@@ -142,7 +142,7 @@ decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure)
 decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
   | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
-decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO $ do
+decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
@@ -166,15 +166,16 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
         -- Mutate back the ByteArray as if we attempt to use it again then
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
+        --
         poke ptr_to_itbl_ptr old_itbl
         return $ DCS s . trimap (\itb' -> PayloadWithKey itb' ptr)
                         stackCont
                         ClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
-    stackCont :: () -> StackCont
-    stackCont _ =  StackCont (coerce ptr)
-      --(getRawStack (StackPtr sp) ptr rc)
+    stackCont :: (Word32, StackPtr) -> StackCont
+    stackCont (n,sp) = StackCont sp (getRawStack (n,sp) ptr rc)
+
 
 
 fixTNTC :: Ptr a -> Ptr StgInfoTable

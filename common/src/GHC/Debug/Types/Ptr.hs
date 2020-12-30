@@ -19,6 +19,9 @@ import System.Endian
 import Numeric (showHex)
 import Data.Coerce
 import Data.Bits
+import Debug.Trace
+import GHC.Stack
+import Control.Applicative
 
 prettyPrint :: BS.ByteString -> String
 prettyPrint = concatMap (flip showHex "") . BS.unpack
@@ -51,9 +54,12 @@ instance Ord ClosurePtr where
   (ClosurePtr x) `compare` (ClosurePtr y) = fromBE64 x `compare` fromBE64 y
 
 instance Show ClosurePtr where
+  show (ClosurePtr 0) = "null"
   show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
 
-data StackCont = StackCont StackPtr deriving Show
+data StackCont = StackCont StackPtr -- Address of start of frames
+                           RawStack -- The raw frames
+                           deriving Show
 
 newtype StackPtr = StackPtr Word64
                    deriving (Eq, Ord)
@@ -79,12 +85,28 @@ addStackPtr (StackPtr c) o = StackPtr (toBE64 (fromBE64 c + o))
 rawClosureSize :: RawClosure -> Int
 rawClosureSize (RawClosure s) = BS.length s
 
-{-
-getRawStack :: StackPtr -> ClosurePtr -> RawClosure -> RawStack
-getRawStack sp c (RawClosure s) =
-  let k = fromIntegral (subtractStackPtr sp c)
-  in RawStack (BS.drop k s)/
-  -}
+calculateStackLen :: Word32 -> ClosurePtr -> StackPtr -> Word64
+calculateStackLen siz (ClosurePtr p) (StackPtr sp) =
+  (fromBE64 p  -- Pointer to start of StgStack closure
+    + 24       -- Offset to end of closure
+    + (fromIntegral siz * 8) -- Stack_Size (in words)
+    )
+    - fromBE64 sp -- Minus current Sp
+
+getRawStack :: (Word32, StackPtr) -> ClosurePtr -> RawClosure -> RawStack
+getRawStack (siz, sp) c (RawClosure s) =
+  let -- Offset from start of RawClosure to stack frames
+      k = fromIntegral (subtractStackPtr sp c)
+      -- The size of the stack frames
+      len = calculateStackLen siz c sp
+      raw_s = (BS.take (fromIntegral len) (BS.drop k s))
+  in RawStack raw_s
+
+printBS :: BS.ByteString -> String
+printBS bs = show (runGet (many (ClosurePtr <$> getWord64be)) (BSL.fromStrict bs))
+
+printStack :: RawStack -> String
+printStack (RawStack s) = printBS s
 
 -- | Check if the ClosurePtr is block allocated or not
 -- TODO: MP: These numbers are hard-coded from what
@@ -104,6 +126,9 @@ newtype RawClosure = RawClosure BS.ByteString
 
 newtype RawStack = RawStack BS.ByteString
                    deriving (Eq, Ord, Show)
+
+rawStackSize :: RawStack -> Int
+rawStackSize (RawStack bs) = BS.length bs
 
 
 newtype BlockPtr = BlockPtr Word64
@@ -126,7 +151,7 @@ tAG_MASK = 0b111
 untagClosurePtr :: ClosurePtr -> ClosurePtr
 untagClosurePtr (ClosurePtr (fromBE64 -> w)) = ClosurePtr (toBE64 (w .&. complement tAG_MASK))
 
-getInfoTblPtr :: RawClosure -> InfoTablePtr
+getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = InfoTablePtr (runGet getWord64be (BSL.take 8 (BSL.fromStrict bs)))
 
 -- A value, but with a different value used for testing equality.

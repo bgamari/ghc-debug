@@ -503,10 +503,12 @@ dereferenceClosures cs = do
     return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
 
 dereferenceStack :: StackCont -> DebugM GD.StackFrames
-dereferenceStack (StackCont sp) = do
-  stack <- request (RequestStack sp)
+dereferenceStack (StackCont sp stack) = do
+--  req_stack <- request (RequestStack (coerce cp))
   let get_bitmap o = request (RequestBitmap sp o)
       get_info_table rc = (\(a, _, _) -> a) <$> lookupInfoTable rc
+--  traceShowM ("BAD", printStack stack, rawStackSize stack)
+--  traceShowM ("GOOD", printStack req_stack, rawStackSize req_stack)
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
 

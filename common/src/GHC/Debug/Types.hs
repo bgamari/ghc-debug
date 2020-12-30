@@ -24,10 +24,11 @@ import Data.Binary.Get
 import Data.Hashable
 
 import GHC.Debug.Types.Closures as T
-import GHC.Debug.Types.Ptr as T
+import GHC.Debug.Types.Ptr as T hiding (getRawStack)
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
+import Debug.Trace
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.

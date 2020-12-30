@@ -283,22 +283,22 @@ static void write_string(Response& resp, const char * s){
 }
 
 
-static void write_block(Response * resp, StgClosure * bd){
+static void write_block(Response * resp, StgClosure * bd, StgWord32 n){
   resp->write(bd);
-  uint32_t len_payload = htonl(BLOCK_SIZE);
+  uint32_t len_payload = htonl(BLOCK_SIZE * n);
   resp->write(len_payload);
-  resp->write((const char *) bd, BLOCK_SIZE);
+  resp->write((const char *) bd, BLOCK_SIZE * n);
 }
 
 static void write_blocks(Response * resp, bdescr * bd){
     for (; bd != NULL; bd = bd->link){
       resp->write(bd->flags);
-      write_block(resp, ((StgClosure *) bd->start));
+      write_block(resp, ((StgClosure *) bd->start), bd->blocks);
     }
 }
 
 void list_blocks_callback(void *user, bdescr * bd){
-  write_blocks((Response *) user, bd);
+    write_blocks((Response *) user, bd);
 }
 
 /* return non-zero on error */
@@ -434,13 +434,13 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_GET_BITMAP:
         {
             response_code code = RESP_OKAY;
-            StgStack *s = (StgStack *) p.get<uint64_t>();
+            StgClosure *s = (StgClosure *) p.get<uint64_t>();
             uint32_t o = ntohl(p.get<uint32_t>());
             // TODO this offset is wrong sometimes
             // You have to subtract 1 so that you get the pointer to the
             // start of the info table.
-            StgClosure *c = (StgClosure *)((uint64_t (s->sp)) + ((uint64_t) o));
-            trace("BITMAP %p %d %p\n", s->sp, o, c);
+            StgClosure *c = (StgClosure *)((uint64_t (s)) + ((uint64_t) o));
+            trace("BITMAP %p %d %p\n", s, o, c);
             const StgInfoTable *info = get_itbl(c);
             switch (info->type) {
               case CATCH_STM_FRAME:
@@ -583,7 +583,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
         StgClosure * bd = (StgClosure *) (((W_) ptr) & ~BLOCK_MASK);
         trace("BD_ADDR: %p, %p", ptr,bd);
-        write_block(&resp, bd);
+        write_block(&resp, bd, 1);
         resp.finish(RESP_OKAY);
         break;
         }
