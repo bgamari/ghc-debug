@@ -56,8 +56,11 @@ data Request a where
     RequestSavedObjects :: Request [ClosurePtr]
 --    -- | Calls the debugging `findPtr` function and returns the retainers
 --    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
-    -- | Request the pointer bitmap for an info table.
-    RequestBitmap :: StackPtr -> Word32 -> Request PtrBitmap
+    -- | Request the pointer bitmap for a stack frame.
+    RequestStackBitmap :: StackPtr -> Word32 -> Request PtrBitmap
+    -- | Decode the bitmap container in a StgFunInfoTable
+    -- Used by PAP and AP closure types.
+    RequestFunBitmap :: ClosurePtr -> Request PtrBitmap
     -- | Request the description for an info table.
     -- The `InfoTablePtr` is just used for the equality
     RequestConstrDesc :: PayloadWithKey InfoTablePtr ClosurePtr -> Request ConstrDesc
@@ -88,7 +91,7 @@ eq1request r1 r2 =
     RequestInfoTables itp -> case r2 of { (RequestInfoTables itp') ->  itp == itp'; _ -> False }
     RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
     RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
-    RequestBitmap p o      -> case r2 of {(RequestBitmap p' o') -> p == p' && o == o'; _ -> False }
+    RequestStackBitmap p o      -> case r2 of {(RequestStackBitmap p' o') -> p == p' && o == o'; _ -> False }
     RequestConstrDesc cp   -> case r2 of { (RequestConstrDesc cp') -> cp == cp'; _ -> False }
     RequestSourceInfo itp  -> case r2 of { (RequestSourceInfo itp') -> itp == itp'; _ -> False }
     RequestAllBlocks       -> case r2 of { RequestAllBlocks -> True; _ -> False }
@@ -120,7 +123,7 @@ instance Hashable (Request a) where
     RequestInfoTables itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
     RequestPoll           -> s `hashWithSalt` cmdRequestPoll
     RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
-    RequestBitmap p o      -> s `hashWithSalt` cmdRequestBitmap `hashWithSalt` p `hashWithSalt` o
+    RequestStackBitmap p o -> s `hashWithSalt` cmdRequestStackBitmap `hashWithSalt` p `hashWithSalt` o
     RequestConstrDesc cp   -> s `hashWithSalt` cmdRequestConstrDesc `hashWithSalt` cp
     RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
     RequestAllBlocks       -> s `hashWithSalt` cmdRequestAllBlocks
@@ -148,7 +151,7 @@ requestCommandId r = case r of
     RequestInfoTables {}  -> cmdRequestInfoTables
     RequestPoll {}         -> cmdRequestPoll
     RequestSavedObjects {} -> cmdRequestSavedObjects
-    RequestBitmap {}       -> cmdRequestBitmap
+    RequestStackBitmap {}       -> cmdRequestStackBitmap
     RequestConstrDesc {}   -> cmdRequestConstrDesc
     RequestSourceInfo {}   -> cmdRequestSourceInfo
     RequestAllBlocks {} -> cmdRequestAllBlocks
@@ -172,8 +175,8 @@ cmdRequestClosures = CommandId 5
 cmdRequestInfoTables :: CommandId
 cmdRequestInfoTables = CommandId 6
 
-cmdRequestBitmap :: CommandId
-cmdRequestBitmap = CommandId 7
+cmdRequestStackBitmap :: CommandId
+cmdRequestStackBitmap = CommandId 7
 
 cmdRequestPoll :: CommandId
 cmdRequestPoll = CommandId 8
@@ -220,8 +223,8 @@ putRequest (RequestInfoTables ts) =
   putCommand cmdRequestInfoTables $ do
     putWord16be $ fromIntegral (length ts)
     foldMap put ts
-putRequest (RequestBitmap sp o)       =
-  putCommand cmdRequestBitmap $ put sp >> putWord32be o
+putRequest (RequestStackBitmap sp o)       =
+  putCommand cmdRequestStackBitmap $ put sp >> putWord32be o
 putRequest (RequestConstrDesc (PayloadWithKey _ cinfo)) =
   putCommand cmdRequestConstrDesc $ put cinfo
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
@@ -241,7 +244,7 @@ getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
 getResponse (RequestInfoTables itps) =
     zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps <$> many getInfoTable
-getResponse (RequestBitmap st o)    = getPtrBitmap
+getResponse (RequestStackBitmap st o) = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
