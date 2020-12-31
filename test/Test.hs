@@ -210,7 +210,8 @@ p14 e = pauseThen e $ do
   forM_ rs $ \r -> do
     traceWrite r
     res <- fullTraversal r
-    traceWrite res
+    return res
+    --traceWrite res
 
 -- Testing ghc-vis
 {-
@@ -257,7 +258,7 @@ derefFunc e c = run e $ derefFuncM c
 
 derefFuncM c = do
   c <- dereferenceClosureFromBlock c
-  tritraverse dereferenceConDesc dereferenceStack pure c
+  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c
 
 -- Use with large-thunk
 p19 e = do

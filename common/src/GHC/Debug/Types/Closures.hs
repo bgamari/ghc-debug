@@ -11,6 +11,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
 - additional support for STACK closures which are only possible to decode
 - out of process
@@ -33,6 +34,9 @@ module GHC.Debug.Types.Closures (
     , DebugStackFrame(..)
     , GenStackFrames(..)
     , StackFrames
+    , GenPapPayload(..)
+    , PapPayload(..)
+    , PayloadCont(..)
     , GHC.PrimType(..)
     , lookupStgInfoTableWithPtr
     , allClosures
@@ -40,10 +44,12 @@ module GHC.Debug.Types.Closures (
     , foldFix1
     , Fix2(..)
     , foldFix2
+    , Fix3(..)
     , UClosure
     , UStack
-    , Tritraversable(..)
-    , trimap
+    , UPapPayload
+    , Quadtraversable(..)
+    , quadmap
     , countNodes
     , treeSize
     , inclusive
@@ -74,42 +80,47 @@ import Control.Applicative
 import Data.Monoid
 
 
-data Fix1 (string :: Type) (f :: Type -> Type) (g :: Type -> Type -> Type -> Type) =
-  MkFix1 (g string (Fix2 string f g) (Fix1 string f g))
-data Fix2 s f g = MkFix2 (f (Fix1 s f g))
+data Fix1 (pap :: Type -> Type) (string :: Type) (f :: Type -> Type) (g :: Type -> Type -> Type -> Type -> Type) =
+  MkFix1 (g (Fix3 pap string f g) string (Fix2 pap string f g) (Fix1 pap string f g))
+data Fix2 p s f g = MkFix2 (f (Fix1 p s f g))
+data Fix3 p s f g = MkFix3 (p (Fix1 p s f g))
 
-instance Show (g string (Fix2 string f g) (Fix1 string f g)) => Show (Fix1 string f g) where
+instance Show (g (Fix3 pap string f g) string (Fix2 pap string f g) (Fix1 pap string f g)) => Show (Fix1 pap string f g) where
         showsPrec n (MkFix1 x) = showParen (n > 10) $ \s ->
                 "Fix1 " ++ showsPrec 11 x s
 
-instance Show (f (Fix1 string f g)) => Show (Fix2 string f g) where
+instance Show (f (Fix1 pap string f g)) => Show (Fix2 pap string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
-type UClosure = Fix1 ConstrDesc GenStackFrames DebugClosureWithSize
-type UStack   = Fix2 ConstrDesc GenStackFrames DebugClosureWithSize
+type UClosure = Fix1 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
+type UStack   = Fix2 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
+type UPapPayload = Fix3 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
 
-foldFix1 :: (Functor f, Tritraversable g)
-         => (string -> r_string)
+foldFix1 :: (Functor f, Quadtraversable g)
+         => (pap r_clos -> r_pap)
+         -> (string -> r_string)
          -> (f r_clos -> r_stack)
-         -> (g r_string r_stack r_clos -> r_clos)
-         -> Fix1 string f g
+         -> (g r_pap r_string r_stack r_clos -> r_clos)
+         -> Fix1 pap string f g
          -> r_clos
-foldFix1 f g h (MkFix1 v) = h (trimap f (foldFix2 f g h) (foldFix1 f g h) v)
+foldFix1 p f g h (MkFix1 v) = h (quadmap (error "todo-pap") f (foldFix2 p f g h) (foldFix1 p f g h) v)
 
-foldFix2 :: (Functor f, Tritraversable g)
-         => (s -> r_string)
+foldFix2 :: (Functor f, Quadtraversable g)
+         => (pap r_clos -> r_pap)
+         -> (s -> r_string)
          -> (f r_clos -> r_stack)
-         -> (g r_string r_stack r_clos -> r_clos)
-         -> Fix2 s f g
+         -> (g r_pap r_string r_stack r_clos -> r_clos)
+         -> Fix2 pap s f g
          -> r_stack
-foldFix2 f g h (MkFix2 v) = g (fmap (foldFix1 f g h) v)
+foldFix2 p f g h (MkFix2 v) = g (fmap (foldFix1 p f g h) v)
 
 countNodes :: UClosure -> Int
 countNodes =
-  getSum . foldFix1 (const (Sum 1))
+  getSum . foldFix1 (error "todo-pap")
+                    (const (Sum 1))
                     (add . getConst . traverse go)
-                    (add . getConst . tritraverse go go go)
+                    (add . getConst . quadtraverse go go go go)
   where
     go x = Const x
     add = mappend (Sum 1)
@@ -120,6 +131,7 @@ treeSize =
   foldFix1
               -- This is probably not right, should be something to do with
               -- length of string
+              (error "todo-pap")
               (const (Size 1))
               stackSize
               closSize
@@ -127,38 +139,39 @@ treeSize =
     stackSize :: GenStackFrames Size -> Size
     stackSize s = (getConst (traverse Const s))
 
-    closSize :: DebugClosureWithSize Size Size Size ->  Size
-    closSize d = (dcSize d) `mappend` getConst (tritraverse Const Const Const d)
+    closSize :: DebugClosureWithSize Size Size Size Size ->  Size
+    closSize d = (dcSize d) `mappend` getConst (quadtraverse Const Const Const Const d)
 
 fullSize :: UClosure_Inclusive -> InclusiveSize
 fullSize (MkFix1 (DCS (_, i) _)) = i
 
 -- | A tree annotation with inclusive size of subtrees
-type UClosure_Inclusive = Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
+type UClosure_Inclusive = Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 
-inclusive :: UClosure -> Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
+inclusive :: UClosure -> Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 inclusive =
-  foldFix1 stringSize stackSize closSize
+  foldFix1 (error "todo-pap") stringSize stackSize closSize
   where
     -- TODO
     stringSize :: ConstrDesc -> ConstrDesc
     stringSize x = x
 
     -- No where to put inclusive size on stacks yet
-    stackSize :: GenStackFrames (Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize)))
-              -> Fix2 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
+    stackSize :: GenStackFrames (Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize)))
+              -> Fix2 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
     stackSize s = MkFix2 s
 
-    closSize :: DebugClosureWithSize
-                  ConstrDesc (Fix2 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
-                      -> Fix1 ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
+    closSize :: DebugClosureWithSize _
+                  ConstrDesc (Fix2 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
+                      -> Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 
     closSize (DCS s b) =
-      let new_size = coerce s `mappend` getConst (tritraverse (const (Const (InclusiveSize 0))) stack (Const . fullSize) b)
+      let new_size = coerce s `mappend` getConst (quadtraverse pap (const (Const (InclusiveSize 0))) stack (Const . fullSize) b)
       in MkFix1 (DCS (s, new_size) b)
 
       where
         stack (MkFix2 st) = traverse (Const . fullSize) st
+        pap = error "todo pap"
 
 
 
@@ -167,15 +180,17 @@ inclusive =
 -- Closures
 
 
-type Closure = DebugClosure ConstrDescCont StackCont ClosurePtr
-type SizedClosure = DebugClosureWithSize ConstrDescCont StackCont ClosurePtr
+type Closure = DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr
+type SizedClosure = DebugClosureWithSize PayloadCont ConstrDescCont StackCont ClosurePtr
 
 type ConstrDescCont = PayloadWithKey InfoTablePtr ClosurePtr
 
+data PayloadCont = PayloadCont ClosurePtr [Word64] deriving Show
+
 type DebugClosureWithSize = DebugClosureWithExtra Size
 
-data DebugClosureWithExtra x string s b = DCS { extraDCS :: x
-                                              , unDCS :: DebugClosure string s b }
+data DebugClosureWithExtra x pap string s b = DCS { extraDCS :: x
+                                              , unDCS :: DebugClosure pap string s b }
     deriving (Show)
 
 -- | Exclusive size
@@ -194,14 +209,14 @@ newtype RetainerSize = RetainerSize { getRetainerSize :: Int }
 
 
 
-noSize :: DebugClosureWithSize string s b -> DebugClosure string s b
+noSize :: DebugClosureWithSize pap string s b -> DebugClosure pap string s b
 noSize = unDCS
 
-dcSize :: DebugClosureWithSize string s b -> Size
+dcSize :: DebugClosureWithSize pap string s b -> Size
 dcSize = extraDCS
 
-instance Tritraversable (DebugClosureWithExtra x) where
-  tritraverse f g h (DCS x v) = DCS x <$> tritraverse f g h v
+instance Quadtraversable (DebugClosureWithExtra x) where
+  quadtraverse f g h i (DCS x v) = DCS x <$> quadtraverse f g h i v
 
 data StgInfoTableWithPtr = StgInfoTableWithPtr {
                               tableId :: InfoTablePtr
@@ -223,7 +238,7 @@ data StgInfoTableWithPtr = StgInfoTableWithPtr {
 -- See
 -- <https://gitlab.haskell.org/ghc/ghc/wikis/commentary/rts/storage/heap-objects>
 -- for more information.
-data DebugClosure string s b
+data DebugClosure pap string s b
   = -- | A data constructor
     ConstrClosure
         { info       :: !StgInfoTableWithPtr
@@ -259,7 +274,7 @@ data DebugClosure string s b
         , arity      :: !HalfWord       -- ^ Arity of the partial application
         , n_args     :: !HalfWord       -- ^ Size of the payload in words
         , fun        :: !b              -- ^ Pointer to a 'FunClosure'
-        , payload    :: !()            -- ^ Sequence of already applied
+        , pap_payload    :: !pap            -- ^ Sequence of already applied
                                         --   arguments
         }
 
@@ -273,7 +288,7 @@ data DebugClosure string s b
         , arity      :: !HalfWord       -- ^ Always 0
         , n_args     :: !HalfWord       -- ^ Size of payload in words
         , fun        :: !b              -- ^ Pointer to a 'FunClosure'
-        , payload    :: !()            -- ^ Sequence of already applied
+        , ap_payload    :: !pap            -- ^ Sequence of already applied
                                         --   arguments
         }
 
@@ -454,6 +469,11 @@ data DebugClosure string s b
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
 
+newtype GenPapPayload b = GenPapPayload { getValues :: [FieldValue b] }
+  deriving (Functor, Foldable, Traversable, Show)
+
+type PapPayload = GenPapPayload ClosurePtr
+
 type StackFrames = GenStackFrames ClosurePtr
 newtype GenStackFrames b = GenStackFrames { getFrames :: [DebugStackFrame b] }
   deriving (Functor, Foldable, Traversable, Show)
@@ -500,37 +520,40 @@ parseConstrDesc input =
                 (top, _:bot) -> parseModOcc (top : acc) bot
     parseModOcc acc str = (acc, str)
 
-class Tritraversable m where
-  tritraverse ::
+class Quadtraversable m where
+  quadtraverse ::
     Applicative f => (a -> f b)
                   -> (c -> f d)
                   -> (e -> f g)
-                  -> m a c e
-                  -> f (m b d g)
+                  -> (h -> f i)
+                  -> m a c e h
+                  -> f (m b d g i)
 
-trimap :: forall a b c d e f t . Tritraversable t => (a -> b) -> (c -> d) -> (e -> f) -> t a c e -> t b d f
-trimap = coerce
-  (tritraverse :: (a -> Identity b)
+quadmap :: forall a b c d e f g h t . Quadtraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> t a c e g -> t b d f h
+quadmap = coerce
+  (quadtraverse :: (a -> Identity b)
               -> (c -> Identity d)
-              -> (e -> Identity f) -> t a c e -> Identity (t b d f))
+              -> (e -> Identity f)
+              -> (g -> Identity h)
+              -> t a c e g -> Identity (t b d f h))
 
-allClosures :: DebugClosure a (GenStackFrames c) c -> [c]
-allClosures c = getConst $ tritraverse (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
+allClosures :: DebugClosure (GenPapPayload c) a (GenStackFrames c) c -> [c]
+allClosures c = getConst $ quadtraverse (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b
                   | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable)
 
 
-instance Tritraversable DebugClosure where
-  tritraverse h f g c =
+instance Quadtraversable DebugClosure where
+  quadtraverse p h f g c =
     case c of
       ConstrClosure a1 bs ds str ->
         (\cs cstr -> ConstrClosure a1 cs ds cstr) <$> traverse g bs <*> h str
       FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
       ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
-      PAPClosure a1 a2 a3 a4 a5 -> PAPClosure a1 a2 a3 <$> g a4 <*> pure a5
-      APClosure a1 a2 a3 a4 a5 -> APClosure a1 a2 a3 <$> g a4 <*> pure a5
+      PAPClosure a1 a2 a3 a4 a5 -> PAPClosure a1 a2 a3 <$> g a4 <*> p a5
+      APClosure a1 a2 a3 a4 a5 -> APClosure a1 a2 a3 <$> g a4 <*> p a5
       APStackClosure a1 b bs   -> APStackClosure a1 <$> g b <*> pure bs
       IndClosure a1 b -> IndClosure a1 <$> g b
       BCOClosure a1 b1 b2 b3 a2 a3 a4 ->
@@ -568,7 +591,7 @@ instance Bifoldable DebugClosure where
 -}
 
 
-lookupStgInfoTableWithPtr :: DebugClosure string s b -> Maybe StgInfoTableWithPtr
+lookupStgInfoTableWithPtr :: DebugClosure pap string s b -> Maybe StgInfoTableWithPtr
 lookupStgInfoTableWithPtr dc = case dc of
   ConstrClosure         { info } -> Just info
   FunClosure            { info } -> Just info

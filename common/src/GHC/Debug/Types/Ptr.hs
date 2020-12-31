@@ -127,6 +127,9 @@ newtype RawClosure = RawClosure BS.ByteString
 newtype RawStack = RawStack BS.ByteString
                    deriving (Eq, Ord, Show)
 
+newtype RawPayload = RawPayload BS.ByteString
+                   deriving (Eq, Ord, Show)
+
 rawStackSize :: RawStack -> Int
 rawStackSize (RawStack bs) = BS.length bs
 

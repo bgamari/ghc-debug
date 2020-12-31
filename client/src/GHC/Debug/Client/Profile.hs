@@ -28,7 +28,7 @@ import Eventlog.Data
 import Eventlog.Total
 import Eventlog.HtmlTemplate
 import Eventlog.Args (defaultArgs)
-import Data.Text (pack)
+import Data.Text (pack, Text)
 
 
 data TraceState s = TraceState { visited :: !(IS.IntSet), user :: !s }
@@ -42,29 +42,45 @@ checkVisit (ClosurePtr c) st = IS.member (fromIntegral c) (visited st)
 updUser :: (st -> st) -> TraceState st -> TraceState st
 updUser f st = st { user = (f (user st)) }
 
+type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
+
 -- Traverse the tree from GC roots, to populate the caches
 -- with everything necessary.
-traceFromM :: (SizedClosure -> st -> st) -> st -> [ClosurePtr] -> DebugM st
+traceFromM :: (SizedClosureC -> st -> st) -> st -> [ClosurePtr] -> DebugM st
 traceFromM k i cps = user <$> execStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty i)
 
-traceClosureFromM :: (SizedClosure -> st -> st) -> ClosurePtr -> StateT (TraceState st) DebugM ()
+traceClosureFromM :: (SizedClosureC -> st -> st) -> ClosurePtr -> StateT (TraceState st) DebugM ()
 traceClosureFromM k cp = do
     m <- get
     unless (checkVisit cp m) $ do
       modify (addVisit cp)
       sc <- lift $ dereferenceClosureFromBlock cp
-      modify (updUser (k sc))
-      tritraverse traceConstrDescM traceStackFromM (traceClosureFromM k) sc
+      sc' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+      modify (updUser (k sc'))
+      quadtraverse (tracePapPayloadM k) traceConstrDescM (traceStackFromM k) (traceClosureFromM k) sc
       case lookupStgInfoTableWithPtr (noSize sc) of
         Nothing -> return Nothing
         Just infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
       return ()
 
-traceStackFromM :: StackCont -> StateT s DebugM ()
-traceStackFromM st = lift $ () <$ dereferenceStack st
+traceStackFromM :: (SizedClosureC -> s -> s)
+                -> StackCont -> StateT (TraceState s) DebugM ()
+traceStackFromM f st = do
+  st' <- lift $ dereferenceStack st
+  traverse (traceClosureFromM f) st'
+  return ()
+
 
 traceConstrDescM :: ConstrDescCont -> StateT s DebugM ()
 traceConstrDescM d = lift $ () <$ dereferenceConDesc d
+
+tracePapPayloadM :: (SizedClosureC -> s -> s)
+                 -> PayloadCont
+                 -> StateT (TraceState s) DebugM ()
+tracePapPayloadM f p = do
+  p' <- lift $ dereferencePapPayload p
+  traverse (traceClosureFromM f) p'
+  return ()
 
 newtype Count = Count Int
                 deriving (Semigroup, Monoid, Num) via Sum Int
@@ -74,33 +90,35 @@ data CensusStats = CS { n :: Count, cssize :: Size  }
 instance Semigroup CensusStats where
   (CS a b) <> (CS a1 b1) = CS (a <> a1) (b <> b1)
 
-type CensusByClosureType = IM.IntMap CensusStats
+type CensusByClosureType = Map.Map Text CensusStats
 
 censusClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
-censusClosureType = traceFromM go IM.empty
+censusClosureType = traceFromM go Map.empty
   where
-    go :: SizedClosure -> CensusByClosureType -> CensusByClosureType
+    go :: SizedClosureC -> CensusByClosureType -> CensusByClosureType
     go d =
       let s :: Size
           s = dcSize d
           v =  CS (Count 1) s
       in case lookupStgInfoTableWithPtr (noSize d) of
            Just itbl ->
-              let k :: ClosureType
-                  k = tipe (decodedTable itbl)
-              in IM.insertWith (<>) (fromEnum k) v
+              let k :: Text
+                  k = case (noSize d) of
+                        ConstrClosure { constrDesc = ConstrDesc a b c } -> pack c
+                        _ -> pack (show (tipe (decodedTable itbl)))
+              in Map.insertWith (<>) k v
            Nothing -> id
 
 
 printCensusByClosureType :: CensusByClosureType -> IO ()
 printCensusByClosureType c =
-  let res = reverse (sortBy (comparing (cssize . snd)) (IM.toList c))
+  let res = reverse (sortBy (comparing (cssize . snd)) (Map.toList c))
       showLine (k, (CS (Count n) (Size s))) =
-        concat [show @ClosureType (toEnum k), ":", show s,":", show n,":", show @Double (fromIntegral s / fromIntegral n)]
+        concat [show k, ":", show s,":", show n,":", show @Double (fromIntegral s / fromIntegral n)]
   in mapM_ (putStrLn . showLine) res
 
 profile :: Int -> DebugEnv DebugM -> IO ()
-profile interval e = loop [(0, IM.empty)] 0
+profile interval e = loop [(0, Map.empty)] 0
   where
     loop :: [(Int, CensusByClosureType)] -> Int -> IO ()
     loop ss i = do
@@ -118,11 +136,11 @@ profile interval e = loop [(0, IM.empty)] 0
       loop new_data (i + 1)
 
 mkFrame :: (Int, CensusByClosureType) -> Frame
-mkFrame (t, m) = Frame (fromIntegral t / 10e6) (IM.foldrWithKey (\k v r -> mkSample k v : r) [] m)
+mkFrame (t, m) = Frame (fromIntegral t / 10e6) (Map.foldrWithKey (\k v r -> mkSample k v : r) [] m)
 
-mkSample :: Int -> CensusStats -> Sample
+mkSample :: Text -> CensusStats -> Sample
 mkSample k (CS _ (Size v)) =
-  Sample (Bucket (pack $ show @ClosureType (toEnum k))) (fromIntegral v)
+  Sample (Bucket k) (fromIntegral v)
 
 
 mkProfData :: [(Int, CensusByClosureType)] -> ProfData

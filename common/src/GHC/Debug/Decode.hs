@@ -35,6 +35,7 @@ import System.Endian
 import Debug.Trace
 import Data.Binary.Get as B
 import Control.Monad
+import Data.Void
 
 import qualified Data.ByteString as B
 
@@ -125,7 +126,9 @@ decodePAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc)
   nargs <- getWord32le
   fun_ptr <- getWord64le
   payload <- replicateM (fromIntegral nargs) getWord64le
-  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.PAPClosure info arity nargs (ClosurePtr (toBE64 fun_ptr)) ())
+  let funp = (ClosurePtr (toBE64 fun_ptr))
+      cont = PayloadCont funp payload
+  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.PAPClosure info arity nargs funp cont)
 
 decodeAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
@@ -134,7 +137,10 @@ decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
   nargs <- getWord32le
   fun_ptr <- getWord64le
   payload <- replicateM (fromIntegral nargs) getWord64le
-  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.APClosure info arity nargs (ClosurePtr (toBE64 fun_ptr)) ())
+  let funp = (ClosurePtr (toBE64 fun_ptr))
+      cont = PayloadCont funp payload
+  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.APClosure info arity nargs funp cont)
+
 
 
 
@@ -168,7 +174,8 @@ decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerfor
         -- rather than the debuggee address space
         --
         poke ptr_to_itbl_ptr old_itbl
-        return $ DCS s . trimap (\itb' -> PayloadWithKey itb' ptr)
+        return $ DCS s . quadmap absurd
+                        (\itb' -> PayloadWithKey itb' ptr)
                         stackCont
                         ClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> toBE64 (W64# w)) r

@@ -32,8 +32,8 @@ findRetainer target cp
   | target == cp = return (RetainerPath [cp])
   | otherwise = do
       dc <- dereferenceClosureFromBlock cp
-      res <- getConst . tritraverse Const Const Const <$>
-        tritraverse (const (return NoPath)) (findRetainerStack target) (findRetainer target) dc
+      res <- getConst . quadtraverse Const Const Const Const <$>
+        quadtraverse (findRetainerPap target) (const (return NoPath)) (findRetainerStack target) (findRetainer target) dc
       case res of
         NoPath -> return NoPath
         RetainerPath p -> return (RetainerPath (cp : p))
@@ -42,5 +42,10 @@ findRetainer target cp
 findRetainerStack :: ClosurePtr -> StackCont -> DebugM RetainerPath
 findRetainerStack target sc = do
   ds <- dereferenceStack sc
+  fold <$> traverse (findRetainer target) ds
+
+findRetainerPap :: ClosurePtr -> PayloadCont -> DebugM RetainerPath
+findRetainerPap target sc = do
+  ds <- dereferencePapPayload sc
   fold <$> traverse (findRetainer target) ds
 

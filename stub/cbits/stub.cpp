@@ -60,9 +60,9 @@ enum commands {
     CMD_FIND_PTR = 10,
     CMD_CON_DESCR = 11,
     CMD_SOURCE_INFO = 12,
-    CMD_GET_STACK = 13,
     CMD_BLOCKS = 14,
-    CMD_BLOCK = 15
+    CMD_BLOCK = 15,
+    CMD_FUN_BITMAP = 16
 };
 
 enum response_code {
@@ -269,6 +269,24 @@ static void write_small_bitmap(Response& resp, StgWord bitmap, StgWord size) {
     }
 }
 
+static void write_fun_bitmap(Response& resp, StgWord size, StgClosure * fun){
+
+    const StgFunInfoTable *fun_info;
+    fun_info = get_fun_itbl(UNTAG_CONST_CLOSURE(fun));
+    switch (fun_info->f.fun_type) {
+    case ARG_GEN:
+        write_small_bitmap
+            (resp, BITMAP_BITS(fun_info->f.b.bitmap), size);
+        break;
+    case ARG_GEN_BIG:
+        write_large_bitmap(resp, GET_FUN_LARGE_BITMAP(fun_info), size);
+        break;
+    default:
+        write_small_bitmap(resp, BITMAP_BITS(stg_arg_bitmaps[fun_info->f.fun_type]), size);
+        break;
+    }
+}
+
 
 static void write_string(Response& resp, const char * s){
     uint32_t len_payload;
@@ -381,26 +399,26 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         }
         break;
 
-      case CMD_GET_STACK:
-        {
-        if (!paused) {
-            resp.finish(RESP_NOT_PAUSED);
-        } else {
-            StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-            trace("STACK_GET %p\n", ptr);
-            trace("STACK_SIZE %u\n", closure_sizeW(ptr));
-            StgStack *s = ((StgStack *) ptr);
-
-
-            size_t len = ((s->stack_size + s->stack) - s->sp) * WORD_SIZE;
-            uint32_t len_payload = htonl(len);
-            trace("GET_CLOSURE_WRITE1 %lu\n", len);
-            resp.write(len_payload);
-            resp.write((const char *) s->sp, len);
-            }
-            resp.finish(RESP_OKAY);
-        }
-        break;
+//      case CMD_GET_STACK:
+//        {
+//        if (!paused) {
+//            resp.finish(RESP_NOT_PAUSED);
+//        } else {
+//            StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
+//            trace("STACK_GET %p\n", ptr);
+//            trace("STACK_SIZE %u\n", closure_sizeW(ptr));
+//            StgStack *s = ((StgStack *) ptr);
+//
+//
+//            size_t len = ((s->stack_size + s->stack) - s->sp) * WORD_SIZE;
+//            uint32_t len_payload = htonl(len);
+//            trace("GET_CLOSURE_WRITE1 %lu\n", len);
+//            resp.write(len_payload);
+//            resp.write((const char *) s->sp, len);
+//            }
+//            resp.finish(RESP_OKAY);
+//        }
+//        break;
 
       case CMD_GET_INFO_TABLES:
         // TODO: Info tables are immutable so we needn't pause for this request
@@ -474,25 +492,12 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
               }
               case RET_FUN:
               {
-                  const StgFunInfoTable *fun_info;
-                  StgRetFun *ret_fun;
+                StgRetFun *ret_fun;
 
-                  ret_fun = (StgRetFun *)c;
-                  fun_info = get_fun_itbl(UNTAG_CONST_CLOSURE(ret_fun->fun));
-                  StgWord size = ret_fun->size;
-                  switch (fun_info->f.fun_type) {
-                  case ARG_GEN:
-                      write_small_bitmap
-                          (resp, BITMAP_BITS(fun_info->f.b.bitmap), size);
-                      break;
-                  case ARG_GEN_BIG:
-                      write_large_bitmap(resp, GET_FUN_LARGE_BITMAP(fun_info), size);
-                      break;
-                  default:
-                      write_small_bitmap(resp, BITMAP_BITS(stg_arg_bitmaps[fun_info->f.fun_type]), size);
-                      break;
-                  }
-                  break;
+                ret_fun = (StgRetFun *)c;
+                StgWord size = ret_fun->size;
+                write_fun_bitmap(resp, size, ret_fun->fun);
+                break;
               }
 
               default:
@@ -502,6 +507,17 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.finish(code);
             break;
         }
+
+      case CMD_FUN_BITMAP:
+        {
+          StgClosure *fun = (StgClosure *) p.get<uint64_t>();
+          uint16_t n_raw = p.get<uint16_t>();
+          uint16_t n = htons(n_raw);
+          write_fun_bitmap(resp, n, fun);
+        }
+        resp.finish(RESP_OKAY);
+        break;
+
 
       case CMD_POLL:
         r_poll_pause_resp = &resp;

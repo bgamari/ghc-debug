@@ -10,10 +10,11 @@ import GHC.Debug.Types.Closures
 import GHC.Debug.Types.Ptr
 import System.Endian
 import Data.Word
+import Data.Void
 
 -- | Convert a GenClosure from ghc-heap to a DebugClosure,
 -- it is mostly an identity function, apart from STACK closures.
-convertClosure :: (Num a, Eq a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure InfoTablePtr (Word32, StackPtr) a
+convertClosure :: (Num a, Eq a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure Void InfoTablePtr (Word32, StackPtr) a
 convertClosure itb g =
   case g of
     GHC.ConstrClosure _ a2 a3 _ _ _ -> ConstrClosure itb a2 a3 (tableId itb)

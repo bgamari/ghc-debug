@@ -60,7 +60,7 @@ data Request a where
     RequestStackBitmap :: StackPtr -> Word32 -> Request PtrBitmap
     -- | Decode the bitmap container in a StgFunInfoTable
     -- Used by PAP and AP closure types.
-    RequestFunBitmap :: ClosurePtr -> Request PtrBitmap
+    RequestFunBitmap :: Word16 -> ClosurePtr -> Request PtrBitmap
     -- | Request the description for an info table.
     -- The `InfoTablePtr` is just used for the equality
     RequestConstrDesc :: PayloadWithKey InfoTablePtr ClosurePtr -> Request ConstrDesc
@@ -92,6 +92,7 @@ eq1request r1 r2 =
     RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
     RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
     RequestStackBitmap p o      -> case r2 of {(RequestStackBitmap p' o') -> p == p' && o == o'; _ -> False }
+    RequestFunBitmap n cp    -> case r2 of {(RequestFunBitmap n' cp') -> n == n' && cp == cp'; _ -> False }
     RequestConstrDesc cp   -> case r2 of { (RequestConstrDesc cp') -> cp == cp'; _ -> False }
     RequestSourceInfo itp  -> case r2 of { (RequestSourceInfo itp') -> itp == itp'; _ -> False }
     RequestAllBlocks       -> case r2 of { RequestAllBlocks -> True; _ -> False }
@@ -124,6 +125,7 @@ instance Hashable (Request a) where
     RequestPoll           -> s `hashWithSalt` cmdRequestPoll
     RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
     RequestStackBitmap p o -> s `hashWithSalt` cmdRequestStackBitmap `hashWithSalt` p `hashWithSalt` o
+    RequestFunBitmap n cp  -> s `hashWithSalt` cmdRequestFunBitmap `hashWithSalt` cp `hashWithSalt` n
     RequestConstrDesc cp   -> s `hashWithSalt` cmdRequestConstrDesc `hashWithSalt` cp
     RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
     RequestAllBlocks       -> s `hashWithSalt` cmdRequestAllBlocks
@@ -152,6 +154,7 @@ requestCommandId r = case r of
     RequestPoll {}         -> cmdRequestPoll
     RequestSavedObjects {} -> cmdRequestSavedObjects
     RequestStackBitmap {}       -> cmdRequestStackBitmap
+    RequestFunBitmap {}       -> cmdRequestFunBitmap
     RequestConstrDesc {}   -> cmdRequestConstrDesc
     RequestSourceInfo {}   -> cmdRequestSourceInfo
     RequestAllBlocks {} -> cmdRequestAllBlocks
@@ -202,6 +205,9 @@ cmdRequestAllBlocks = CommandId 14
 cmdRequestBlock :: CommandId
 cmdRequestBlock = CommandId 15
 
+cmdRequestFunBitmap :: CommandId
+cmdRequestFunBitmap = CommandId 16
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral (4 + BSL.length body')
@@ -225,6 +231,8 @@ putRequest (RequestInfoTables ts) =
     foldMap put ts
 putRequest (RequestStackBitmap sp o)       =
   putCommand cmdRequestStackBitmap $ put sp >> putWord32be o
+putRequest (RequestFunBitmap n cp)       =
+  putCommand cmdRequestFunBitmap $ put cp >> putWord16be n
 putRequest (RequestConstrDesc (PayloadWithKey _ cinfo)) =
   putCommand cmdRequestConstrDesc $ put cinfo
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
@@ -245,6 +253,7 @@ getResponse (RequestClosures _)  = many getRawClosure
 getResponse (RequestInfoTables itps) =
     zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps <$> many getInfoTable
 getResponse (RequestStackBitmap st o) = getPtrBitmap
+getResponse (RequestFunBitmap {}) = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
