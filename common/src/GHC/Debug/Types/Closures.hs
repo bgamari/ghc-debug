@@ -415,6 +415,12 @@ data DebugClosure pap string s b
      , mlink       :: !(Maybe b) -- ^ next weak pointer for the capability, can be NULL.
      }
 
+  | TVarClosure
+    { info :: !StgInfoTableWithPtr
+    , current_value :: !b
+    , tvar_watch_queue :: !() -- TODO
+    , num_updates :: Int }
+
 
     ------------------------------------------------------------
     -- Unboxed unlifted closures
@@ -572,6 +578,8 @@ instance Quadtraversable DebugClosure where
       StackClosure a1 a2 a3 a4 a5 -> StackClosure a1 a2 a3 a4 <$> f a5
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
+      TVarClosure a1 a2 a3 a4 ->
+        TVarClosure a1 <$> g a2 <*> pure a3 <*> pure a4
       IntClosure p i -> pure (IntClosure p i)
       WordClosure p i -> pure (WordClosure p i)
       Int64Closure p i -> pure (Int64Closure p i)
@@ -612,6 +620,7 @@ lookupStgInfoTableWithPtr dc = case dc of
   TSOClosure            { info } -> Just info
   StackClosure          { info } -> Just info
   WeakClosure           { info } -> Just info
+  TVarClosure           { info } -> Just info
   OtherClosure          { info } -> Just info
   UnsupportedClosure    { info } -> Just info
   IntClosure{}    -> Nothing

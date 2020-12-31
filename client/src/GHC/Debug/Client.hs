@@ -436,6 +436,7 @@ closureReferencesAndLabels closure = case closure of
                       [ ("Link", Left link)
                       | Just link <- [mlink] -- TODO do we want to show NULL pointers some how?
                       ]
+  TVarClosure {..} -> [("val", Left current_value)]
   IntClosure {} -> []
   WordClosure {} -> []
   Int64Closure {} -> []

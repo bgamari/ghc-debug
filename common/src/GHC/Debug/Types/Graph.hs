@@ -342,6 +342,7 @@ ppClosure herald showBox prec c = case c of
     TSOClosure {..} -> "TSO"
     StackClosure {..} -> app ["Stack(", show stack_size, ")"]
     WeakClosure {..} -> "_wk"
+    TVarClosure {..} -> "_tvar"
     UnsupportedClosure {} ->
         "_unsupported"
 

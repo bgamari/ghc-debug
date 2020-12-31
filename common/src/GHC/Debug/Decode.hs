@@ -142,12 +142,22 @@ decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
   return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.APClosure info arity nargs funp cont)
 
 
+decodeTVarClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeTVarClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+  _itbl <- getWord64le
+  ptr <- ClosurePtr . toBE64 <$> getWord64le
+  _watch_queue <- getWord64le
+  updates <- getInt64le
+  return . traceShowId $ DCS 4 (TVarClosure info ptr () (fromIntegral updates))
+
+
 
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
   | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
+  | (StgInfoTable { tipe = TVAR }) <- decodedTable itb = decodeTVarClosure i c
 decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
