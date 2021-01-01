@@ -159,13 +159,3 @@ untagClosurePtr (ClosurePtr w) = ClosurePtr (w .&. complement tAG_MASK)
 
 getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = runGet (isolate 8 get) (BSL.fromStrict bs)
-
--- A value, but with a different value used for testing equality.
-data PayloadWithKey k a = PayloadWithKey k a deriving Show
-
-
-instance Eq k => Eq (PayloadWithKey k a) where
-  (PayloadWithKey k1 _) == (PayloadWithKey k2 _) = k1 == k2
-
-instance Hashable k => Hashable (PayloadWithKey k a) where
-  hashWithSalt s (PayloadWithKey k _) = hashWithSalt s k

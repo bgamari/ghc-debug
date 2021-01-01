@@ -28,6 +28,7 @@ import GHC.Debug.Types.Ptr as T hiding (getRawStack)
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
+import Debug.Trace
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
@@ -60,7 +61,7 @@ data Request a where
     RequestFunBitmap :: Word16 -> ClosurePtr -> Request PtrBitmap
     -- | Request the description for an info table.
     -- The `InfoTablePtr` is just used for the equality
-    RequestConstrDesc :: PayloadWithKey InfoTablePtr ClosurePtr -> Request ConstrDesc
+    RequestConstrDesc :: InfoTablePtr -> Request ConstrDesc
     -- | Lookup source information of an info table
     RequestSourceInfo :: InfoTablePtr -> Request (Maybe SourceInformation)
     -- | Copy all blocks from the process at once
@@ -113,6 +114,7 @@ isImmutableRequest r =
     RequestVersion {} -> True
     RequestInfoTables {} -> True
     RequestSourceInfo {} -> True
+    RequestConstrDesc {} -> True
     _ -> False
 
 
@@ -238,8 +240,8 @@ putRequest (RequestStackBitmap sp o)       =
   putCommand cmdRequestStackBitmap $ put sp >> putWord32be o
 putRequest (RequestFunBitmap n cp)       =
   putCommand cmdRequestFunBitmap $ put cp >> putWord16be n
-putRequest (RequestConstrDesc (PayloadWithKey _ cinfo)) =
-  putCommand cmdRequestConstrDesc $ put cinfo
+putRequest (RequestConstrDesc itb) =
+  putCommand cmdRequestConstrDesc $ put itb
 putRequest RequestPoll           = putCommand cmdRequestPoll mempty
 putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 --putRequest (RequestFindPtr c)       =

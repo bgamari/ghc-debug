@@ -253,7 +253,7 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
         --
         poke ptr_to_itbl_ptr old_itbl
         return $ DCS s . quadmap absurd
-                        (\itb' -> PayloadWithKey itb' ptr)
+                        id
                         absurd
                         ClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> (W64# w)) r

@@ -205,7 +205,7 @@ inclusive =
 type Closure = DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr
 type SizedClosure = DebugClosureWithSize PayloadCont ConstrDescCont StackCont ClosurePtr
 
-type ConstrDescCont = PayloadWithKey InfoTablePtr ClosurePtr
+type ConstrDescCont = InfoTablePtr
 
 data PayloadCont = PayloadCont ClosurePtr [Word64] deriving Show
 

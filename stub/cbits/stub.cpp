@@ -518,9 +518,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_CON_DESCR:
         {
         trace("CON_DESCR\n");
-        StgClosure *ptr_end = (StgClosure *) p.get<uint64_t>();
+        StgConInfoTable *ptr_end = (StgConInfoTable *) p.get<uint64_t>();
         trace("CON_DESC2 %p\n", ptr_end);
-        const char * con_desc = GET_CON_DESC(get_con_itbl(UNTAG_CLOSURE(ptr_end)));
+        const char * con_desc = GET_CON_DESC(ptr_end - 1);
         trace("CON_DESC: %p %lu\n", con_desc, strlen(con_desc));
         write_string(resp, con_desc);
         resp.finish(RESP_OKAY);
