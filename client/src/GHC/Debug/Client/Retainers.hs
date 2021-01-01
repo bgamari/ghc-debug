@@ -2,7 +2,6 @@
 module GHC.Debug.Client.Retainers where
 
 import GHC.Debug.Client
-import GHC.Debug.Types
 import Control.Applicative
 import Data.Foldable
 import Control.Monad

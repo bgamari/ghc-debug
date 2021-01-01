@@ -72,8 +72,8 @@ data MajorState
     , _mode     :: ConnectedMode
     }
 
-data ClosureDetails s c = ClosureDetails
-  { _closure :: DebugClosure ConstrDesc s c
+data ClosureDetails pap s c = ClosureDetails
+  { _closure :: DebugClosure pap ConstrDesc s c
   , _labelInParent :: Text -- ^ A label describing the relationship to the parent
   -- Stuff  that requires IO to calculate
   , _pretty :: Text
@@ -115,7 +115,7 @@ data OperationalState = OperationalState
     , _rootsFrom  :: RootsOrigin
     , _treeDominator :: Maybe DominatorAnalysis
     -- ^ Tree corresponding to Dominator mode
-    , _treeSavedAndGCRoots :: IOTree (ClosureDetails StackCont ClosurePtr) Name
+    , _treeSavedAndGCRoots :: IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
     , _treeReverse :: Maybe ReverseAnalysis
     -- ^ Tree corresponding to Dominator mode
@@ -125,13 +125,13 @@ data OperationalState = OperationalState
 
 data DominatorAnalysis =
   DominatorAnalysis { _getDominatorAnalysis :: Analysis
-                    , _getDominatorTree :: IOTree (ClosureDetails StackCont ClosurePtr) Name
+                    , _getDominatorTree :: IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name
                     }
 
-data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails StackHI (Maybe HeapGraphIndex)) Name
-                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure ConstrDesc StackHI (Maybe HeapGraphIndex)) }
+data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails PapHI StackHI (Maybe HeapGraphIndex)) Name
+                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure PapHI ConstrDesc StackHI (Maybe HeapGraphIndex)) }
 
-pauseModeTree :: (forall s c . IOTree (ClosureDetails s c) Name -> r) -> OperationalState -> r
+pauseModeTree :: (forall pap s c . IOTree (ClosureDetails pap s c) Name -> r) -> OperationalState -> r
 pauseModeTree k (OperationalState mode _ _footer dom roots reverseA _) = case mode of
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots

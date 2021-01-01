@@ -105,7 +105,7 @@ myAppDraw (AppState majorState') =
   where
   mainBorder title = borderWithLabel (txt title) . padAll 1
 
-  renderClosureDetails :: Maybe (ClosureDetails s c) -> Widget Name
+  renderClosureDetails :: Maybe (ClosureDetails pap s c) -> Widget Name
   renderClosureDetails cd = vLimit 9 $ vBox $
       [ txt "SourceLocation   "
             <+> txt (maybe "" renderSourceInformation (_sourceLocation =<< cd))
@@ -276,7 +276,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             mapM (mapM (fillConstrDesc d)) children
 
 
-      mkIOTree :: Show c => Maybe Analysis -> [ClosureDetails s c] -> (Debuggee -> DebugClosure ConstrDesc s c -> IO [(String, DebugClosure ConstrDesc s c)]) -> ([ClosureDetails s c] -> [ClosureDetails s c]) -> IOTree (ClosureDetails s c) Name
+      mkIOTree :: Show c => Maybe Analysis -> [ClosureDetails pap s c] -> (Debuggee -> DebugClosure pap ConstrDesc s c -> IO [(String, DebugClosure pap ConstrDesc s c)]) -> ([ClosureDetails pap s c] -> [ClosureDetails pap s c]) -> IOTree (ClosureDetails pap s c) Name
       mkIOTree manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
         (\c -> do
@@ -300,16 +300,19 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             else emptyWidget
         )
 completeClosureDetails :: Show c => Debuggee -> Maybe Analysis
-                                            -> (Text, DebugClosure ConstrDescCont s c)
-                                            -> IO (ClosureDetails s c)
+                                            -> (Text, DebugClosure pap ConstrDescCont s c)
+                                            -> IO (ClosureDetails pap s c)
 
 completeClosureDetails dbg manalysis (label, clos)  =
   getClosureDetails dbg manalysis label =<< fillConstrDesc dbg clos
 
 
 
-getClosureDetails :: Show c => Debuggee -> Maybe Analysis -> Text -> DebugClosure ConstrDesc s c
-                                            -> IO (ClosureDetails s c)
+getClosureDetails :: Show c => Debuggee
+                            -> Maybe Analysis
+                            -> Text
+                            -> DebugClosure pap ConstrDesc s c
+                            -> IO (ClosureDetails pap s c)
 getClosureDetails debuggee' manalysis label c = do
   let excSize' = closureExclusiveSize c
       retSize' = closureRetainerSize <$> manalysis <*> pure c

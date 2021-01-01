@@ -57,9 +57,12 @@ module GHC.Debug.Client
   -- * Types
   , ConstrDesc(..)
   , ConstrDescCont
+  , GenPapPayload(..)
   , StackCont
+  , PayloadCont
   , ClosurePtr
   , HG.StackHI
+  , HG.PapHI
   , HG.HeapGraphIndex
     --
     -- $dominatorTree
@@ -309,7 +312,7 @@ closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
   request (RequestSourceInfo (tableId (info (noSize c))))
 
 -- | Get the directly referenced closures (with a label) of a closure.
-closureReferences :: Debuggee -> DebugClosure PapPayload ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
+closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
 closureReferences (Debuggee e) (Stack _ stack) = run e $ do
   let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
                      , ptr
@@ -356,11 +359,11 @@ lookupHeapGraph hg cp =
     Just (HG.HeapGraphEntry ptr d s) -> Just (Closure ptr (DCS s d))
     Nothing -> Nothing
 
-fillConstrDesc :: Debuggee -> DebugClosure p ConstrDescCont s c -> IO (DebugClosure p ConstrDesc s c)
+fillConstrDesc :: Debuggee
+               -> DebugClosure pap ConstrDescCont s c
+               -> IO (DebugClosure pap ConstrDesc s c)
 fillConstrDesc (Debuggee e) closure = do
-  GD.quadtraverse pure toConstrDesc pure pure closure
-    where
-    toConstrDesc = run e . dereferenceConDesc
+  run e $ GD.quadtraverse pure dereferenceConDesc pure pure closure
 
 -- | Pretty print a closure
 closurePretty :: Show c => DebugClosure p ConstrDesc s c ->  String
@@ -407,7 +410,7 @@ closureDominatees (Debuggee e) analysis (Closure cPtr _) = run e $ do
 -- Internal Stuff
 --
 
-closureReferencesAndLabels :: GD.DebugClosure (GenPapPayload pointer) string stack pointer -> [(String, Either pointer stack)]
+closureReferencesAndLabels :: GD.DebugClosure pap string stack pointer -> [(String, Either pointer stack)]
 closureReferencesAndLabels closure = case closure of
   TSOClosure {..} ->
     [ ("Stack", Left tsoStack)
@@ -433,8 +436,8 @@ closureReferencesAndLabels closure = case closure of
   SelectorClosure {..} -> [("Selectee", Left selectee)]
   IndClosure {..} -> [("Indirectee", Left indirectee)]
   BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
-  APClosure {..} -> ("Function", Left fun) : withBitmapLables ap_payload
-  PAPClosure {..} -> ("Function", Left fun) : withBitmapLables pap_payload
+  APClosure {..} -> ("Function", Left fun) : [] -- TODO withBitmapLables ap_payload
+  PAPClosure {..} -> ("Function", Left fun) : [] -- TODO: withBitmapLables pap_payload
   APStackClosure {..} -> ("Function", Left fun) : ("Frames", Right payload) : []
   BCOClosure {..} -> [ ("Instructions", Left instrs)
                       , ("Literals", Left literals)
@@ -461,7 +464,7 @@ closureReferencesAndLabels closure = case closure of
   withIxLables elements   = [("[" <> show i <> "]" , Left x) | (i, x) <- zip [(0::Int)..] elements]
   withArgLables ptrArgs   = [("Argument " <> show i, Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
   withFieldLables ptrArgs = [("Field " <> show i   , Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
-  withBitmapLables pap = [("Argument " <> show i   , Left x) | (i, SPtr x) <- zip [(0::Int)..] (getValues pap)]
+--  withBitmapLables pap = [("Argument " <> show i   , Left x) | (i, SPtr x) <- zip [(0::Int)..] (getValues pap)]
 
 --
 -- TODO move stuff below here to a lower level module.
