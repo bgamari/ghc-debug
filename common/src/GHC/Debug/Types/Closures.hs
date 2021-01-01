@@ -36,7 +36,7 @@ module GHC.Debug.Types.Closures (
     , GenStackFrames(..)
     , StackFrames
     , GenPapPayload(..)
-    , PapPayload(..)
+    , PapPayload
     , PayloadCont(..)
     , GHC.PrimType(..)
     , lookupStgInfoTableWithPtr
@@ -79,7 +79,6 @@ import Data.Kind
 
 import Control.Applicative
 import Data.Monoid
-
 
 data Fix1 (pap :: Type -> Type) (string :: Type) (f :: Type -> Type) (g :: Type -> Type -> Type -> Type -> Type) =
   MkFix1 (g (Fix3 pap string f g) string (Fix2 pap string f g) (Fix1 pap string f g))
@@ -124,6 +123,8 @@ foldFix3 :: (Functor pap, Functor f, Quadtraversable g)
          -> Fix3 pap s f g
          -> r_pap
 foldFix3 p f g h (MkFix3 v) = p (fmap (foldFix1 p f g h) v)
+
+-- TODO: Perhaps these summary functions can be moved into another module
 
 countNodes :: UClosure -> Int
 countNodes =
@@ -227,7 +228,6 @@ newtype InclusiveSize = InclusiveSize { getInclusiveSize :: Int }
 newtype RetainerSize = RetainerSize { getRetainerSize :: Int }
   deriving stock (Show, Generic, Ord, Eq)
   deriving (Semigroup, Monoid) via (Sum Int)
-
 
 
 noSize :: DebugClosureWithSize pap string s b -> DebugClosure pap string s b
@@ -590,5 +590,3 @@ instance Quadtraversable DebugClosure where
 
 lookupStgInfoTableWithPtr :: DebugClosure pap string s b -> StgInfoTableWithPtr
 lookupStgInfoTableWithPtr dc = info dc
-
-
