@@ -145,11 +145,44 @@ decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
 decodeTVarClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeTVarClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
   _itbl <- getWord64le
-  ptr <- ClosurePtr . toBE64 <$> getWord64le
-  _watch_queue <- getWord64le
+  ptr <- getClosurePtr
+  watch_queue <- getClosurePtr
   updates <- getInt64le
-  return . traceShowId $ DCS 4 (TVarClosure info ptr () (fromIntegral updates))
+  return $ DCS 4 (TVarClosure info ptr watch_queue (fromIntegral updates))
 
+getClosurePtr :: Get ClosurePtr
+getClosurePtr = ClosurePtr . toBE64 <$> getWord64le
+
+decodeMutPrim :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeMutPrim (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+  _itbl <- getWord64le
+  let kptrs = fromIntegral (ptrs (decodedTable info))
+      kdat = fromIntegral (nptrs (decodedTable info))
+  pts <- replicateM kptrs getClosurePtr
+  dat <- replicateM kdat (fromIntegral <$> getWord64le)
+  return $ DCS (Size (1 + kptrs + kdat)) (MutPrimClosure info pts dat)
+
+decodeTrecChunk :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeTrecChunk (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+  _itbl <- getWord64le
+  prev <- getClosurePtr
+  next_idx <- getWord64le
+  chunks <- replicateM (fromIntegral next_idx) getChunk
+  return $ DCS (3 + fromIntegral next_idx * 3) (TRecChunkClosure info prev (fromIntegral next_idx) chunks)
+
+  where
+    getChunk = do
+      TRecEntry <$> getClosurePtr
+                <*> getClosurePtr
+                <*> getClosurePtr
+                <*> (fromIntegral <$> getInt64le) -- TODO: num_updates field is wrong
+
+{-
+    { info :: !StgInfoTableWithPtr
+    , prev_chunk  :: !b
+    , next_idx :: !Word
+    , entries :: ![TRecEntry b]
+    -}
 
 
 
@@ -158,6 +191,8 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
   | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
   | (StgInfoTable { tipe = TVAR }) <- decodedTable itb = decodeTVarClosure i c
+  | (StgInfoTable { tipe = MUT_PRIM }) <- decodedTable itb = decodeMutPrim i c
+  | (StgInfoTable { tipe = TREC_CHUNK }) <- decodedTable itb = decodeTrecChunk i c
 decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do

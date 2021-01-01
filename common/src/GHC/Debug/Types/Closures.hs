@@ -26,6 +26,7 @@ module GHC.Debug.Types.Closures (
     , InclusiveSize(..)
     , RetainerSize(..)
     , DebugClosureWithExtra(..)
+    , TRecEntry(..)
     , noSize
     , dcSize
     , StgInfoTable(..)
@@ -418,8 +419,21 @@ data DebugClosure pap string s b
   | TVarClosure
     { info :: !StgInfoTableWithPtr
     , current_value :: !b
-    , tvar_watch_queue :: !() -- TODO
-    , num_updates :: Int }
+    , tvar_watch_queue :: !b
+    , num_updates :: !Int }
+
+  | TRecChunkClosure
+    { info :: !StgInfoTableWithPtr
+    , prev_chunk  :: !b
+    , next_idx :: !Word
+    , entries :: ![TRecEntry b]
+    }
+
+  | MutPrimClosure
+    { info :: !StgInfoTableWithPtr
+    , ptrArgs :: ![b]
+    , dataArgs :: ![Word]
+    }
 
 
     ------------------------------------------------------------
@@ -474,6 +488,14 @@ data DebugClosure pap string s b
         { info       :: !StgInfoTableWithPtr
         }
   deriving (Show, Generic, Functor, Foldable, Traversable)
+
+data TRecEntry b = TRecEntry { tvar :: !b
+                             , expected_value :: !b
+                             , new_value :: !b
+                             , trec_num_updates :: Int -- Only in THREADED, TODO: This is not an Int,
+                                                       -- is it a pointer
+                                                       -- to a haskell int
+                             } deriving (Show, Generic, Functor, Foldable, Traversable)
 
 newtype GenPapPayload b = GenPapPayload { getValues :: [FieldValue b] }
   deriving (Functor, Foldable, Traversable, Show)
@@ -579,7 +601,9 @@ instance Quadtraversable DebugClosure where
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
       TVarClosure a1 a2 a3 a4 ->
-        TVarClosure a1 <$> g a2 <*> pure a3 <*> pure a4
+        TVarClosure a1 <$> g a2 <*> g a3 <*> pure a4
+      TRecChunkClosure a1 a2 a3 a4 -> TRecChunkClosure a1 <$> g a2 <*>  pure a3 <*> traverse (traverse g) a4
+      MutPrimClosure a1 a2 a3 -> MutPrimClosure a1 <$> traverse g a2 <*> pure a3
       IntClosure p i -> pure (IntClosure p i)
       WordClosure p i -> pure (WordClosure p i)
       Int64Closure p i -> pure (Int64Closure p i)
@@ -621,6 +645,8 @@ lookupStgInfoTableWithPtr dc = case dc of
   StackClosure          { info } -> Just info
   WeakClosure           { info } -> Just info
   TVarClosure           { info } -> Just info
+  TRecChunkClosure      { info } -> Just info
+  MutPrimClosure        { info } -> Just info
   OtherClosure          { info } -> Just info
   UnsupportedClosure    { info } -> Just info
   IntClosure{}    -> Nothing
