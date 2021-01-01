@@ -28,7 +28,8 @@ import Eventlog.Data
 import Eventlog.Total
 import Eventlog.HtmlTemplate
 import Eventlog.Args (defaultArgs)
-import Data.Text (pack, Text)
+import Data.Text (pack, Text, unpack)
+import Data.Semigroup
 
 
 data TraceState s = TraceState { visited :: !(IS.IntSet), user :: !s }
@@ -85,10 +86,10 @@ tracePapPayloadM f p = do
 newtype Count = Count Int
                 deriving (Semigroup, Monoid, Num) via Sum Int
 
-data CensusStats = CS { n :: Count, cssize :: Size  }
+data CensusStats = CS { n :: Count, cssize :: Size, csmax :: Max Size }
 
 instance Semigroup CensusStats where
-  (CS a b) <> (CS a1 b1) = CS (a <> a1) (b <> b1)
+  (CS a b c) <> (CS a1 b1 c1) = CS (a <> a1) (b <> b1) (c <> c1)
 
 type CensusByClosureType = Map.Map Text CensusStats
 
@@ -112,11 +113,12 @@ censusClosureType = traceFromM go Map.empty
 
 
 printCensusByClosureType :: CensusByClosureType -> IO ()
-printCensusByClosureType c =
+printCensusByClosureType c = do
   let res = reverse (sortBy (comparing (cssize . snd)) (Map.toList c))
-      showLine (k, (CS (Count n) (Size s))) =
-        concat [show k, ":", show s,":", show n,":", show @Double (fromIntegral s / fromIntegral n)]
-  in mapM_ (putStrLn . showLine) res
+      showLine (k, (CS (Count n) (Size s) (Max (Size mn)))) =
+        concat [unpack k, ":", show s,":", show n, ":", show mn,":", show @Double (fromIntegral s / fromIntegral n)]
+  mapM_ (putStrLn . showLine) res
+  --writeFile "profile_out" (unlines (map showLine res))
 
 profile :: Int -> DebugEnv DebugM -> IO ()
 profile interval e = loop [(0, Map.empty)] 0
@@ -130,8 +132,8 @@ profile interval e = loop [(0, Map.empty)] 0
         rs <- request RequestRoots
         traceWrite (length rs)
         censusClosureType rs
-      printCensusByClosureType r
       run e $ request RequestResume
+      printCensusByClosureType r
       let new_data = (((i + 1) * interval, r) : ss)
       renderProfile new_data
       loop new_data (i + 1)
@@ -140,7 +142,7 @@ mkFrame :: (Int, CensusByClosureType) -> Frame
 mkFrame (t, m) = Frame (fromIntegral t / 10e6) (Map.foldrWithKey (\k v r -> mkSample k v : r) [] m)
 
 mkSample :: Text -> CensusStats -> Sample
-mkSample k (CS _ (Size v)) =
+mkSample k (CS _ (Size v) _) =
   Sample (Bucket k) (fromIntegral v)
 
 
