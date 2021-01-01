@@ -99,12 +99,13 @@ censusClosureType = traceFromM go Map.empty
     go d =
       let s :: Size
           s = dcSize d
-          v =  CS (Count 1) s
+          v =  CS (Count 1) s (Max s)
       in case lookupStgInfoTableWithPtr (noSize d) of
            Just itbl ->
               let k :: Text
                   k = case (noSize d) of
-                        ConstrClosure { constrDesc = ConstrDesc a b c } -> pack c
+                        ConstrClosure { constrDesc = ConstrDesc a b c }
+                          -> pack a <> ":" <> pack b <> ":" <> pack c
                         _ -> pack (show (tipe (decodedTable itbl)))
               in Map.insertWith (<>) k v
            Nothing -> id
