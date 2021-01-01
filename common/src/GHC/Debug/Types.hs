@@ -28,7 +28,6 @@ import GHC.Debug.Types.Ptr as T hiding (getRawStack)
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
-import Debug.Trace
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
@@ -243,7 +242,7 @@ getResponse RequestRoots         = many get
 getResponse (RequestClosures _)  = many getRawClosure
 getResponse (RequestInfoTables itps) =
     zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps <$> many getInfoTable
-getResponse (RequestStackBitmap st o) = getPtrBitmap
+getResponse (RequestStackBitmap {}) = getPtrBitmap
 getResponse (RequestFunBitmap {}) = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
@@ -252,14 +251,14 @@ getResponse (RequestSourceInfo _c) = getIPE
 getResponse RequestAllBlocks = many getBlock
 getResponse RequestBlock {}  = getBlock
 
--- Ptr, size then raw block
+-- flags, Ptr, size then raw block
 getBlock :: Get RawBlock
 getBlock = do
-  flags <- getWord16be
+  bflags <- getWord16be
   bptr <- get
   len <- getInt32be
   rb <- getByteString (fromIntegral len)
-  return (RawBlock bptr flags rb)
+  return (RawBlock bptr bflags rb)
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do
@@ -274,7 +273,7 @@ getIPE = do
     (id_name:cty:ty:lab:modu:loc:[]) ->
       return . Just $ SourceInformation id_name (readCTy cty) ty lab modu loc
     [] -> return Nothing
-    fs -> fail (show ("Expecting 6 or 0 fields in IPE",  fs,num))
+    fs -> fail (show ("Expecting 6 or 0 fields in IPE" :: String,  fs,num))
   where
     getOne = do
       len <- getInt32be
