@@ -43,11 +43,13 @@ lookupClosure :: ClosurePtr -> BlockCache -> Maybe RawBlock
 lookupClosure (ClosurePtr cp) (BlockCache b) =
   HM.lookup (cp .&. complement bLOCK_MASK) b
 
+_applyBlockMask :: ClosurePtr -> ClosurePtr
 _applyBlockMask (ClosurePtr cp) = ClosurePtr (cp .&. complement bLOCK_MASK)
 
 bcSize :: BlockCache -> Int
 bcSize (BlockCache b) = HM.size b
 
+_bcKeys :: BlockCache -> [ClosurePtr]
 _bcKeys (BlockCache b) = sort $ map ClosurePtr (HM.keys b)
 
 data BlockCacheRequest a where
