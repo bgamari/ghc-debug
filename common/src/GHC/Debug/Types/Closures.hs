@@ -98,16 +98,16 @@ type UClosure = Fix1 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSiz
 type UStack   = Fix2 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
 type UPapPayload = Fix3 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
 
-foldFix1 :: (Functor f, Quadtraversable g)
+foldFix1 :: (Functor f, Functor pap, Quadtraversable g)
          => (pap r_clos -> r_pap)
          -> (string -> r_string)
          -> (f r_clos -> r_stack)
          -> (g r_pap r_string r_stack r_clos -> r_clos)
          -> Fix1 pap string f g
          -> r_clos
-foldFix1 p f g h (MkFix1 v) = h (quadmap (error "todo-pap") f (foldFix2 p f g h) (foldFix1 p f g h) v)
+foldFix1 p f g h (MkFix1 v) = h (quadmap (foldFix3 p f g h) f (foldFix2 p f g h) (foldFix1 p f g h) v)
 
-foldFix2 :: (Functor f, Quadtraversable g)
+foldFix2 :: (Functor f, Functor pap,  Quadtraversable g)
          => (pap r_clos -> r_pap)
          -> (s -> r_string)
          -> (f r_clos -> r_stack)
@@ -116,9 +116,18 @@ foldFix2 :: (Functor f, Quadtraversable g)
          -> r_stack
 foldFix2 p f g h (MkFix2 v) = g (fmap (foldFix1 p f g h) v)
 
+foldFix3 :: (Functor pap, Functor f, Quadtraversable g)
+         => (pap r_clos -> r_pap)
+         -> (s -> r_string)
+         -> (f r_clos -> r_stack)
+         -> (g r_pap r_string r_stack r_clos -> r_clos)
+         -> Fix3 pap s f g
+         -> r_pap
+foldFix3 p f g h (MkFix3 v) = p (fmap (foldFix1 p f g h) v)
+
 countNodes :: UClosure -> Int
 countNodes =
-  getSum . foldFix1 (error "todo-pap")
+  getSum . foldFix1 pap
                     (const (Sum 1))
                     (add . getConst . traverse go)
                     (add . getConst . quadtraverse go go go go)
@@ -126,19 +135,23 @@ countNodes =
     go x = Const x
     add = mappend (Sum 1)
 
+    pap = getConst . traverse go
+
 -- | Calculate the total in-memory size of a closure
 treeSize :: UClosure -> Size
 treeSize =
   foldFix1
               -- This is probably not right, should be something to do with
               -- length of string
-              (error "todo-pap")
+              papSize
               (const (Size 1))
               stackSize
               closSize
   where
     stackSize :: GenStackFrames Size -> Size
     stackSize s = (getConst (traverse Const s))
+
+    papSize s = getConst (traverse Const s)
 
     closSize :: DebugClosureWithSize Size Size Size Size ->  Size
     closSize d = (dcSize d) `mappend` getConst (quadtraverse Const Const Const Const d)
@@ -151,18 +164,25 @@ type UClosure_Inclusive = Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClo
 
 inclusive :: UClosure -> Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 inclusive =
-  foldFix1 (error "todo-pap") stringSize stackSize closSize
+  foldFix1 papSize stringSize stackSize closSize
   where
     -- TODO
     stringSize :: ConstrDesc -> ConstrDesc
     stringSize x = x
+
+    papSize s = MkFix3 s
+
 
     -- No where to put inclusive size on stacks yet
     stackSize :: GenStackFrames (Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize)))
               -> Fix2 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
     stackSize s = MkFix2 s
 
-    closSize :: DebugClosureWithSize _
+    closSize :: DebugClosureWithSize (Fix3
+                        GenPapPayload
+                        ConstrDesc
+                        GenStackFrames
+                        (DebugClosureWithExtra (Size, InclusiveSize)))
                   ConstrDesc (Fix2 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
                       -> Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
 
@@ -172,7 +192,7 @@ inclusive =
 
       where
         stack (MkFix2 st) = traverse (Const . fullSize) st
-        pap = error "todo pap"
+        pap (MkFix3 p) = traverse (Const . fullSize) p
 
 
 
