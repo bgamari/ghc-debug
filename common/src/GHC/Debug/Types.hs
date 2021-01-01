@@ -267,7 +267,7 @@ getResponse RequestBlock {}  = getBlock
 getBlock :: Get RawBlock
 getBlock = do
   flags <- getWord16be
-  bptr <- BlockPtr <$> getWord64be
+  bptr <- get
   len <- getInt32be
   rb <- getByteString (fromIntegral len)
   return (RawBlock bptr flags rb)

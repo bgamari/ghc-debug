@@ -28,7 +28,6 @@ import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import GHC.ForeignPtr
-import System.Endian
 import Data.Binary.Get as B
 import Control.Monad
 import Data.Void
@@ -114,7 +113,7 @@ decodeAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
   nargs <- getWord32le
   fun_ptr <- getWord64le
   cpayload <- replicateM (fromIntegral nargs) getWord64le
-  let funp = (ClosurePtr (toBE64 fun_ptr))
+  let funp = (ClosurePtr fun_ptr)
       cont = PayloadCont funp cpayload
   return $ (GHC.Debug.Types.Closures.APClosure infot carity nargs funp cont)
 
@@ -128,7 +127,7 @@ decodeTVarClosure (infot, _) (_, rc) = decodeFromBS rc $ do
   return $ (TVarClosure infot ptr watch_queue (fromIntegral updates))
 
 getClosurePtr :: Get ClosurePtr
-getClosurePtr = ClosurePtr . toBE64 <$> getWord64le
+getClosurePtr = ClosurePtr <$> getWord64le
 
 getWord :: Get Word64
 getWord = getWord64le
@@ -179,7 +178,7 @@ decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
    -- Up to now, 14 bytes are read, skip 2 to get to 16/start of
    -- sp field
    skip 2
-   st_sp <- StackPtr . toBE64 <$> getWord
+   st_sp <- StackPtr <$> getWord
    let k = fromIntegral (subtractStackPtr st_sp cp)
              -- -24 for the bytes already read
              - 24
@@ -257,7 +256,7 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
                         (\itb' -> PayloadWithKey itb' ptr)
                         absurd
                         ClosurePtr . convertClosure itb
-          $ fmap (\(W# w) -> toBE64 (W64# w)) r
+          $ fmap (\(W# w) -> (W64# w)) r
   where
 --    stackCont :: (Word32, StackPtr) -> StackCont
 --    stackCont (n,sp) = StackCont sp (getRawStack (n,sp) ptr rc)

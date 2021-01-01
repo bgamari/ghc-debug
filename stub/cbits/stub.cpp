@@ -594,6 +594,11 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
         }
 
+      // CMD_BLOCK is a bit broken because
+      // 1. It doesn't handle block groups > size 1, because it works starting
+      // from a ClosurePtr into a block and you can't work out the address of the
+      // bdescr despite knowing where the block starts.
+      // 2. Because of 1, it also can't send the block flags.
       case CMD_BLOCK:
         {
         StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());

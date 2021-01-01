@@ -4,7 +4,14 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE BinaryLiterals #-}
+{-# LANGUAGE TypeApplications #-}
 
+-- | Data types for representing different pointers and raw information
+-- All pointers are stored in little-endian to make arithmetic easier.
+--
+-- We have to send and recieve the pointers in big endiant though. This
+-- conversion is dealt with in the Binary instance for ClosurePtr and
+-- then the other pointers are derived from this instance using DerivingVia
 module GHC.Debug.Types.Ptr where
 
 import qualified Data.ByteString.Lazy as BSL
@@ -14,6 +21,7 @@ import Data.Word
 
 import Data.Binary
 import Data.Binary.Get
+import Data.Binary.Put
 import System.Endian
 
 import Numeric (showHex)
@@ -35,26 +43,23 @@ profiling = False
 
 newtype InfoTablePtr = InfoTablePtr Word64
                      deriving (Eq, Ord)
-                     deriving newtype (Binary, Hashable)
-
-newtype ShowPtr = ShowPtr Word64
-
-instance Show ShowPtr where
-  show (ShowPtr w) = "0x" ++ showHex w ""
-
-instance Show InfoTablePtr where
-  show (InfoTablePtr p) =  "0x" ++ showHex (fromBE64 p) ""
+                     deriving newtype (Hashable)
+                     deriving (Show, Binary) via ClosurePtr
 
 newtype ClosurePtr = ClosurePtr Word64
                    deriving (Eq)
-                   deriving newtype (Binary, Hashable)
+                   deriving newtype (Hashable)
+
+instance Binary ClosurePtr where
+  put (ClosurePtr p) = putWord64be (toBE64 p)
+  get = ClosurePtr . fromBE64 <$> getWord64be
 
 instance Ord ClosurePtr where
-  (ClosurePtr x) `compare` (ClosurePtr y) = fromBE64 x `compare` fromBE64 y
+  (ClosurePtr x) `compare` (ClosurePtr y) = x `compare` y
 
 instance Show ClosurePtr where
   show (ClosurePtr 0) = "null"
-  show (ClosurePtr p) =  "0x" ++ showHex (fromBE64 p) ""
+  show (ClosurePtr p) =  "0x" ++ showHex p ""
 
 data StackCont = StackCont StackPtr -- Address of start of frames
                            RawStack -- The raw frames
@@ -62,10 +67,8 @@ data StackCont = StackCont StackPtr -- Address of start of frames
 
 newtype StackPtr = StackPtr Word64
                    deriving (Eq, Ord)
-                   deriving newtype (Binary, Hashable)
-
-instance Show StackPtr where
-  show (StackPtr p) =  "0x" ++ showHex (fromBE64 p) ""
+                   deriving newtype (Hashable)
+                   deriving (Show, Binary) via ClosurePtr
 
 newtype StringPtr = StringPtr Word64
   deriving Show via StackPtr
@@ -76,21 +79,21 @@ subtractBlockPtr cp bp = subtractStackPtr (coerce cp) (coerce bp)
 
 subtractStackPtr :: StackPtr -> ClosurePtr -> Word64
 subtractStackPtr (StackPtr c) (ClosurePtr c2) =
-  (fromBE64 c) - (fromBE64 c2)
+  c - c2
 
 addStackPtr :: StackPtr -> Word64 -> StackPtr
-addStackPtr (StackPtr c) o = StackPtr (toBE64 (fromBE64 c + o))
+addStackPtr (StackPtr c) o = StackPtr (c + o)
 
 rawClosureSize :: RawClosure -> Int
 rawClosureSize (RawClosure s) = BS.length s
 
 calculateStackLen :: Word32 -> ClosurePtr -> StackPtr -> Word64
 calculateStackLen siz (ClosurePtr p) (StackPtr sp) =
-  (fromBE64 p  -- Pointer to start of StgStack closure
+  (p  -- Pointer to start of StgStack closure
     + 24       -- Offset to end of closure
     + (fromIntegral siz * 8) -- Stack_Size (in words)
     )
-    - fromBE64 sp -- Minus current Sp
+    - sp -- Minus current Sp
 
 getRawStack :: (Word32, StackPtr) -> ClosurePtr -> RawClosure -> RawStack
 getRawStack (siz, sp) c (RawClosure s) =
@@ -102,7 +105,8 @@ getRawStack (siz, sp) c (RawClosure s) =
   in RawStack raw_s
 
 printBS :: BS.ByteString -> String
-printBS bs = show (runGet (many (ClosurePtr <$> getWord64be)) (BSL.fromStrict bs))
+-- Not technically all ClosurePtr but good for the show instance
+printBS bs = show (runGet (many (get @ClosurePtr)) (BSL.fromStrict bs))
 
 printStack :: RawStack -> String
 printStack (RawStack s) = printBS s
@@ -113,7 +117,7 @@ printStack (RawStack s) = printBS s
 -- I inspected them in gdb. I don't know if they are always the same of
 -- should be queried from the debuggee
 ptrInBlock :: ClosurePtr -> Bool
-ptrInBlock (ClosurePtr (fromBE64 -> w)) = (w >= 0x4200000000 && w <= 0x14200000000)
+ptrInBlock (ClosurePtr w) = (w >= 0x4200000000 && w <= 0x14200000000)
 
 newtype RawInfoTable = RawInfoTable BS.ByteString
                      deriving (Eq, Ord, Show)
@@ -135,8 +139,8 @@ rawStackSize (RawStack bs) = BS.length bs
 
 newtype BlockPtr = BlockPtr Word64
                    deriving (Eq, Ord)
-                   deriving newtype (Binary, Hashable)
-                   deriving Show via StackPtr
+                   deriving newtype (Hashable)
+                   deriving (Binary, Show) via StackPtr
 
 data RawBlock = RawBlock BlockPtr Word16 BS.ByteString
                     deriving (Show)
@@ -151,10 +155,10 @@ tAG_MASK :: Word64
 tAG_MASK = 0b111
 
 untagClosurePtr :: ClosurePtr -> ClosurePtr
-untagClosurePtr (ClosurePtr (fromBE64 -> w)) = ClosurePtr (toBE64 (w .&. complement tAG_MASK))
+untagClosurePtr (ClosurePtr w) = ClosurePtr (w .&. complement tAG_MASK)
 
 getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
-getInfoTblPtr (RawClosure bs) = InfoTablePtr (runGet getWord64be (BSL.take 8 (BSL.fromStrict bs)))
+getInfoTblPtr (RawClosure bs) = runGet (isolate 8 get) (BSL.fromStrict bs)
 
 -- A value, but with a different value used for testing equality.
 data PayloadWithKey k a = PayloadWithKey k a deriving Show

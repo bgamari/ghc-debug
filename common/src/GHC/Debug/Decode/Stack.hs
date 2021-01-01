@@ -9,7 +9,6 @@ import Data.Binary.Get as B
 
 import GHC.Debug.Types
 import GHC.Exts.Heap.ClosureTypes
-import System.Endian
 import Control.Monad
 
 import Data.Coerce
@@ -53,7 +52,7 @@ getFrame st_bitmap itbl =
           _ -> return ()
         return (DebugStackFrame itbl fields)
   where
-    decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord
+    decodeField True  = SPtr . ClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord
 
     headerSize RET_FUN = 3

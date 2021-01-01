@@ -15,7 +15,6 @@ import GHC.Debug.Types.Ptr
 import GHC.Debug.Types
 import qualified Data.HashMap.Strict as HM
 import GHC.Word
-import System.Endian
 import Data.Hashable
 import Data.IORef
 import Control.Concurrent
@@ -30,7 +29,7 @@ emptyBlockCache :: BlockCache
 emptyBlockCache = BlockCache HM.empty
 
 addBlock :: RawBlock -> BlockCache -> BlockCache
-addBlock rb@(RawBlock (BlockPtr (fromBE64 -> bp)) _ _) (BlockCache bc) =
+addBlock rb@(RawBlock (BlockPtr bp) _ _) (BlockCache bc) =
   BlockCache (HM.insert bp rb bc)
 
 -- 12 bits
@@ -41,15 +40,15 @@ addBlocks :: [RawBlock] -> BlockCache -> BlockCache
 addBlocks bc bs = Prelude.foldr addBlock bs bc
 
 lookupClosure :: ClosurePtr -> BlockCache -> Maybe RawBlock
-lookupClosure (ClosurePtr (fromBE64 -> cp)) (BlockCache b) =
+lookupClosure (ClosurePtr cp) (BlockCache b) =
   HM.lookup (cp .&. complement bLOCK_MASK) b
 
-_applyBlockMask (ClosurePtr (fromBE64 -> cp)) = ClosurePtr (toBE64 (cp .&. complement bLOCK_MASK))
+_applyBlockMask (ClosurePtr cp) = ClosurePtr (cp .&. complement bLOCK_MASK)
 
 bcSize :: BlockCache -> Int
 bcSize (BlockCache b) = HM.size b
 
-_bcKeys (BlockCache b) = sort $ map (ClosurePtr . toBE64) (HM.keys b)
+_bcKeys (BlockCache b) = sort $ map ClosurePtr (HM.keys b)
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure

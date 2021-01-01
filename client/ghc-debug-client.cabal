@@ -30,7 +30,7 @@ library
                        network >=2.6 && <2.7,
                        containers,
                        unordered-containers,
-                       ghc-debug-common, cpu,
+                       ghc-debug-common,
                        text, process, filepath, directory,
                        haxl, hashable, mtl, eventlog2html >= 0.8.3
   hs-source-dirs:      src

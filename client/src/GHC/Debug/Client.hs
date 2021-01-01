@@ -114,7 +114,6 @@ import qualified Data.IntSet as IS
 import qualified Data.HashMap.Strict as HM
 import Control.Monad.State
 import Data.Tree
-import System.Endian
 
 import Debug.Trace
 
@@ -515,7 +514,7 @@ dereferencePapPayload (PayloadCont fp raw) = do
       modify tail
       return v
 
-    decodeField True  = SPtr . ClosurePtr . toBE64 <$> getWord
+    decodeField True  = SPtr . ClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord
 
 
