@@ -171,7 +171,7 @@ decodeTrecChunk (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
   prev <- getClosurePtr
   next_idx <- getWord64le
   chunks <- replicateM (fromIntegral next_idx) getChunk
-  return $ DCS (3 + fromIntegral next_idx * 3) (TRecChunkClosure info prev (fromIntegral next_idx) chunks)
+  return $ DCS (3 + (16 * 4)) (TRecChunkClosure info prev (fromIntegral next_idx) chunks)
 
   where
     getChunk = do
