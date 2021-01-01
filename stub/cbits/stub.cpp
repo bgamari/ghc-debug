@@ -76,14 +76,6 @@ enum response_code {
     RESP_NO_RESUME = 0x103,
 };
 
-// RTS signatures
-// FIXME: These need to be made not private in GHC.
-extern "C" {
-//typedef void (*FindPtrCb)(void *user, StgClosure *);
-//void findPtrCb(FindPtrCb , void* , P_);
-//void findPtr(P_, int);
-}
-
 extern "C" Capability **capabilities;
 
 const int maxSavedObjects = 20;
