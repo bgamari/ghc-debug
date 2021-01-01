@@ -43,8 +43,6 @@ data Request a where
     RequestRoots :: Request [ClosurePtr]
     -- | Request a set of closures.
     RequestClosures :: [ClosurePtr] -> Request [RawClosure]
-    -- | Request a stack
-    RequestStack :: StackPtr -> Request RawStack
     -- | Request a set of info tables.
     RequestInfoTables :: [InfoTablePtr] -> Request [(StgInfoTableWithPtr, RawInfoTable)]
     -- | Wait for the debuggee to pause itself and then
@@ -87,7 +85,6 @@ eq1request r1 r2 =
     RequestResume  -> case r2 of {RequestResume -> True; _ -> False }
     RequestRoots   -> case r2 of {RequestRoots -> True; _ -> False }
     RequestClosures cs -> case r2 of {(RequestClosures cs') -> cs == cs'; _ -> False }
-    RequestStack sp    -> case r2 of {(RequestStack sp') -> sp == sp'; _ -> False }
     RequestInfoTables itp -> case r2 of { (RequestInfoTables itp') ->  itp == itp'; _ -> False }
     RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
     RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
@@ -120,7 +117,6 @@ instance Hashable (Request a) where
     RequestResume  ->  s `hashWithSalt` cmdRequestResume
     RequestRoots   -> s `hashWithSalt` cmdRequestRoots
     RequestClosures cs -> s `hashWithSalt` cmdRequestClosures `hashWithSalt` cs
-    RequestStack sp    -> s `hashWithSalt`  cmdRequestStack `hashWithSalt` sp
     RequestInfoTables itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
     RequestPoll           -> s `hashWithSalt` cmdRequestPoll
     RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
@@ -149,7 +145,6 @@ requestCommandId r = case r of
     RequestResume {}  -> cmdRequestResume
     RequestRoots {}   -> cmdRequestRoots
     RequestClosures {}  -> cmdRequestClosures
-    RequestStack {}     -> cmdRequestStack
     RequestInfoTables {}  -> cmdRequestInfoTables
     RequestPoll {}         -> cmdRequestPoll
     RequestSavedObjects {} -> cmdRequestSavedObjects
@@ -196,9 +191,6 @@ cmdRequestConstrDesc = CommandId 11
 cmdRequestSourceInfo :: CommandId
 cmdRequestSourceInfo = CommandId 12
 
-cmdRequestStack :: CommandId
-cmdRequestStack = CommandId 13
-
 cmdRequestAllBlocks :: CommandId
 cmdRequestAllBlocks = CommandId 14
 
@@ -240,7 +232,6 @@ putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 --putRequest (RequestFindPtr c)       =
 --  putCommand cmdRequestFindPtr $ put c
 putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
-putRequest (RequestStack sp) = putCommand cmdRequestStack $ put sp
 putRequest (RequestAllBlocks) = putCommand cmdRequestAllBlocks $ return ()
 putRequest (RequestBlock cp)  = putCommand cmdRequestBlock $ put cp
 
@@ -257,9 +248,7 @@ getResponse (RequestFunBitmap {}) = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
---getResponse (RequestFindPtr _c)  = many get
 getResponse (RequestSourceInfo _c) = getIPE
-getResponse (RequestStack _)       = getRawStack
 getResponse RequestAllBlocks = many getBlock
 getResponse RequestBlock {}  = getBlock
 

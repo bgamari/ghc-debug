@@ -399,27 +399,6 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         }
         break;
 
-//      case CMD_GET_STACK:
-//        {
-//        if (!paused) {
-//            resp.finish(RESP_NOT_PAUSED);
-//        } else {
-//            StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-//            trace("STACK_GET %p\n", ptr);
-//            trace("STACK_SIZE %u\n", closure_sizeW(ptr));
-//            StgStack *s = ((StgStack *) ptr);
-//
-//
-//            size_t len = ((s->stack_size + s->stack) - s->sp) * WORD_SIZE;
-//            uint32_t len_payload = htonl(len);
-//            trace("GET_CLOSURE_WRITE1 %lu\n", len);
-//            resp.write(len_payload);
-//            resp.write((const char *) s->sp, len);
-//            }
-//            resp.finish(RESP_OKAY);
-//        }
-//        break;
-
       case CMD_GET_INFO_TABLES:
         // TODO: Info tables are immutable so we needn't pause for this request
         if (!paused) {
