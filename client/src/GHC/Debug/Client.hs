@@ -314,9 +314,7 @@ closureExcAndRetainerSizes analysis (Closure cPtr _) =
 closureSourceLocation :: Debuggee -> DebugClosure p cd s c -> IO (Maybe SourceInformation)
 closureSourceLocation _ (Stack _ _) = return Nothing
 closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
-  case lookupStgInfoTableWithPtr (noSize c) of
-    Nothing -> return Nothing
-    Just infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
+  request (RequestSourceInfo (tableId (info (noSize c))))
 
 -- | Get the directly referenced closures (with a label) of a closure.
 closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
@@ -438,13 +436,6 @@ closureReferencesAndLabels closure = case closure of
                       ]
   TVarClosure {..} -> [("val", Left current_value)]
   MutPrimClosure {..} -> withArgLables ptrArgs
-  IntClosure {} -> []
-  WordClosure {} -> []
-  Int64Closure {} -> []
-  Word64Closure {} -> []
-  AddrClosure {} -> []
-  FloatClosure {} -> []
-  DoubleClosure {} -> []
   ConstrClosure {..} -> withFieldLables ptrArgs
   ThunkClosure {..} -> withArgLables ptrArgs
   SelectorClosure {..} -> [("Selectee", Left selectee)]
@@ -608,8 +599,7 @@ traceClosureFrom cp@(ClosurePtr c) = do
       sc <- lift $ dereferenceClosureFromBlock cp
       quadtraverse tracePapFrom traceConstrDesc traceStackFrom traceClosureFrom sc
       case lookupStgInfoTableWithPtr (noSize sc) of
-        Nothing -> return Nothing
-        Just infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
+        infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
       return ()
 
 traceStackFrom :: StackCont -> StateT IS.IntSet DebugM ()

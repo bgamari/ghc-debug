@@ -323,20 +323,6 @@ ppClosure herald showBox prec c = case c of
         "_fun" ++ braceize (map (showBox 0) ptrArgs ++ map show dataArgs)
     BlockingQueueClosure {} ->
         "_blockingQueue"
-    IntClosure {..} -> app
-        ["Int", show intVal]
-    WordClosure {..} -> app
-        ["Word", show wordVal]
-    Int64Closure {..} -> app
-        ["Int64", show int64Val]
-    Word64Closure {..} -> app
-        ["Word64", show word64Val]
-    AddrClosure {..} -> app
-        ["Addr", show addrVal]
-    FloatClosure {..} -> app
-        ["Float", show floatVal]
-    DoubleClosure {..} -> app
-        ["Double", show doubleVal]
     OtherClosure {} ->
         "_other"
     TSOClosure {..} -> "TSO"

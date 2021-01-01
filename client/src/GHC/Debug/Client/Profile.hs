@@ -60,8 +60,7 @@ traceClosureFromM k cp = do
       modify (updUser (k sc'))
       quadtraverse (tracePapPayloadM k) traceConstrDescM (traceStackFromM k) (traceClosureFromM k) sc
       case lookupStgInfoTableWithPtr (noSize sc) of
-        Nothing -> return Nothing
-        Just infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
+        infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
       return ()
 
 traceStackFromM :: (SizedClosureC -> s -> s)
@@ -102,14 +101,13 @@ censusClosureType = traceFromM go Map.empty
           s = dcSize d
           v =  CS (Count 1) s (Max s)
       in case lookupStgInfoTableWithPtr (noSize d) of
-           Just itbl ->
+           itbl ->
               let k :: Text
                   k = case (noSize d) of
                         ConstrClosure { constrDesc = ConstrDesc a b c }
                           -> pack a <> ":" <> pack b <> ":" <> pack c
                         _ -> pack (show (tipe (decodedTable itbl)))
               in Map.insertWith (<>) k v
-           Nothing -> id
 
 
 printCensusByClosureType :: CensusByClosureType -> IO ()

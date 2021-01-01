@@ -436,45 +436,6 @@ data DebugClosure pap string s b
     , dataArgs :: ![Word]
     }
 
-
-    ------------------------------------------------------------
-    -- Unboxed unlifted closures
-
-    -- | Primitive Int
-  | IntClosure
-        { ptipe      :: GHC.PrimType
-        , intVal     :: !Int }
-
-    -- | Primitive Word
-  | WordClosure
-        { ptipe      :: GHC.PrimType
-        , wordVal    :: !Word }
-
-    -- | Primitive Int64
-  | Int64Closure
-        { ptipe      :: GHC.PrimType
-        , int64Val   :: !Int64 }
-
-    -- | Primitive Word64
-  | Word64Closure
-        { ptipe      :: GHC.PrimType
-        , word64Val  :: !Word64 }
-
-    -- | Primitive Addr
-  | AddrClosure
-        { ptipe      :: GHC.PrimType
-        , addrVal    :: !Int }
-
-    -- | Primitive Float
-  | FloatClosure
-        { ptipe      :: GHC.PrimType
-        , floatVal   :: !Float }
-
-    -- | Primitive Double
-  | DoubleClosure
-        { ptipe      :: GHC.PrimType
-        , doubleVal  :: !Double }
-
     -----------------------------------------------------------
     -- Anything else
 
@@ -604,57 +565,10 @@ instance Quadtraversable DebugClosure where
         TVarClosure a1 <$> g a2 <*> g a3 <*> pure a4
       TRecChunkClosure a1 a2 a3 a4 -> TRecChunkClosure a1 <$> g a2 <*>  pure a3 <*> traverse (traverse g) a4
       MutPrimClosure a1 a2 a3 -> MutPrimClosure a1 <$> traverse g a2 <*> pure a3
-      IntClosure p i -> pure (IntClosure p i)
-      WordClosure p i -> pure (WordClosure p i)
-      Int64Closure p i -> pure (Int64Closure p i)
-      Word64Closure p i -> pure (Word64Closure p i)
-      AddrClosure p i -> pure (AddrClosure p i)
-      FloatClosure p i -> pure (FloatClosure p i)
-      DoubleClosure p i -> pure (DoubleClosure p i)
       OtherClosure a1 bs ws -> OtherClosure a1 <$> traverse g bs <*> pure ws
       UnsupportedClosure i  -> pure (UnsupportedClosure i)
 
-{-
-instance Bifunctor DebugClosure where
-  bimap = bimapDefault
-
-instance Bifoldable DebugClosure where
-  bifoldMap = bifoldMapDefault
--}
-
-
-lookupStgInfoTableWithPtr :: DebugClosure pap string s b -> Maybe StgInfoTableWithPtr
-lookupStgInfoTableWithPtr dc = case dc of
-  ConstrClosure         { info } -> Just info
-  FunClosure            { info } -> Just info
-  ThunkClosure          { info } -> Just info
-  SelectorClosure       { info } -> Just info
-  PAPClosure            { info } -> Just info
-  APClosure             { info } -> Just info
-  APStackClosure        { info } -> Just info
-  IndClosure            { info } -> Just info
-  BCOClosure            { info } -> Just info
-  BlackholeClosure      { info } -> Just info
-  ArrWordsClosure       { info } -> Just info
-  MutArrClosure         { info } -> Just info
-  SmallMutArrClosure    { info } -> Just info
-  MVarClosure           { info } -> Just info
-  MutVarClosure         { info } -> Just info
-  BlockingQueueClosure  { info } -> Just info
-  TSOClosure            { info } -> Just info
-  StackClosure          { info } -> Just info
-  WeakClosure           { info } -> Just info
-  TVarClosure           { info } -> Just info
-  TRecChunkClosure      { info } -> Just info
-  MutPrimClosure        { info } -> Just info
-  OtherClosure          { info } -> Just info
-  UnsupportedClosure    { info } -> Just info
-  IntClosure{}    -> Nothing
-  WordClosure{}   -> Nothing
-  Int64Closure{}  -> Nothing
-  Word64Closure{} -> Nothing
-  AddrClosure{}   -> Nothing
-  FloatClosure{}  -> Nothing
-  DoubleClosure{} -> Nothing
+lookupStgInfoTableWithPtr :: DebugClosure pap string s b -> StgInfoTableWithPtr
+lookupStgInfoTableWithPtr dc = info dc
 
 
