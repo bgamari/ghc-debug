@@ -1,6 +1,10 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
-module GHC.Debug.Client.RequestCache(RequestCache, cacheReq, lookupReq, emptyRequestCache) where
+module GHC.Debug.Client.RequestCache(RequestCache
+                                    , cacheReq
+                                    , lookupReq
+                                    , emptyRequestCache
+                                    , clearMovableRequests) where
 
 import Data.Hashable
 import qualified Data.HashMap.Strict as HM
@@ -34,3 +38,9 @@ lookupReq req rc = coerceResult <$> HM.lookup (AnyReq req) rc
 
 emptyRequestCache :: RequestCache
 emptyRequestCache = HM.empty
+
+-- | Clear the part of the cache which will become invalid after pausing
+-- For example, we need to clear blocks, but can keep the info table
+-- caches.
+clearMovableRequests :: RequestCache -> RequestCache
+clearMovableRequests rc = HM.filterWithKey (\(AnyReq r) _ -> isImmutableRequest r) rc

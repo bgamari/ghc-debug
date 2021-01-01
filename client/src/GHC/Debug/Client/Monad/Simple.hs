@@ -92,10 +92,12 @@ mkEnv exeName _sockName h = do
   mhdl <-  newMVar h
   return $ Debuggee exeName mcount bc rc mhdl
 
+-- TODO: Sending multiple pauses will clear the cache, should keep track of
+-- the pause state and only clear caches if the state changes.
 simpleReq :: Request resp -> ReaderT Debuggee IO resp
 simpleReq req | isWriteRequest req = ask >>= \Debuggee{..} -> liftIO $ do
   atomicModifyIORef' debuggeeBlockCache (const (emptyBlockCache, ()))
-  modifyMVar_ debuggeeRequestCache (return . const emptyRequestCache)
+  modifyMVar_ debuggeeRequestCache (return . clearMovableRequests)
   doRequest debuggeeHandle req
 simpleReq req = do
   rc_var <- asks debuggeeRequestCache

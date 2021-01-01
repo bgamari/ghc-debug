@@ -103,6 +103,20 @@ isWriteRequest r =
     RequestPoll -> True
     _ -> False
 
+-- | Requests which will always answer the same.
+-- For example, info tables are immutable and so requesting an info table
+-- will always result in the same value and is safe to cache across pause
+-- lines.
+isImmutableRequest :: Request a -> Bool
+isImmutableRequest r =
+  case r of
+    RequestVersion {} -> True
+    RequestInfoTables {} -> True
+    RequestSourceInfo {} -> True
+    _ -> False
+
+
+
 
 
 deriving instance Show (Request a)
