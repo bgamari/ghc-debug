@@ -14,7 +14,7 @@ import Data.Void
 
 -- | Convert a GenClosure from ghc-heap to a DebugClosure,
 -- it is mostly an identity function, apart from STACK closures.
-convertClosure :: (Num a, Eq a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure Void InfoTablePtr (Word32, StackPtr) a
+convertClosure :: (Num a, Eq a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure Void InfoTablePtr Void a
 convertClosure itb g =
   case g of
     GHC.ConstrClosure _ a2 a3 _ _ _ -> ConstrClosure itb a2 a3 (tableId itb)
@@ -23,7 +23,7 @@ convertClosure itb g =
     GHC.SelectorClosure _ a2           -> SelectorClosure itb a2
 --    GHC.PAPClosure _ a2 a3 a4 a5       -> PAPClosure itb a2 a3 a4 a5
 --    GHC.APClosure _ a2 a3 a4 a5        -> APClosure itb a2 a3 a4 a5
-    GHC.APStackClosure _ a2 a3         -> APStackClosure itb a2 ()
+--    GHC.APStackClosure _ a2 a3         -> APStackClosure itb a2
     GHC.IndClosure _ a2                -> IndClosure itb a2
     GHC.BCOClosure _ a2 a3 a4 a5 a6 a7 -> BCOClosure itb a2 a3 a4 a5 a6 a7
     GHC.BlackholeClosure _ a2          -> BlackholeClosure itb a2
@@ -34,7 +34,7 @@ convertClosure itb g =
     GHC.MutVarClosure _ a2             -> MutVarClosure itb a2
     GHC.BlockingQueueClosure _ a2 a3 a4 a5 -> BlockingQueueClosure itb a2 a3 a4 a5
     GHC.TSOClosure _ a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 -> TSOClosure itb a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16
-    GHC.StackClosure _ a2 a3 a4 a5      -> StackClosure itb a2 a3 a4 (a2, (StackPtr (toBE64 a5)))
+--    GHC.StackClosure _ a2 a3 a4 a5      -> StackClosure itb a2 a3 a4 (a2, (StackPtr (toBE64 a5)))
     GHC.IntClosure a1 a2                -> IntClosure a1 a2
     GHC.WordClosure a1 a2               -> WordClosure a1 a2
     GHC.Int64Closure a1 a2              -> Int64Closure a1 a2

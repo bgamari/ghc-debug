@@ -296,8 +296,9 @@ data DebugClosure pap string s b
     -- | A suspended thunk evaluation
   | APStackClosure
         { info       :: !StgInfoTableWithPtr
+        , ap_st_size :: !Word
         , fun        :: !b              -- ^ Function closure
-        , payload    :: !()            -- ^ Stack right before suspension
+        , payload    :: !s            -- ^ Stack right before suspension
         }
 
     -- | A pointer to another closure, introduced when a thunk is updated
@@ -582,7 +583,7 @@ instance Quadtraversable DebugClosure where
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
       PAPClosure a1 a2 a3 a4 a5 -> PAPClosure a1 a2 a3 <$> g a4 <*> p a5
       APClosure a1 a2 a3 a4 a5 -> APClosure a1 a2 a3 <$> g a4 <*> p a5
-      APStackClosure a1 b bs   -> APStackClosure a1 <$> g b <*> pure bs
+      APStackClosure a1 s b bs   -> APStackClosure a1 s <$> g b <*> f bs
       IndClosure a1 b -> IndClosure a1 <$> g b
       BCOClosure a1 b1 b2 b3 a2 a3 a4 ->
         (\c1 c2 c3 -> BCOClosure a1 c1 c2 c3 a2 a3 a4) <$> g b1 <*> g b2 <*> g b3

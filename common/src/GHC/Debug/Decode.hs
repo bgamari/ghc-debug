@@ -221,10 +221,17 @@ decodeFromBS (RawClosure rc) parser =
     Left err -> error (show err)
     Right (_rem, o, v) -> DCS (Size (fromIntegral o)) v
 
-
-
 decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeAPStack = undefined
+decodeAPStack (info, _) (cp, rc) = decodeFromBS rc $ do
+  _itbl <- getWord
+  st_size <- getWord
+  fun_closure <- getClosurePtr
+  k <- bytesRead
+  let sp = addStackPtr (coerce cp) (fromIntegral k)
+  payload <- RawStack <$> getByteString (fromIntegral st_size)
+  return $ GHC.Debug.Types.Closures.APStackClosure info (fromIntegral st_size) fun_closure (StackCont sp payload)
+
+
 
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
@@ -236,6 +243,7 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = TREC_CHUNK }) <- decodedTable itb = decodeTrecChunk i c
   | (StgInfoTable { tipe = BLOCKING_QUEUE }) <- decodedTable itb = decodeBlockingQueue i c
   | (StgInfoTable { tipe = STACK }) <- decodedTable itb = decodeStack i c
+  | (StgInfoTable { tipe = AP_STACK }) <- decodedTable itb = decodeAPStack i c
 decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
@@ -264,12 +272,12 @@ decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerfor
         poke ptr_to_itbl_ptr old_itbl
         return $ DCS s . quadmap absurd
                         (\itb' -> PayloadWithKey itb' ptr)
-                        stackCont
+                        absurd
                         ClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> toBE64 (W64# w)) r
   where
-    stackCont :: (Word32, StackPtr) -> StackCont
-    stackCont (n,sp) = StackCont sp (getRawStack (n,sp) ptr rc)
+--    stackCont :: (Word32, StackPtr) -> StackCont
+--    stackCont (n,sp) = StackCont sp (getRawStack (n,sp) ptr rc)
 
 
 
