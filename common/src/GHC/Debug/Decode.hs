@@ -153,6 +153,9 @@ decodeTVarClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc
 getClosurePtr :: Get ClosurePtr
 getClosurePtr = ClosurePtr . toBE64 <$> getWord64le
 
+getWord :: Get Word64
+getWord = getWord64le
+
 decodeMutPrim :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeMutPrim (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
   _itbl <- getWord64le
@@ -177,12 +180,15 @@ decodeTrecChunk (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
                 <*> getClosurePtr
                 <*> (fromIntegral <$> getInt64le) -- TODO: num_updates field is wrong
 
-{-
-    { info :: !StgInfoTableWithPtr
-    , prev_chunk  :: !b
-    , next_idx :: !Word
-    , entries :: ![TRecEntry b]
-    -}
+decodeBlockingQueue :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeBlockingQueue (info, _) (_, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+  _itbl <- getWord
+  q <- getClosurePtr
+  bh <- getClosurePtr
+  tso <- getClosurePtr
+  bh_q <- getClosurePtr
+  return $ DCS 5 (GHC.Debug.Types.Closures.BlockingQueueClosure info q bh tso bh_q)
+
 
 
 
@@ -193,6 +199,7 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = TVAR }) <- decodedTable itb = decodeTVarClosure i c
   | (StgInfoTable { tipe = MUT_PRIM }) <- decodedTable itb = decodeMutPrim i c
   | (StgInfoTable { tipe = TREC_CHUNK }) <- decodedTable itb = decodeTrecChunk i c
+  | (StgInfoTable { tipe = BLOCKING_QUEUE }) <- decodedTable itb = decodeBlockingQueue i c
 decodeClosure (itb, RawInfoTable rit) (ptr, rc@(RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
