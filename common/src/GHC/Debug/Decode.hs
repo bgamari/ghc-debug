@@ -120,7 +120,7 @@ decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, Raw
 decodeClosureWithSize itb (ptr, rc) = decodeClosure itb (ptr, rc)
 
 decodePAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodePAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+decodePAPClosure (info, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- getWord64le
   arity <- getWord32le
   nargs <- getWord32le
@@ -128,10 +128,10 @@ decodePAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc)
   payload <- replicateM (fromIntegral nargs) getWord64le
   let funp = (ClosurePtr (toBE64 fun_ptr))
       cont = PayloadCont funp payload
-  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.PAPClosure info arity nargs funp cont)
+  return $ (GHC.Debug.Types.Closures.PAPClosure info arity nargs funp cont)
 
 decodeAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+decodeAPClosure (info, _) (cp, rc) = decodeFromBS rc $ do
   _itbl <- getWord64le
   arity <- getWord32le
   nargs <- getWord32le
@@ -139,16 +139,16 @@ decodeAPClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
   payload <- replicateM (fromIntegral nargs) getWord64le
   let funp = (ClosurePtr (toBE64 fun_ptr))
       cont = PayloadCont funp payload
-  return $ DCS (Size ((3 + fromIntegral nargs) * 8)) (GHC.Debug.Types.Closures.APClosure info arity nargs funp cont)
+  return $ (GHC.Debug.Types.Closures.APClosure info arity nargs funp cont)
 
 
 decodeTVarClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeTVarClosure (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+decodeTVarClosure (info, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- getWord64le
   ptr <- getClosurePtr
   watch_queue <- getClosurePtr
   updates <- getInt64le
-  return $ DCS 4 (TVarClosure info ptr watch_queue (fromIntegral updates))
+  return $ (TVarClosure info ptr watch_queue (fromIntegral updates))
 
 getClosurePtr :: Get ClosurePtr
 getClosurePtr = ClosurePtr . toBE64 <$> getWord64le
@@ -157,21 +157,21 @@ getWord :: Get Word64
 getWord = getWord64le
 
 decodeMutPrim :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeMutPrim (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+decodeMutPrim (info, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- getWord64le
   let kptrs = fromIntegral (ptrs (decodedTable info))
       kdat = fromIntegral (nptrs (decodedTable info))
   pts <- replicateM kptrs getClosurePtr
   dat <- replicateM kdat (fromIntegral <$> getWord64le)
-  return $ DCS (Size (1 + kptrs + kdat)) (MutPrimClosure info pts dat)
+  return $ (MutPrimClosure info pts dat)
 
 decodeTrecChunk :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeTrecChunk (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+decodeTrecChunk (info, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- getWord64le
   prev <- getClosurePtr
   next_idx <- getWord64le
   chunks <- replicateM (fromIntegral next_idx) getChunk
-  return $ DCS (3 + (16 * 4)) (TRecChunkClosure info prev (fromIntegral next_idx) chunks)
+  return $ (TRecChunkClosure info prev (fromIntegral next_idx) chunks)
 
   where
     getChunk = do
@@ -183,49 +183,48 @@ decodeTrecChunk (info, _) (cp, RawClosure rc) = flip runGet (BSL.fromStrict rc) 
                                                   -- be decoded
 
 decodeBlockingQueue :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeBlockingQueue (info, _) (_, RawClosure rc) = flip runGet (BSL.fromStrict rc) $ do
+decodeBlockingQueue (info, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- getWord
   q <- getClosurePtr
   bh <- getClosurePtr
   tso <- getClosurePtr
   bh_q <- getClosurePtr
-  return $ DCS 5 (GHC.Debug.Types.Closures.BlockingQueueClosure info q bh tso bh_q)
+  return $ (GHC.Debug.Types.Closures.BlockingQueueClosure info q bh tso bh_q)
 
 -- It is just far simpler to directly decode the stack here rather than use
 -- the existing logic in ghc-heap......
 decodeStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeStack (info, _) (cp, RawClosure rc) =
-  let res = flip runGetOrFail (BSL.fromStrict rc) $ do
-              _itbl <- getWord
-              st_size <- getWord32le
-              st_dirty <- getWord8
-              st_marking <- getWord8
-              -- Up to now, 14 bytes are read, skip 2 to get to 16/start of
-              -- sp field
-              skip 2
-              st_sp <- StackPtr . toBE64 <$> getWord
-              let k = fromIntegral (subtractStackPtr st_sp cp)
-                        -- -24 for the bytes already read
-                        - 24
-                  len = calculateStackLen st_size cp st_sp
-              -- Skip to start of stack frames
-              skip k
-              -- Read the raw frames, we can't decode them yet because we
-              -- need to query the debuggee for the bitmaps
-              raw_stack <- RawStack <$> getByteString (fromIntegral len)
-              return (GHC.Debug.Types.Closures.StackClosure info st_size st_dirty st_marking (StackCont st_sp raw_stack))
-  in case res of
-       Left err -> error (show err)
-       Right (_rem, o, v) ->
-        -- Offset is is in bytes, size is in words
-        (DCS (Size (fromIntegral (o `div` 8))) v)
+decodeStack (info, _) (cp, rc) = decodeFromBS rc $ do
+   _itbl <- getWord
+   st_size <- getWord32le
+   st_dirty <- getWord8
+   st_marking <- getWord8
+   -- Up to now, 14 bytes are read, skip 2 to get to 16/start of
+   -- sp field
+   skip 2
+   st_sp <- StackPtr . toBE64 <$> getWord
+   let k = fromIntegral (subtractStackPtr st_sp cp)
+             -- -24 for the bytes already read
+             - 24
+       len = calculateStackLen st_size cp st_sp
+   -- Skip to start of stack frames
+   skip k
+   -- Read the raw frames, we can't decode them yet because we
+   -- need to query the debuggee for the bitmaps
+   raw_stack <- RawStack <$> getByteString (fromIntegral len)
+   return (GHC.Debug.Types.Closures.StackClosure info st_size st_dirty st_marking (StackCont st_sp raw_stack))
+
+decodeFromBS :: RawClosure -> Get (DebugClosure pap string s b)
+                           -> DebugClosureWithExtra Size pap string s b
+decodeFromBS (RawClosure rc) parser =
+  case runGetOrFail parser (BSL.fromStrict rc) of
+    Left err -> error (show err)
+    Right (_rem, o, v) -> DCS (Size (fromIntegral o)) v
 
 
 
 decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPStack = undefined
-
-
 
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
