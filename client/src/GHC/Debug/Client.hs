@@ -150,7 +150,7 @@ initialTraversal (Debuggee e) = run e $ do
           quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c
     (hg, _) <- case rs of
       [] -> error "Empty roots"
-      (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+      (x:xs) -> HG.multiBuildHeapGraph derefFuncM (x :| xs)
     return hg
 
 -- This function is very very very slow, it needs to be optimised.

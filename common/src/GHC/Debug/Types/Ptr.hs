@@ -19,7 +19,6 @@ import System.Endian
 import Numeric (showHex)
 import Data.Coerce
 import Data.Bits
-import Debug.Trace
 import GHC.Stack
 import Control.Applicative
 

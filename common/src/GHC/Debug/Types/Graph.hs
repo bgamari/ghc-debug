@@ -11,24 +11,19 @@ import Data.Char
 import Data.List
 import Data.Maybe       ( catMaybes, fromJust )
 import Data.Function
-import qualified Data.Traversable as T
 import qualified Data.HashMap.Strict as M
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import Control.Monad
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.Writer.Strict
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Closures
-import Control.Applicative
-import Data.Functor.Compose
 import qualified Data.List.NonEmpty as NE
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Foldable as F
 import qualified Data.Graph.Dom as DO
 import qualified Data.Tree as Tree
-import Debug.Trace
 
 -- | For heap graphs, i.e. data structures that also represent sharing and
 -- cyclic structures, these are the entries. If the referenced value is
@@ -75,6 +70,7 @@ updateHeapGraph :: (HeapGraphEntry a -> Maybe (HeapGraphEntry a))
                 -> HeapGraph a
 updateHeapGraph f (ClosurePtr i) (HeapGraph r m) = HeapGraph r (IM.update f (fromIntegral i) m)
 
+heapGraphSize :: HeapGraph a -> Int
 heapGraphSize (HeapGraph _ g) = IM.size g
 
 -- | Creates a 'HeapGraph' for the value in the box, but not recursing further
@@ -82,11 +78,10 @@ heapGraphSize (HeapGraph _ g) = IM.size g
 buildHeapGraph
    :: (Monad m)
    => DerefFunction m a
-   -> Maybe Int -- ^ Search limit
    -> ClosurePtr -- ^ The value to start with
    -> m (HeapGraph a)
-buildHeapGraph deref limit initialBox =
-    fst <$> multiBuildHeapGraph deref limit (NE.singleton initialBox)
+buildHeapGraph deref initialBox =
+    fst <$> multiBuildHeapGraph deref (NE.singleton initialBox)
 
 -- TODO: It is a bit undesirable that the ConstrDesc field is already
 -- dereferenced, but also, not such a big deal. It could lead to additional
@@ -103,10 +98,9 @@ type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a PapPayload Con
 multiBuildHeapGraph
     :: (Monad m)
     => DerefFunction m a
-    -> Maybe Int -- ^ Search limit
     -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
-multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref (HeapGraph rs IM.empty) rs
+multiBuildHeapGraph deref rs = generalBuildHeapGraph deref (HeapGraph rs IM.empty) rs
 {-# INLINE multiBuildHeapGraph #-}
 
 -- | Adds an entry to an existing 'HeapGraph'.
@@ -115,12 +109,10 @@ multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref (HeapGraph rs I
 addHeapGraph
     :: (Monad m)
     => DerefFunction m a
-    -> Maybe Int -- ^ Search limit
-    -> a -- ^ Data to be stored with the added value
     -> ClosurePtr -- ^ Value to add to the graph
     -> HeapGraph a -- ^ Graph to extend
     -> m (HeapGraphIndex, HeapGraph a)
-addHeapGraph deref limit d box hg = do
+addHeapGraph deref box hg = do
     (hg', (NE.head -> i)) <- generalBuildHeapGraph deref hg (NE.singleton box)
     return (i, hg')
 {-# INLINABLE addHeapGraph #-}
@@ -236,7 +228,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
 -- | In the given HeapMap, list all indices that are used more than once. The
 -- second parameter adds external references, commonly @[heapGraphRoot]@.
 boundMultipleTimes :: HeapGraph a -> [HeapGraphIndex] -> [HeapGraphIndex]
-boundMultipleTimes (HeapGraph rs m) roots = map head $ filter (not.null) $ map tail $ group $ sort $
+boundMultipleTimes (HeapGraph _rs m) roots = map head $ filter (not.null) $ map tail $ group $ sort $
      roots ++ concatMap (catMaybes . allClosures . hgeClosure) (IM.elems m)
 
 -- Utilities
@@ -300,12 +292,14 @@ ppClosure herald showBox prec c = case c of
         ["_ind", showBox 10 indirectee]
     BlackholeClosure {..} -> app
         ["_bh",  showBox 10 indirectee]
-    --APClosure {..} -> app $ map (showBox 10) $
-     --   fun : payload
-    --PAPClosure {..} -> app $ map (showBox 10) $
-     --   fun : payload
---    APStackClosure {..} -> app $ map (showBox 10) $
---        fun : payload
+    APClosure {..} -> app $ map (showBox 10) $
+        [fun]
+        -- TODO: Payload
+    PAPClosure {..} -> app $ map (showBox 10) $
+        [fun] -- TODO payload
+    APStackClosure {..} -> app $ map (showBox 10) $
+        [fun] -- TODO: stack
+    TRecChunkClosure {} -> "_trecChunk" --TODO
     BCOClosure {..} -> app
         ["_bco", showBox 10 bcoptrs]
     ArrWordsClosure {..} -> app
@@ -325,10 +319,11 @@ ppClosure herald showBox prec c = case c of
         "_blockingQueue"
     OtherClosure {} ->
         "_other"
-    TSOClosure {..} -> "TSO"
-    StackClosure {..} -> app ["Stack(", show stack_size, ")"]
-    WeakClosure {..} -> "_wk"
-    TVarClosure {..} -> "_tvar"
+    TSOClosure {} -> "TSO"
+    StackClosure {..} -> app ["Stack(", show stack_size, ")"] -- TODO
+    WeakClosure {} -> "_wk" -- TODO
+    TVarClosure {} -> "_tvar" -- TODO
+    MutPrimClosure {} -> "_mutPrim" -- TODO
     UnsupportedClosure {} ->
         "_unsupported"
 
@@ -341,6 +336,7 @@ ppClosure herald showBox prec c = case c of
 
 
 -- Dominators
+-- TODO: Move this into client module?
 
 closurePtrToInt :: ClosurePtr -> Int
 closurePtrToInt (ClosurePtr p) = fromIntegral p
@@ -360,6 +356,7 @@ computeDominators hg = map (fmap (fromJust . flip lookupHeapGraph hg . intToClos
   where
     entries = case DO.domTree (convertToDom hg) of
                 Tree.Node 0 es -> es
+                _ -> error "Dominator tree must contain 0"
 
 retainerSize :: HeapGraph Size -> [Tree.Tree (HeapGraphEntry (Size, RetainerSize))]
 retainerSize hg = map bottomUpSize doms
