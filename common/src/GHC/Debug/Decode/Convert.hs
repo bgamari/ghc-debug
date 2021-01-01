@@ -8,8 +8,6 @@ import qualified GHC.Exts.Heap as GHC
 
 import GHC.Debug.Types.Closures
 import GHC.Debug.Types.Ptr
-import System.Endian
-import Data.Word
 import Data.Void
 
 -- | Convert a GenClosure from ghc-heap to a DebugClosure,

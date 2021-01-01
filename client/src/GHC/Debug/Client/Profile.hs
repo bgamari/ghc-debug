@@ -16,7 +16,6 @@ import GHC.Debug.Client.Monad
 import           GHC.Debug.Client
 
 import qualified Data.IntSet as IS
-import qualified Data.IntMap as IM
 import qualified Data.Map as Map
 import Control.Monad.State
 import Data.Monoid

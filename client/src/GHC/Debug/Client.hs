@@ -56,7 +56,7 @@ module GHC.Debug.Client
 
   -- * Types
   , ConstrDesc(..)
-  , ConstrDescCont(..)
+  , ConstrDescCont
   , StackCont
   , ClosurePtr
   , HG.StackHI
@@ -95,30 +95,22 @@ module GHC.Debug.Client
   ) where
 
 import           Control.Exception
-import           Control.Monad (forM, unless)
 import           Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Graph as G
-import           Data.IORef
 import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified GHC.Debug.Types as GD
-import           GHC.Debug.Types hiding (Closure, Stack, DebugClosure)
+import           GHC.Debug.Types hiding (Closure, DebugClosure)
 import           GHC.Debug.Decode
 import           GHC.Debug.Decode.Stack
 import           GHC.Debug.Convention (socketDirectory)
 import           GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
 import qualified GHC.Debug.Client.Monad as GD
-import qualified GHC.Debug.Types.Closures as GD
 import           GHC.Debug.Client.BlockCache
 import qualified GHC.Debug.Types.Graph as HG
 import qualified Data.IntSet as IS
 import qualified Data.HashMap.Strict as HM
-import qualified Data.IntMap as IM
 import Control.Monad.State
 import Data.Tree
-import Data.Coerce
-import Data.Monoid
-import Data.List
-import Data.Ord
 import System.Endian
 
 import Debug.Trace
@@ -317,7 +309,7 @@ closureSourceLocation (Debuggee e) (Closure _ c) = run e $ do
   request (RequestSourceInfo (tableId (info (noSize c))))
 
 -- | Get the directly referenced closures (with a label) of a closure.
-closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
+closureReferences :: Debuggee -> DebugClosure PapPayload ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
 closureReferences (Debuggee e) (Stack _ stack) = run e $ do
   let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
                      , ptr
@@ -356,7 +348,7 @@ reverseClosureReferences hg rm _ c =
                         let revs = mapMaybe (flip HG.lookupHeapGraph hg) es
                         in return [(show n, Closure (HG.hgeClosurePtr hge)
                                                (DCS (HG.hgeData hge) (HG.hgeClosure hge) ))
-                                    | (n, hge) <- zip [0..] revs]
+                                    | (n, hge) <- zip [0 :: Int ..] revs]
 
 lookupHeapGraph :: HG.HeapGraph Size -> ClosurePtr -> Maybe (DebugClosure HG.PapHI ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex))
 lookupHeapGraph hg cp =
@@ -415,7 +407,7 @@ closureDominatees (Debuggee e) analysis (Closure cPtr _) = run e $ do
 -- Internal Stuff
 --
 
-closureReferencesAndLabels :: GD.DebugClosure pap string stack pointer -> [(String, Either pointer stack)]
+closureReferencesAndLabels :: GD.DebugClosure (GenPapPayload pointer) string stack pointer -> [(String, Either pointer stack)]
 closureReferencesAndLabels closure = case closure of
   TSOClosure {..} ->
     [ ("Stack", Left tsoStack)
@@ -441,9 +433,9 @@ closureReferencesAndLabels closure = case closure of
   SelectorClosure {..} -> [("Selectee", Left selectee)]
   IndClosure {..} -> [("Indirectee", Left indirectee)]
   BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
---  APClosure {..} -> ("Function", Left fun) : withArgLables payload
---  PAPClosure {..} -> ("Function", Left fun) : withArgLables payload
---  APStackClosure {..} -> ("Function", Left fun) : withArgLables payload
+  APClosure {..} -> ("Function", Left fun) : withBitmapLables ap_payload
+  PAPClosure {..} -> ("Function", Left fun) : withBitmapLables pap_payload
+  APStackClosure {..} -> ("Function", Left fun) : ("Frames", Right payload) : []
   BCOClosure {..} -> [ ("Instructions", Left instrs)
                       , ("Literals", Left literals)
                       , ("Byte Code Objects", Left bcoptrs)
@@ -463,11 +455,13 @@ closureReferencesAndLabels closure = case closure of
                                 , ("Queue", Left queue)
                                 ]
   OtherClosure {..} -> ("",) . Left <$> hvalues
+  TRecChunkClosure{}  -> [] --TODO
   UnsupportedClosure {} -> []
   where
   withIxLables elements   = [("[" <> show i <> "]" , Left x) | (i, x) <- zip [(0::Int)..] elements]
   withArgLables ptrArgs   = [("Argument " <> show i, Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
   withFieldLables ptrArgs = [("Field " <> show i   , Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
+  withBitmapLables pap = [("Argument " <> show i   , Left x) | (i, SPtr x) <- zip [(0::Int)..] (getValues pap)]
 
 --
 -- TODO move stuff below here to a lower level module.

@@ -7,6 +7,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 module GHC.Debug.Client.Monad
   ( DebugMonad(..)
   , run
