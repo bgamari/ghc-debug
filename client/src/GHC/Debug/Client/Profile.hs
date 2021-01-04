@@ -14,6 +14,7 @@ module GHC.Debug.Client.Profile where
 import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client
+import           GHC.Debug.Client.Trace
 
 import qualified Data.IntSet as IS
 import qualified Data.Map as Map
@@ -31,55 +32,6 @@ import Data.Text (pack, Text, unpack)
 import Data.Semigroup
 
 
-data TraceState s = TraceState { visited :: !(IS.IntSet), user :: !s }
-
-addVisit :: ClosurePtr -> TraceState s -> TraceState s
-addVisit (ClosurePtr c) st = st { visited = IS.insert (fromIntegral c) (visited st) }
-
-checkVisit :: ClosurePtr -> TraceState s -> Bool
-checkVisit (ClosurePtr c) st = IS.member (fromIntegral c) (visited st)
-
-updUser :: (st -> st) -> TraceState st -> TraceState st
-updUser f st = st { user = (f (user st)) }
-
-type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
-
--- Traverse the tree from GC roots, to populate the caches
--- with everything necessary.
-traceFromM :: (SizedClosureC -> st -> st) -> st -> [ClosurePtr] -> DebugM st
-traceFromM k i cps = user <$> execStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty i)
-
-traceClosureFromM :: (SizedClosureC -> st -> st) -> ClosurePtr -> StateT (TraceState st) DebugM ()
-traceClosureFromM k cp = do
-    m <- get
-    unless (checkVisit cp m) $ do
-      modify (addVisit cp)
-      sc <- lift $ dereferenceClosureFromBlock cp
-      sc' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
-      modify (updUser (k sc'))
-      quadtraverse (tracePapPayloadM k) traceConstrDescM (traceStackFromM k) (traceClosureFromM k) sc
-      case lookupStgInfoTableWithPtr (noSize sc) of
-        infoTableWithptr -> lift $ request (RequestSourceInfo (tableId infoTableWithptr))
-      return ()
-
-traceStackFromM :: (SizedClosureC -> s -> s)
-                -> StackCont -> StateT (TraceState s) DebugM ()
-traceStackFromM f st = do
-  st' <- lift $ dereferenceStack st
-  traverse (traceClosureFromM f) st'
-  return ()
-
-
-traceConstrDescM :: ConstrDescCont -> StateT s DebugM ()
-traceConstrDescM d = lift $ () <$ dereferenceConDesc d
-
-tracePapPayloadM :: (SizedClosureC -> s -> s)
-                 -> PayloadCont
-                 -> StateT (TraceState s) DebugM ()
-tracePapPayloadM f p = do
-  p' <- lift $ dereferencePapPayload p
-  traverse (traceClosureFromM f) p'
-  return ()
 
 newtype Count = Count Int
                 deriving (Semigroup, Monoid, Num) via Sum Int
@@ -92,9 +44,22 @@ instance Semigroup CensusStats where
 type CensusByClosureType = Map.Map Text CensusStats
 
 censusClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
-censusClosureType = traceFromM go Map.empty
+censusClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
   where
-    go :: SizedClosureC -> CensusByClosureType -> CensusByClosureType
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = ()
+              , conDescTrace = \x -> return x
+
+            }
+    -- Add cos
+    closAccum  :: DebugClosureWithSize () ConstrDesc () () -> StateT CensusByClosureType DebugM ()
+    closAccum s = do
+      modify (go s)
+
+    go :: DebugClosureWithSize () ConstrDesc () () -> CensusByClosureType -> CensusByClosureType
     go d =
       let s :: Size
           s = dcSize d

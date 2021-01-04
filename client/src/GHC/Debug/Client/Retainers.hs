@@ -5,6 +5,7 @@ import GHC.Debug.Client
 import Control.Applicative
 import Data.Foldable
 import Control.Monad
+import Control.Monad.State
 
 computeRetainers :: [ClosurePtr] -- ^ Roots to start from
                  -> ClosurePtr   -- ^ Target

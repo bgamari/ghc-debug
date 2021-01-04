@@ -18,6 +18,7 @@ library
                        GHC.Debug.Client.Retainers,
                        GHC.Debug.Client.Search,
                        GHC.Debug.Client.Profile,
+                       GHC.Debug.Client.Trace,
                        GHC.Debug.Client.Monad,
                        GHC.Debug.Client.BlockCache,
                        GHC.Debug.Client.RequestCache,
