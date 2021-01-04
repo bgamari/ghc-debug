@@ -293,17 +293,17 @@ static void write_string(Response& resp, const char * s){
 }
 
 
-static void write_block(Response * resp, StgClosure * bd, StgWord32 n){
-  resp->write(bd);
-  uint32_t len_payload = htonl(BLOCK_SIZE * n);
+static void write_block(Response * resp, bdescr * bd){
+  resp->write(bd->flags);
+  resp->write(bd->start);
+  uint32_t len_payload = htonl(BLOCK_SIZE * bd->blocks);
   resp->write(len_payload);
-  resp->write((const char *) bd, BLOCK_SIZE * n);
+  resp->write((const char *) bd->start, BLOCK_SIZE * bd->blocks);
 }
 
 static void write_blocks(Response * resp, bdescr * bd){
     for (; bd != NULL; bd = bd->link){
-      resp->write(bd->flags);
-      write_block(resp, ((StgClosure *) bd->start), bd->blocks);
+      write_block(resp, bd);
     }
 }
 
@@ -565,17 +565,11 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
         }
 
-      // CMD_BLOCK is a bit broken because
-      // 1. It doesn't handle block groups > size 1, because it works starting
-      // from a ClosurePtr into a block and you can't work out the address of the
-      // bdescr despite knowing where the block starts.
-      // 2. Because of 1, it also can't send the block flags.
       case CMD_BLOCK:
         {
-        StgClosure *ptr = UNTAG_CLOSURE((StgClosure *) p.get<uint64_t>());
-        StgClosure * bd = (StgClosure *) (((W_) ptr) & ~BLOCK_MASK);
-        trace("BD_ADDR: %p, %p", ptr,bd);
-        write_block(&resp, bd, 1);
+        bdescr *bd = Bdescr ((P_) p.get<uint64_t>());
+        trace("BD_ADDR: %p", bd);
+        write_block(&resp, bd);
         resp.finish(RESP_OKAY);
         break;
         }
