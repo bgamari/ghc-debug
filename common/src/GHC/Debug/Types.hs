@@ -270,7 +270,7 @@ getResponse RequestBlock {}  = getBlock
 -- flags, Ptr, size then raw block
 getBlock :: Get RawBlock
 getBlock = do
-  bflags <- getWord16be
+  bflags <- getWord16le
   bptr <- get
   len <- getInt32be
   rb <- getByteString (fromIntegral len)

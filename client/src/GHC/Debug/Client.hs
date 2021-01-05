@@ -579,7 +579,7 @@ dereferenceClosureFromBlock cp
       [st_it] <- request (RequestInfoTables [it])
       return $ decodeClosureWithSize st_it (cp, rc)
 
-precacheBlocks :: DebugM Int
+precacheBlocks :: DebugM [RawBlock]
 precacheBlocks = requestBlock PopulateBlockCache
 
 -- Traverse the tree from GC roots, to populate the caches

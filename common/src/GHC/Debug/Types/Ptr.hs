@@ -24,11 +24,13 @@ import Data.Binary.Get
 import Data.Binary.Put
 import System.Endian
 
-import Numeric (showHex)
+import Numeric (showHex, showIntAtBase)
 import Data.Coerce
 import Data.Bits
 import GHC.Stack
 import Control.Applicative
+import Data.Char
+import Debug.Trace
 
 prettyPrint :: BS.ByteString -> String
 prettyPrint = concatMap (flip showHex "") . BS.unpack
@@ -141,6 +143,28 @@ newtype BlockPtr = BlockPtr Word64
                    deriving (Eq, Ord)
                    deriving newtype (Hashable)
                    deriving (Binary, Show) via StackPtr
+
+blockMBlock :: BlockPtr -> Word64
+blockMBlock (BlockPtr p) = p .&. (complement mblockMask)
+
+applyMBlockMask :: ClosurePtr -> ClosurePtr
+applyMBlockMask (ClosurePtr p) = ClosurePtr (p .&. complement mblockMask)
+
+applyBlockMask :: ClosurePtr -> ClosurePtr
+applyBlockMask (ClosurePtr p) = ClosurePtr (p .&. complement blockMask)
+
+mblockMask :: Word64
+mblockMask = 0b11111111111111111111 -- 20 bits
+
+blockMask :: Word64
+blockMask = 0b111111111111 -- 12 bits
+
+isPinnedBlock :: RawBlock -> Bool
+isPinnedBlock (RawBlock _ flags _) = (flags .&. 0b100) /= 0
+
+
+isLargeBlock :: RawBlock -> Bool
+isLargeBlock (RawBlock _ flags _) = (flags .&. 0b10) /= 0
 
 data RawBlock = RawBlock BlockPtr Word16 BS.ByteString
                     deriving (Show)

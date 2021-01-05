@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+-- | Functions to support the constant space traversal of a heap.
 module GHC.Debug.Client.Trace where
 
 import           GHC.Debug.Types
@@ -11,12 +12,16 @@ import Control.Monad.State
 
 data TraceState = TraceState { visited :: !(IS.IntSet) }
 
-data TraceFunctions m a b c d = TraceFunctions { papTrace :: GenPapPayload d -> m DebugM a
-                                             , stackTrace :: GenStackFrames d -> m DebugM c
-                                             , closTrace :: DebugClosureWithSize a b c d -> m DebugM d
-                                             , visitedVal :: d
-                                             , conDescTrace :: ConstrDesc -> m DebugM b
-                                             }
+data TraceFunctions m =
+      TraceFunctions { papTrace :: GenPapPayload ClosurePtr -> m DebugM ()
+      , stackTrace :: GenStackFrames ClosurePtr -> m DebugM ()
+      -- TODO: This interface is not very nice, it is something a bit like
+      -- UnliftIO? The idea is that the user provided function might want
+      -- to modify the context the continuation is called in.
+      , closTrace :: ClosurePtr -> SizedClosure -> StateT TraceState (m DebugM) () -> StateT TraceState (m DebugM) ()
+      , visitedVal :: ()
+      , conDescTrace :: ConstrDesc -> m DebugM ()
+      }
 
 
 type C m = (MonadTrans m, Monad (m DebugM))
@@ -29,13 +34,13 @@ checkVisit (ClosurePtr c) st = IS.member (fromIntegral c) (visited st)
 
 type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
 
-traceFromM :: C m => TraceFunctions m a b c d -> [ClosurePtr] -> m DebugM [d]
-traceFromM k cps = evalStateT (mapM (traceClosureFromM k) cps) (TraceState IS.empty)
+traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
+traceFromM k cps = evalStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty)
 
 traceClosureFromM :: C m
-                  => TraceFunctions m a b c d
+                  => TraceFunctions m
                   -> ClosurePtr
-                  -> StateT TraceState (m DebugM) d
+                  -> StateT TraceState (m DebugM) ()
 traceClosureFromM k cp = do
     m <- get
     if (checkVisit cp m)
@@ -44,31 +49,30 @@ traceClosureFromM k cp = do
       modify (addVisit cp)
       sc <- lift $ lift $ dereferenceClosureFromBlock cp
       --sc' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure sc
-      sc' <- quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc
-      res <- lift $ closTrace k sc'
-      return res
+      closTrace k cp sc
+        (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc)
 
 traceStackFromM :: C m
-                => TraceFunctions m a b c d
-                -> StackCont -> StateT TraceState (m DebugM) c
+                => TraceFunctions m
+                -> StackCont -> StateT TraceState (m DebugM) ()
 traceStackFromM f st = do
   st' <- lift $ lift $ dereferenceStack st
-  st'' <- traverse (traceClosureFromM f) st'
-  lift $ stackTrace f st''
+  lift $ stackTrace f st'
+  () <$ traverse (traceClosureFromM f) st'
 
 
 
 traceConstrDescM :: (C m)
-                 => TraceFunctions m a b c d -> ConstrDescCont -> StateT s (m DebugM) b
+                 => TraceFunctions m -> ConstrDescCont -> StateT s (m DebugM) ()
 traceConstrDescM f d = do
   cd <- lift $ lift $ dereferenceConDesc d
   lift $ conDescTrace f cd
 
 tracePapPayloadM :: C m
-                 => TraceFunctions m a b c d
+                 => TraceFunctions m
                  -> PayloadCont
-                 -> StateT TraceState (m DebugM) a
+                 -> StateT TraceState (m DebugM) ()
 tracePapPayloadM f p = do
   p' <- lift $ lift $ dereferencePapPayload p
-  p'' <- traverse (traceClosureFromM f) p'
-  lift $ papTrace f p''
+  lift $ papTrace f p'
+  () <$ traverse (traceClosureFromM f) p'

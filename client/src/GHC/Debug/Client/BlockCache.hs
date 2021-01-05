@@ -54,7 +54,7 @@ _bcKeys (BlockCache b) = sort $ map ClosurePtr (HM.keys b)
 
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
-  PopulateBlockCache :: BlockCacheRequest Int
+  PopulateBlockCache :: BlockCacheRequest [RawBlock]
 
 deriving instance Show (BlockCacheRequest a)
 deriving instance Eq (BlockCacheRequest a)
@@ -81,6 +81,6 @@ handleBlockReq h ref PopulateBlockCache = do
 --  mapM_ (\rb -> print ("NEW", rawBlockAddr rb)) blocks
   print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
-  return (length blocks)
+  return blocks
 
 

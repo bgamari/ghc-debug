@@ -9,6 +9,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 module GHC.Debug.Client.Profile where
 
 import           GHC.Debug.Types
@@ -30,6 +31,8 @@ import Eventlog.HtmlTemplate
 import Eventlog.Args (defaultArgs)
 import Data.Text (pack, Text, unpack)
 import Data.Semigroup
+import Data.Function
+import Data.Word
 
 
 
@@ -42,25 +45,14 @@ instance Semigroup CensusStats where
   (CS a b c) <> (CS a1 b1 c1) = CS (a <> a1) (b <> b1) (c <> c1)
 
 type CensusByClosureType = Map.Map Text CensusStats
+type CensusByMBlock = Map.Map Text CensusStats
 
 censusClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
-censusClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
+censusClosureType = closureCensusBy go
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = ()
-              , conDescTrace = \x -> return x
-
-            }
-    -- Add cos
-    closAccum  :: DebugClosureWithSize () ConstrDesc () () -> StateT CensusByClosureType DebugM ()
-    closAccum s = do
-      modify (go s)
-
-    go :: DebugClosureWithSize () ConstrDesc () () -> CensusByClosureType -> CensusByClosureType
-    go d =
+    go :: ClosurePtr -> DebugClosureWithSize a ConstrDesc b c
+       -> Maybe (Text, CensusStats)
+    go _ d =
       let s :: Size
           s = dcSize d
           v =  CS (Count 1) s (Max s)
@@ -71,7 +63,67 @@ censusClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                         ConstrClosure { constrDesc = ConstrDesc a b c }
                           -> pack a <> ":" <> pack b <> ":" <> pack c
                         _ -> pack (show (tipe (decodedTable itbl)))
-              in Map.insertWith (<>) k v
+              in Just (k, v)
+
+
+censusByMBlock :: [ClosurePtr] -> DebugM CensusByClosureType
+censusByMBlock = closureCensusBy go
+  where
+    go cp d =
+      let s :: Size
+          s = dcSize d
+          v =  CS (Count 1) s (Max s)
+
+          k :: Text
+          k = pack (show (applyMBlockMask cp))
+      in if ptrInBlock cp
+           then Just (k, v)
+           -- Ignore static things
+           else Nothing
+
+censusByBlock :: [ClosurePtr] -> DebugM CensusByClosureType
+censusByBlock = closureCensusBy go
+  where
+    go cp d =
+      let s :: Size
+          s = dcSize d
+          v =  CS (Count 1) s (Max s)
+
+          k :: Text
+          k = pack (show (applyBlockMask cp))
+      in if ptrInBlock cp
+           then Just (k, v)
+           -- Ignore static things
+           else Nothing
+
+-- | General function for performing a heap census in constant memory
+closureCensusBy :: forall k v . (Semigroup v, Ord k)
+                => (forall a b c . ClosurePtr -> DebugClosureWithSize a ConstrDesc b c -> Maybe (k, v))
+                -> [ClosurePtr] -> DebugM (Map.Map k v)
+closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = ()
+              , conDescTrace = const (return ())
+
+            }
+    -- Add cos
+    closAccum  :: ClosurePtr
+               -> DebugClosureWithSize a ConstrDescCont b c
+               -> StateT TraceState (StateT (Map.Map k v) DebugM) ()
+               -> StateT TraceState (StateT (Map.Map k v) DebugM) ()
+    closAccum cp s k = do
+      s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure s
+      lift $ modify (go cp s')
+      k
+
+    go :: ClosurePtr -> DebugClosureWithSize a ConstrDesc b c -> Map.Map k v -> Map.Map k v
+    go cp d = case f cp d of
+                Just (k, v) -> Map.insertWith (<>) k v
+                Nothing -> id
 
 
 printCensusByClosureType :: CensusByClosureType -> IO ()
@@ -79,8 +131,18 @@ printCensusByClosureType c = do
   let res = reverse (sortBy (comparing (cssize . snd)) (Map.toList c))
       showLine (k, (CS (Count n) (Size s) (Max (Size mn)))) =
         concat [unpack k, ":", show s,":", show n, ":", show mn,":", show @Double (fromIntegral s / fromIntegral n)]
-  mapM_ (putStrLn . showLine) res
-  --writeFile "profile_out" (unlines (map showLine res))
+  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
+
+summariseBlocks :: [RawBlock] -> IO ()
+summariseBlocks bs = do
+  print mblocks
+  print ("MBLOCK:", length mblocks)
+  print ("PINNED:", (length $ filter isPinnedBlock bs))
+  print ("TOTAL:", length bs)
+  where
+    mblocks = map (\mbs@(g:_) -> (g, length mbs)) (group (sort (map fst bs')))
+    bs' = map go bs
+    go b = (blockMBlock (rawBlockAddr b), isPinnedBlock b)
 
 profile :: Int -> DebugEnv DebugM -> IO ()
 profile interval e = loop [(0, Map.empty)] 0
@@ -89,16 +151,46 @@ profile interval e = loop [(0, Map.empty)] 0
     loop ss i = do
       threadDelay interval
       run e $ request RequestPause
-      r <- runTrace e $ do
-        precacheBlocks
+      (r, mb_census, bs) <- runTrace e $ do
+        bs <- precacheBlocks
         rs <- request RequestRoots
         traceWrite (length rs)
-        censusClosureType rs
+        r <- censusClosureType rs
+        mb_census <- censusByBlock rs
+        return (r, mb_census, bs)
       run e $ request RequestResume
+      summariseBlocks bs
+      outBlockCensus mb_census
       printCensusByClosureType r
       let new_data = (((i + 1) * interval, r) : ss)
       renderProfile new_data
       loop new_data (i + 1)
+
+mblockMaxSize, blockMaxSize :: Word64
+mblockMaxSize = mblockMask + 1
+blockMaxSize = blockMask + 1
+
+outMBlockCensus, outBlockCensus ::  Map.Map Text CensusStats -> IO ()
+outMBlockCensus = printBlockCensus mblockMaxSize
+-- | Print out a block census
+outBlockCensus = printBlockCensus blockMaxSize
+
+-- | Print either a MBlock or Block census as a histogram
+printBlockCensus :: Word64 -> Map.Map Text CensusStats -> IO ()
+printBlockCensus maxSize m =
+  mapM_ (putStrLn . displayLine) (bin 0 (map calcPercentage (sortBy (comparing (cssize . snd)) (Map.toList m))))
+  where
+    calcPercentage (k, (CS (Count n) (Size tot) m)) =
+      (k, (fromIntegral tot/ fromIntegral maxSize) * 100 :: Double)
+
+    displayLine (l, h, n) = show l ++ "%-" ++ show h ++ "%: " ++ show n
+
+    bin _ [] = []
+    bin k xs = case now of
+                 [] -> bin (k + 10) later
+                 _ -> (k, k+10, length now) : bin (k + 10) later
+      where
+        (now, later) = span ((<= k + 10) . snd) xs
 
 mkFrame :: (Int, CensusByClosureType) -> Frame
 mkFrame (t, m) = Frame (fromIntegral t / 10e6) (Map.foldrWithKey (\k v r -> mkSample k v : r) [] m)
@@ -125,7 +217,7 @@ renderProfile ss = do
   (header, data_json, descs, closure_descs) <- generateJsonData as pd
   let html = templateString header data_json descs closure_descs as
       n = maximum (map fst ss)
-  writeFile ("profile/ht-" ++ show n ++ ".html") html
+  writeFile ("profile/ht.html") html
 
   return ()
 
