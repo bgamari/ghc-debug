@@ -110,8 +110,8 @@ arrWordsBS = runPut . mapM_ putWordhost
 -- mblock_address_space.begin and mblock_address_space.end were when
 -- I inspected them in gdb. I don't know if they are always the same of
 -- should be queried from the debuggee
-ptrInBlock :: ClosurePtr -> Bool
-ptrInBlock (ClosurePtr w) = (w >= 0x4200000000 && w <= 0x14200000000)
+heapAlloced :: ClosurePtr -> Bool
+heapAlloced (ClosurePtr w) = (w >= 0x4200000000 && w <= 0x14200000000)
 
 newtype RawInfoTable = RawInfoTable BS.ByteString
                      deriving (Eq, Ord, Show)

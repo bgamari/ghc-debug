@@ -572,7 +572,7 @@ traceProfile e = do
 -- fails, call 'dereferenceClosure'
 dereferenceClosureFromBlock :: ClosurePtr -> DebugM SizedClosure
 dereferenceClosureFromBlock cp
-  | not (ptrInBlock cp) = dereferenceSizedClosure cp
+  | not (heapAlloced cp) = dereferenceSizedClosure cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)
       let it = getInfoTblPtr rc

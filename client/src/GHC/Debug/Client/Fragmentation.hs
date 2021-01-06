@@ -38,7 +38,7 @@ censusByMBlock = closureCensusBy go
 
           k :: BlockPtr
           k = applyMBlockMask cp
-      in if ptrInBlock cp
+      in if heapAlloced cp
            then Just (k, v)
            -- Ignore static things
            else Nothing
@@ -53,7 +53,7 @@ censusByBlock = closureCensusBy go
 
           k :: Text
           k = pack (show (applyBlockMask cp))
-      in if ptrInBlock cp
+      in if heapAlloced cp
            then Just (k, v)
            -- Ignore static things
            else Nothing
@@ -77,7 +77,7 @@ censusPinnedBlocks bs = closureCensusBy go
           f _ = ()
           neut :: DebugClosureWithSize a string b c -> DebugClosureWithSize () () () ()
           neut = quadmap f f f f
-      in if ptrInBlock cp && bp `Set.member` pbs
+      in if heapAlloced cp && bp `Set.member` pbs
            then Just (bp, (v, [(cp, neut d)]))
            -- Ignore static things
            else Nothing
