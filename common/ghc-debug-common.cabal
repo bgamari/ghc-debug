@@ -34,7 +34,8 @@ library
                        transformers,
                        dom-lt,
                        unordered-containers,
-                       ghc-debug-convention
+                       ghc-debug-convention,
+                       deepseq
 
   hs-source-dirs:      src
   cmm-sources:         cbits/GhcDebug.cmm

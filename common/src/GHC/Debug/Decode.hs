@@ -31,6 +31,7 @@ import GHC.ForeignPtr
 import Data.Binary.Get as B
 import Control.Monad
 import Data.Void
+import Control.DeepSeq
 
 import qualified Data.ByteString as B
 
@@ -55,7 +56,7 @@ getClosureRaw itb (Ptr closurePtr) datString = do
   let !(SBS datArr) = (toShort (B.take raw_size datString))
   let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
       end_ptrs = fromIntegral nelems_ptrs - 1
-      rawPtrs = [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
+      rawPtrs = force [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
   gen_closure <- getClosureDataFromHeapRepPrim (return ("", "", ""))
                                                (\_ -> return Nothing) itb datArr  rawPtrs
   return (gen_closure, Size raw_size)
@@ -206,7 +207,9 @@ decodeFromBS :: RawClosure -> Get (DebugClosure pap string s b)
 decodeFromBS (RawClosure rc) parser =
   case runGetOrFail parser (BSL.fromStrict rc) of
     Left err -> error (show err)
-    Right (_rem, o, v) -> DCS (Size (fromIntegral o)) v
+    Right (_rem, o, v) ->
+      let !s = fromIntegral o
+      in DCS (Size s) v
 
 decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPStack (infot, _) (cp, rc) = decodeFromBS rc $ do

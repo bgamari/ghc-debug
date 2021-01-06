@@ -19,7 +19,7 @@ import GHC.Debug.Client.Monad
 import           GHC.Debug.Client
 import           GHC.Debug.Client.Trace
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Control.Monad.State
 import Control.Monad.RWS
 import Data.List
@@ -39,7 +39,7 @@ newtype Count = Count Int
                 deriving (Semigroup, Monoid, Num) via Sum Int
                 deriving (Show, Ord, Eq)
 
-data CensusStats = CS { n :: Count, cssize :: Size, csmax :: Max Size } deriving Show
+data CensusStats = CS { n :: !Count, cssize :: !Size, csmax :: !(Max Size) } deriving Show
 
 mkCS :: Size -> CensusStats
 mkCS i = CS (Count 1) i (Max i)
@@ -124,7 +124,7 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
       pts' <- lift $ lift $ mapM (quadtraverse pure dereferenceConDesc pure pure) pts
 
 
-      lift $ modify (go s' pts')
+      lift $ modify' (go s' pts')
       k
 
     go d args =
