@@ -42,7 +42,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p31 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p30 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable

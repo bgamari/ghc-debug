@@ -32,6 +32,7 @@ import Eventlog.HtmlTemplate
 import Eventlog.Args (defaultArgs)
 import Data.Text (pack, Text, unpack)
 import Data.Semigroup
+import qualified Data.Text as T
 
 
 newtype Count = Count Int
@@ -59,14 +60,16 @@ censusClosureType = closureCensusBy go
       let s :: Size
           s = dcSize d
           v =  CS (Count 1) s (Max s)
-      in case lookupStgInfoTableWithPtr (noSize d) of
-           itbl ->
-              let k :: Text
-                  k = case (noSize d) of
-                        ConstrClosure { constrDesc = ConstrDesc a b c }
-                          -> pack a <> ":" <> pack b <> ":" <> pack c
-                        _ -> pack (show (tipe (decodedTable itbl)))
-              in Just (k, v)
+      in Just (closureToKey (noSize d), v)
+
+
+
+closureToKey :: GHC.Debug.Types.DebugClosure a ConstrDesc c d -> Text
+closureToKey d =
+  case d of
+     ConstrClosure { constrDesc = ConstrDesc a b c }
+       -> pack a <> ":" <> pack b <> ":" <> pack c
+     _ -> pack (show (tipe (decodedTable (info d))))
 
 
 -- | General function for performing a heap census in constant memory
@@ -98,6 +101,39 @@ closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                 Just (k, v) -> Map.insertWith (<>) k v
                 Nothing -> id
 
+-- | General function for performing a heap census in constant memory
+census2LevelClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
+census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = ()
+              , conDescTrace = const (return ())
+
+            }
+    -- Add cos
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> StateT TraceState (StateT CensusByClosureType DebugM) ()
+               -> StateT TraceState (StateT CensusByClosureType DebugM) ()
+    closAccum _ s k = do
+      s' <- lift $ lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
+      pts <- lift $ lift $ mapM dereferenceClosureFromBlock (allClosures (noSize s'))
+      pts' <- lift $ lift $ mapM (quadtraverse pure dereferenceConDesc pure pure) pts
+
+
+      lift $ modify (go s' pts')
+      k
+
+    go d args =
+      let k = closureToKey (noSize d)
+          kargs = map (closureToKey . noSize) args
+          final_k :: Text
+          final_k = k <> "[" <> T.intercalate "," kargs <> "]"
+      in Map.insertWith (<>) final_k (mkCS (dcSize d))
+
 
 printCensusByClosureType :: CensusByClosureType -> IO ()
 printCensusByClosureType c = do
@@ -118,7 +154,7 @@ profile interval e = loop [(0, Map.empty)] 0
         precacheBlocks
         rs <- request RequestRoots
         traceWrite (length rs)
-        r <- censusClosureType rs
+        r <- census2LevelClosureType rs
         return r
       run e $ request RequestResume
       printCensusByClosureType r
