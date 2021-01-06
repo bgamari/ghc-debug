@@ -188,7 +188,7 @@ decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
    let k = fromIntegral (subtractStackPtr st_sp cp)
              -- -stackHeaderSize for the bytes already read
              - fromIntegral stackHeaderSize
-       len = calculateStackLen st_size (fromIntegral br) cp st_sp
+       len = calculateStackLen st_size (fromIntegral stackHeaderSize) cp st_sp
    -- Skip to start of stack frames
    skip k
    -- Read the raw frames, we can't decode them yet because we
