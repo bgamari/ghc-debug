@@ -47,9 +47,6 @@ getFrame st_bitmap itbl =
         --traceShowM (headerSize ty, ty, st_bitmap, itbl)
         _itblPtr <- replicateM (headerSize ty) getWord64le
         fields <- traversePtrBitmap decodeField st_bitmap
-        case ty of
-          RET_FUN -> traceShowM (st_bitmap, fields) >> return ()
-          _ -> return ()
         return (DebugStackFrame itbl fields)
   where
     decodeField True  = SPtr . ClosurePtr <$> getWord

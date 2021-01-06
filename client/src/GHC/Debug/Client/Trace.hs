@@ -7,7 +7,6 @@ import GHC.Debug.Client.Monad
 import           GHC.Debug.Client
 
 import qualified Data.IntSet as IS
-import qualified Data.Map as Map
 import Control.Monad.State
 
 data TraceState = TraceState { visited :: !(IS.IntSet) }
@@ -48,7 +47,6 @@ traceClosureFromM k cp = do
       else do
       modify (addVisit cp)
       sc <- lift $ lift $ dereferenceClosureFromBlock cp
-      --sc' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure sc
       closTrace k cp sc
         (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc)
 
@@ -59,8 +57,6 @@ traceStackFromM f st = do
   st' <- lift $ lift $ dereferenceStack st
   lift $ stackTrace f st'
   () <$ traverse (traceClosureFromM f) st'
-
-
 
 traceConstrDescM :: (C m)
                  => TraceFunctions m -> ConstrDescCont -> StateT s (m DebugM) ()

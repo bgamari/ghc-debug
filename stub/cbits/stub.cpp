@@ -567,6 +567,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
 
       case CMD_BLOCK:
         {
+        // TODO: This doesn't work correctly for BF_NONMOVING blocks
+        // For those blocks you need to apply the NONMOVING_SEGMENT_MASK
+        // in order to find the start of the block.
         bdescr *bd = Bdescr ((P_) p.get<uint64_t>());
         trace("BD_ADDR: %p", bd);
         write_block(&resp, bd);

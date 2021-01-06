@@ -24,13 +24,11 @@ import Data.Binary.Get
 import Data.Binary.Put
 import System.Endian
 
-import Numeric (showHex, showIntAtBase)
+import Numeric (showHex)
 import Data.Coerce
 import Data.Bits
 import GHC.Stack
 import Control.Applicative
-import Data.Char
-import Debug.Trace
 
 prettyPrint :: BS.ByteString -> String
 prettyPrint = concatMap (flip showHex "") . BS.unpack
@@ -113,6 +111,9 @@ printBS bs = show (runGet (many (get @ClosurePtr)) (BSL.fromStrict bs))
 printStack :: RawStack -> String
 printStack (RawStack s) = printBS s
 
+arrWordsBS :: [Word] -> BSL.ByteString
+arrWordsBS = runPut . mapM_ putWordhost
+
 -- | Check if the ClosurePtr is block allocated or not
 -- TODO: MP: These numbers are hard-coded from what
 -- mblock_address_space.begin and mblock_address_space.end were when
@@ -147,11 +148,15 @@ newtype BlockPtr = BlockPtr Word64
 blockMBlock :: BlockPtr -> Word64
 blockMBlock (BlockPtr p) = p .&. (complement mblockMask)
 
-applyMBlockMask :: ClosurePtr -> ClosurePtr
-applyMBlockMask (ClosurePtr p) = ClosurePtr (p .&. complement mblockMask)
+applyMBlockMask :: ClosurePtr -> BlockPtr
+applyMBlockMask (ClosurePtr p) = BlockPtr (p .&. complement mblockMask)
 
-applyBlockMask :: ClosurePtr -> ClosurePtr
-applyBlockMask (ClosurePtr p) = ClosurePtr (p .&. complement blockMask)
+applyBlockMask :: ClosurePtr -> BlockPtr
+applyBlockMask (ClosurePtr p) = BlockPtr (p .&. complement blockMask)
+
+mblockMaxSize, blockMaxSize :: Word64
+mblockMaxSize = mblockMask + 1
+blockMaxSize = blockMask + 1
 
 mblockMask :: Word64
 mblockMask = 0b11111111111111111111 -- 20 bits
@@ -161,7 +166,6 @@ blockMask = 0b111111111111 -- 12 bits
 
 isPinnedBlock :: RawBlock -> Bool
 isPinnedBlock (RawBlock _ flags _) = (flags .&. 0b100) /= 0
-
 
 isLargeBlock :: RawBlock -> Bool
 isLargeBlock (RawBlock _ flags _) = (flags .&. 0b10) /= 0

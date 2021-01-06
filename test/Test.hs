@@ -1,9 +1,11 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NumericUnderscores #-}
 module Main where
 
 import GHC.Debug.Client
 import GHC.Debug.Client.Retainers
+import GHC.Debug.Client.Fragmentation
 import GHC.Debug.Client.Profile
 import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
@@ -21,6 +23,7 @@ import Data.List.Extra (trim)
 import System.Process
 import Data.Tree
 import Data.Maybe
+import qualified Data.Map as Map
 import Data.List.NonEmpty(NonEmpty(..))
 
 saveOnePath :: IO FilePath
@@ -39,7 +42,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p30 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p31 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -302,21 +305,6 @@ p22 e = do
       return $ countNodes c
     traceWrite (sum s)
 
-p23 e = do
-  run e $ request RequestPause
-  runTrace e $ do
-    precacheBlocks
-    rs <- request RequestRoots
-    [so] <- request RequestSavedObjects
-    forM_ rs $ \r -> do
-      traceWrite r
-      c <- findRetainer so r
-      case c of
-        NoPath -> traceWrite ("NO_PATH", r)
-        RetainerPath cs -> do
-          --decoded <- dereferenceClosures cs
-          traceWrite ("DONE", cs)
-
 -- Use with large-thunk
 p24 e = do
   run e $ request RequestPause
@@ -368,3 +356,59 @@ p29 e = do
 
 
 p30 e = profile 1_000_000 e
+
+p31 e = analyseFragmentation 1_000_000 e
+
+-- Given the roots and bad closures, find out why they are being retained
+doAnalysis rs bad_ptrs = do
+  let ptrs = snd (fst bad_ptrs)
+      l = snd bad_ptrs
+  rs <- findRetainers rs ptrs
+  stack <- case rs of
+    [] -> traceWrite "EMPTY RETAINERS" >> return Nothing
+    (r:_) -> do
+      cs <- dereferenceClosures r
+      cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+      locs <- mapM getSourceLoc cs'
+      return $ Just (zip cs' locs)
+  return ((l,) <$> stack)
+
+analyseFragmentation :: Int -> DebugEnv DebugM -> IO ()
+analyseFragmentation interval e = loop
+  where
+    loop ::IO ()
+    loop = do
+      threadDelay interval
+      run e $ request RequestPause
+      putStrLn "PAUSED"
+      (mb_census, bs, rs) <- runTrace e $ do
+        -- Get all known blocks
+        bs <- precacheBlocks
+        rs <- request RequestRoots
+        traceWrite ("ROOTS", length rs)
+        mb_census <- censusPinnedBlocks bs rs
+        let bads = findBadPtrs mb_census
+        -- Print how many objects there are in the badly fragmented blocks
+        traceWrite ("FRAG_OBJECTS", (foldl1 (<>) (map (fst . fst) bads)))
+        -- Only take 5 bad results as otherwise can take a long time as
+        -- each call to `doAnalysis` will perform a full heap traversal.
+        as <- mapM (doAnalysis rs) (take 5 bads)
+        return (mb_census, bs, as)
+      run e $ request RequestResume
+      summariseBlocks bs
+      outBlockCensus (Map.map fst mb_census)
+      let disp (d, l) =
+            maybe "nl" infoModule l ++ ":" ++ (ppClosure (maybe "" tdisplay l)  (\_ -> show) 0 . noSize $ d)
+            where
+              tdisplay sl = infoModule sl ++ ":" ++ infoPosition sl
+          do_one k (l, stack) = do
+            putStrLn (show k ++ "-------------------------------------")
+            print l
+            mapM (putStrLn . disp) stack
+      zipWithM do_one [0..] (catMaybes rs)
+      putStrLn "------------------------"
+      loop
+
+getSourceLoc c = do
+  case lookupStgInfoTableWithPtr (noSize c) of
+    infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
