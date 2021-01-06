@@ -234,6 +234,10 @@ void inform_callback(void *user, PauseToken * p){
 
 static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, StgWord size) {
     uint32_t b = 0;
+    uint32_t size_payload;
+    size_payload=htonl(size);
+    trace("SIZE %lu", size);
+    resp.write((uint32_t) size_payload);
 
     for (uint32_t i = 0; i < size; b++) {
         StgWord bitmap = large_bitmap->bitmap[b];
