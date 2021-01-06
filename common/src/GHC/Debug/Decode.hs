@@ -232,7 +232,7 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = BLOCKING_QUEUE }) <- decodedTable itb = decodeBlockingQueue i c
   | (StgInfoTable { tipe = STACK }) <- decodedTable itb = decodeStack i c
   | (StgInfoTable { tipe = AP_STACK }) <- decodedTable itb = decodeAPStack i c
-decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO $ do
+decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)

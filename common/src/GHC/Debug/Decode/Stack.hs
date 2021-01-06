@@ -8,11 +8,9 @@ import qualified Data.ByteString as BS
 import Data.Binary.Get as B
 
 import GHC.Debug.Types
-import GHC.Exts.Heap.ClosureTypes
 import Control.Monad
 
 import Data.Coerce
-import Debug.Trace
 
 decodeStack :: Monad m
             => (RawClosure -> m StgInfoTableWithPtr)
@@ -55,9 +53,6 @@ getFrame st_bitmap itbl =
     headerSize RET_FUN = 3
     headerSize RET_BCO = 2
     headerSize _ = 1
-
-getInfoTablePtr :: Get InfoTablePtr
-getInfoTablePtr = InfoTablePtr <$> getWord64le -- TODO word size
 
 getWord :: Get Word64
 getWord = getWord64le -- TODO word size
