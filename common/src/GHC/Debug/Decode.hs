@@ -96,9 +96,14 @@ allocateByPtr (BSI.PS fp o _l) action =
 decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeClosureWithSize itb (ptr, rc) = decodeClosure itb (ptr, rc)
 
+skipClosureHeader :: Get ()
+skipClosureHeader
+  | profiling = () <$ skip 24
+  | otherwise = () <$ skip 8
+
 decodePAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodePAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- getWord64le
+  _itbl <- skipClosureHeader
   carity <- getWord32le
   nargs <- getWord32le
   funp <- getClosurePtr
@@ -108,7 +113,7 @@ decodePAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- getWord64le
+  _itbl <- skipClosureHeader
   carity <- getWord32le
   nargs <- getWord32le
   fun_ptr <- getWord64le
@@ -120,7 +125,7 @@ decodeAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeTVarClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeTVarClosure (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- getWord64le
+  _itbl <- skipClosureHeader
   ptr <- getClosurePtr
   watch_queue <- getClosurePtr
   updates <- getInt64le
@@ -134,7 +139,7 @@ getWord = getWord64le
 
 decodeMutPrim :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeMutPrim (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- getWord64le
+  _itbl <- skipClosureHeader
   let kptrs = fromIntegral (ptrs (decodedTable infot))
       kdat = fromIntegral (nptrs (decodedTable infot))
   pts <- replicateM kptrs getClosurePtr
@@ -143,7 +148,7 @@ decodeMutPrim (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeTrecChunk :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeTrecChunk (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- getWord64le
+  _itbl <- skipClosureHeader
   prev <- getClosurePtr
   clos_next_idx <- getWord64le
   chunks <- replicateM (fromIntegral clos_next_idx) getChunk
@@ -160,7 +165,7 @@ decodeTrecChunk (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeBlockingQueue :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeBlockingQueue (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- getWord
+  _itbl <- skipClosureHeader
   q <- getClosurePtr
   bh <- getClosurePtr
   tso <- getClosurePtr
@@ -171,7 +176,7 @@ decodeBlockingQueue (infot, _) (_, rc) = decodeFromBS rc $ do
 -- the existing logic in ghc-heap......
 decodeStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
-   _itbl <- getWord
+   _itbl <- skipClosureHeader
    st_size <- getWord32le
    st_dirty <- getWord8
    st_marking <- getWord8
@@ -179,10 +184,11 @@ decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
    -- sp field
    skip 2
    st_sp <- StackPtr <$> getWord
+   stackHeaderSize <- bytesRead
    let k = fromIntegral (subtractStackPtr st_sp cp)
-             -- -24 for the bytes already read
-             - 24
-       len = calculateStackLen st_size cp st_sp
+             -- -stackHeaderSize for the bytes already read
+             - fromIntegral stackHeaderSize
+       len = calculateStackLen st_size (fromIntegral br) cp st_sp
    -- Skip to start of stack frames
    skip k
    -- Read the raw frames, we can't decode them yet because we
@@ -204,7 +210,7 @@ decodeFromBS (RawClosure rc) parser =
 
 decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPStack (infot, _) (cp, rc) = decodeFromBS rc $ do
-  _itbl <- getWord
+  _itbl <- skipClosureHeader
   st_size <- getWord
   fun_closure <- getClosurePtr
   k <- bytesRead
@@ -264,12 +270,13 @@ decodeClosure (itb, RawInfoTable rit) (ptr, (RawClosure clos)) = unsafePerformIO
 
 fixTNTC :: Ptr a -> Ptr StgInfoTable
 fixTNTC ptr
-  | tablesNextToCode = castPtr $ ptr  `plusPtr` itblSize'
+  | tablesNextToCode = castPtr $ ptr  `plusPtr` realItblSize
   | otherwise        = castPtr $ ptr
-  where
-    itblSize'
-      | profiling  = ItblProf.itblSize
-      | otherwise  = Itbl.itblSize
+
+realItblSize :: Int
+realItblSize
+  | profiling  = ItblProf.itblSize
+  | otherwise  = Itbl.itblSize
 
 decodeInfoTable :: RawInfoTable -> StgInfoTable
 decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do

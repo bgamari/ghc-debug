@@ -87,22 +87,13 @@ addStackPtr (StackPtr c) o = StackPtr (c + o)
 rawClosureSize :: RawClosure -> Int
 rawClosureSize (RawClosure s) = BS.length s
 
-calculateStackLen :: Word32 -> ClosurePtr -> StackPtr -> Word64
-calculateStackLen siz (ClosurePtr p) (StackPtr sp) =
+calculateStackLen :: Word32 -> Word64 -> ClosurePtr -> StackPtr -> Word64
+calculateStackLen siz offset (ClosurePtr p) (StackPtr sp) =
   (p  -- Pointer to start of StgStack closure
-    + 24       -- Offset to end of closure
+    + offset       -- Offset to end of closure
     + (fromIntegral siz * 8) -- Stack_Size (in words)
     )
     - sp -- Minus current Sp
-
-getRawStack :: (Word32, StackPtr) -> ClosurePtr -> RawClosure -> RawStack
-getRawStack (siz, sp) c (RawClosure s) =
-  let -- Offset from start of RawClosure to stack frames
-      k = fromIntegral (subtractStackPtr sp c)
-      -- The size of the stack frames
-      len = calculateStackLen siz c sp
-      raw_s = (BS.take (fromIntegral len) (BS.drop k s))
-  in RawStack raw_s
 
 printBS :: BS.ByteString -> String
 -- Not technically all ClosurePtr but good for the show instance
