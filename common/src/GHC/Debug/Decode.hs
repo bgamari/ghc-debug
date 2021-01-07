@@ -32,6 +32,7 @@ import Data.Binary.Get as B
 import Control.Monad
 import Data.Void
 import Control.DeepSeq
+import Debug.Trace
 
 import qualified Data.ByteString as B
 

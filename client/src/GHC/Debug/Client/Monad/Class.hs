@@ -17,4 +17,7 @@ class (MonadFail m, Monad m) => DebugMonad m where
   runDebugTrace :: DebugEnv m -> m a -> IO (a, [String])
   newEnv :: FilePath -> FilePath -> Handle -> IO (DebugEnv m)
 
+  saveCache :: FilePath -> m ()
+  loadCache :: FilePath -> m ()
+
 

@@ -8,6 +8,7 @@ import           GHC.Debug.Client
 
 import qualified Data.IntSet as IS
 import Control.Monad.State
+import Debug.Trace
 
 data TraceState = TraceState { visited :: !(IS.IntSet) }
 

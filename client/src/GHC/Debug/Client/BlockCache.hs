@@ -22,8 +22,15 @@ import System.IO
 import GHC.Debug.Decode
 import Data.Bits
 import Data.List
+import Data.Binary
+import Data.Binary.Get
+import Control.Applicative
 
 data BlockCache = BlockCache (HM.HashMap Word64 RawBlock)
+
+instance Binary BlockCache where
+  get = BlockCache . HM.fromList <$> get
+  put (BlockCache hm) = put (HM.toList hm)
 
 emptyBlockCache :: BlockCache
 emptyBlockCache = BlockCache HM.empty

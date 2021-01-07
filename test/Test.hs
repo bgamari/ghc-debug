@@ -42,7 +42,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p30 e  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p32 e  >> outputRequestLog e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -355,7 +355,7 @@ p29 e = do
   p29 e
 
 
-p30 e = profile 1_000_000 e
+p30 e = profile 10_000_000 e
 
 p31 e = analyseFragmentation 1_000_000 e
 
@@ -412,3 +412,15 @@ analyseFragmentation interval e = loop
 getSourceLoc c = do
   case lookupStgInfoTableWithPtr (noSize c) of
     infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
+
+-- Testing the snapshot
+p32 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    traceFrom rs
+    saveCache "/tmp/ghc-debug-cache"
+    traceMsg "saved"
+    loadCache "/tmp/ghc-debug-cache"
+    traceMsg "loaded"

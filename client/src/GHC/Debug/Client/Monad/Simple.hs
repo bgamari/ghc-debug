@@ -28,6 +28,7 @@ import GHC.Debug.Client.RequestCache
 import GHC.Debug.Client.Monad.Class
 
 import Control.Monad.Reader
+import Data.Binary
 
 
 data Debuggee = Debuggee { debuggeeFilename :: FilePath
@@ -78,6 +79,21 @@ instance DebugMonad DebugM where
   runDebug = runSimple
   runDebugTrace e a = (,[]) <$> runDebug e a
   newEnv = mkEnv
+
+  loadCache fp = DebugM $ do
+    (new_req_cache, new_block_cache) <- lift $ decodeFile fp
+    Debuggee{..} <- ask
+    lift $ swapMVar debuggeeRequestCache new_req_cache
+    lift $ writeIORef debuggeeBlockCache new_block_cache
+
+  saveCache fp = DebugM $ do
+    Debuggee{..} <- ask
+    Just req_cache <- lift $ tryReadMVar debuggeeRequestCache
+    block_cache <- lift $ readIORef debuggeeBlockCache
+    lift $ encodeFile fp (req_cache, block_cache)
+
+
+
 
 
 runSimple :: Debuggee -> DebugM a -> IO a

@@ -5,6 +5,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types, ClosureType(..)) where
 
@@ -15,6 +16,7 @@ import qualified Data.Array.Unboxed as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import qualified Data.Foldable as F
 import Data.Word
 import System.IO
 
@@ -28,6 +30,7 @@ import GHC.Debug.Types.Ptr as T
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
+import Debug.Trace
 
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
@@ -218,6 +221,16 @@ cmdRequestBlock = CommandId 15
 cmdRequestFunBitmap :: CommandId
 cmdRequestFunBitmap = CommandId 16
 
+data AnyReq = forall req . AnyReq (Request req)
+
+instance Hashable AnyReq where
+  hashWithSalt s (AnyReq r) = hashWithSalt s r
+
+instance Eq AnyReq where
+  (AnyReq r1) == (AnyReq r2) = eq1request r1 r2
+
+data AnyResp = forall a . AnyResp a (a -> Put)
+
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
     putWord32be $ fromIntegral (4 + BSL.length body')
@@ -253,14 +266,57 @@ putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
 putRequest (RequestAllBlocks) = putCommand cmdRequestAllBlocks $ return ()
 putRequest (RequestBlock cp)  = putCommand cmdRequestBlock $ put cp
 
+getRequest :: Get AnyReq
+getRequest = do
+  len <- getWord32be
+  isolate (fromIntegral len) $ do
+    cmd <- get
+    if
+      | cmd == cmdRequestVersion -> return (AnyReq RequestVersion)
+      | cmd == cmdRequestPause   -> return (AnyReq RequestPause)
+      | cmd == cmdRequestResume  -> return (AnyReq RequestResume)
+      | cmd == cmdRequestRoots   -> return (AnyReq RequestRoots)
+      | cmd == cmdRequestClosures -> do
+          n <- getWord16be
+          cs <- replicateM (fromIntegral n) get
+          return (AnyReq (RequestClosures cs))
+      | cmd == cmdRequestInfoTables -> do
+          n <- getWord16be
+          itbs <- replicateM (fromIntegral n) get
+          return (AnyReq (RequestInfoTables itbs))
+      | cmd == cmdRequestStackBitmap -> do
+          sp <- get
+          o  <- getWord32be
+          return (AnyReq (RequestStackBitmap sp o))
+      | cmd == cmdRequestFunBitmap -> do
+          cp <- get
+          n <- getWord16be
+          return (AnyReq (RequestFunBitmap n cp))
+      | cmd == cmdRequestConstrDesc -> do
+          itb <- get
+          return (AnyReq (RequestConstrDesc itb))
+      | cmd == cmdRequestPoll -> return (AnyReq RequestPoll)
+      | cmd == cmdRequestSavedObjects -> return (AnyReq RequestSavedObjects)
+      | cmd == cmdRequestSourceInfo -> do
+          it <- get
+          return (AnyReq (RequestSourceInfo it))
+      | cmd == cmdRequestAllBlocks -> return (AnyReq RequestAllBlocks)
+      | cmd == cmdRequestBlock -> do
+            cp <- get
+            return (AnyReq (RequestBlock cp))
+      | otherwise -> error (show cmd)
+
+
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
-getResponse (RequestClosures _)  = many getRawClosure
+getResponse (RequestClosures cs) = do
+    replicateM (length cs) getRawClosure
 getResponse (RequestInfoTables itps) =
-    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps <$> many getInfoTable
+    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
+      <$> replicateM (length itps) getInfoTable
 getResponse (RequestStackBitmap {}) = getPtrBitmap
 getResponse (RequestFunBitmap {}) = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
@@ -270,19 +326,21 @@ getResponse (RequestSourceInfo _c) = getIPE
 getResponse RequestAllBlocks = many getBlock
 getResponse RequestBlock {}  = getBlock
 
--- flags, Ptr, size then raw block
-getBlock :: Get RawBlock
-getBlock = do
-  bflags <- getWord16le
-  bptr <- get
-  len <- getInt32be
-  rb <- getByteString (fromIntegral len)
-  return (RawBlock bptr bflags rb)
 
 getConstrDesc :: Get ConstrDesc
 getConstrDesc = do
   len <- getInt32be
   parseConstrDesc . C8.unpack <$> getByteString (fromIntegral len)
+
+putConstrDesc :: ConstrDesc -> Put
+putConstrDesc cd = do
+  let s = case cd of
+            ConstrDesc "" "" c -> c
+            ConstrDesc a b c -> a ++ ":" ++ b ++ ":" ++ c
+  putInt32be (fromIntegral $ length s)
+  putByteString (C8.pack s)
+
+
 
 getIPE :: Get (Maybe SourceInformation)
 getIPE = do
@@ -303,6 +361,22 @@ getIPE = do
     readCTy "0" = CONSTR
     readCTy n   = toEnum (read @Int n)
 
+putIPE :: Maybe SourceInformation -> Put
+putIPE Nothing = putInt32be 0
+putIPE (Just (SourceInformation a ty b c d e)) = do
+  putInt32be 6
+  putOne a
+  putOne (show (fromEnum ty))
+  putOne b
+  putOne c
+  putOne d
+  putOne e
+  where
+    putOne s = do
+      putInt32be (fromIntegral $ length s)
+      putByteString (C8.pack s)
+
+
 
 getPtrBitmap :: Get PtrBitmap
 getPtrBitmap = do
@@ -311,6 +385,12 @@ getPtrBitmap = do
   let arr = A.listArray (0, fromIntegral len-1) (map (==1) bits)
   return $ PtrBitmap arr
 
+putPtrBitmap :: PtrBitmap -> Put
+putPtrBitmap (PtrBitmap pbm) = do
+  let n = F.length pbm
+  putWord32be (fromIntegral n)
+  F.traverse_ (\b -> if b then putWord8 1 else putWord8 0) pbm
+
 getRawClosure :: Get RawClosure
 getRawClosure = do
   len <- getWord32be
@@ -318,17 +398,25 @@ getRawClosure = do
   -- just passing around the Addr# which assume it.
   RawClosure . C8.copy <$> getByteString (fromIntegral len)
 
--- The raw stack is sp to the end of stack
-getRawStack :: Get RawStack
-getRawStack = do
-  len <- getInt32be
-  RawStack <$> getByteString (fromIntegral len)
+putRawClosure :: RawClosure -> Put
+putRawClosure (RawClosure rc) = do
+  let n = BS.length rc
+  putWord32be (fromIntegral n)
+  putByteString rc
+
 
 getInfoTable :: Get (StgInfoTable, RawInfoTable)
 getInfoTable = do
   len <- getInt32be
   r <- RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
   return (decodeInfoTable r, r)
+
+putInfoTable :: RawInfoTable -> Put
+putInfoTable (RawInfoTable rc) = do
+  let n = BS.length rc
+  putWord32be (fromIntegral n)
+  putByteString rc
+
 
 
 data Error = BadCommand

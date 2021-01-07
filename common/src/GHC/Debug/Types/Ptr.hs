@@ -164,6 +164,26 @@ isLargeBlock (RawBlock _ flags _) = (flags .&. 0b10) /= 0
 data RawBlock = RawBlock BlockPtr Word16 BS.ByteString
                     deriving (Show)
 
+-- flags, Ptr, size then raw block
+getBlock :: Get RawBlock
+getBlock = do
+  bflags <- getWord16le
+  bptr <- get
+  len <- getInt32be
+  rb <- getByteString (fromIntegral len)
+  return (RawBlock bptr bflags rb)
+
+putBlock :: RawBlock -> Put
+putBlock (RawBlock bptr bflags rb) = do
+  putWord16le bflags
+  put bptr
+  putInt32be (fromIntegral $ BS.length rb)
+  putByteString rb
+
+instance Binary RawBlock where
+  get = getBlock
+  put = putBlock
+
 rawBlockSize :: RawBlock -> Int
 rawBlockSize (RawBlock _ _ bs) = BS.length bs
 
