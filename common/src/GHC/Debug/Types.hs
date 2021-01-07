@@ -117,10 +117,6 @@ isImmutableRequest r =
     RequestInfoTables {} -> True
     RequestSourceInfo {} -> True
     RequestConstrDesc {} -> True
-    RequestClosures cs
-      -- Not block allocated, therefore static
-      | all (not . heapAlloced) cs -> True
-      | otherwise -> False
     _ -> False
 
 
