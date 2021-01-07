@@ -42,7 +42,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p32 e  >> outputRequestLog e)
+--main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
+
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p31 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -92,7 +94,7 @@ p5 e = pauseThen e $ do
 p5a e = pauseThen e $ do
   rs <- request RequestRoots
   traceWrite rs
-  cs <- request (RequestClosures rs)
+  cs <- dereferenceClosures rs
   traceWrite cs
   {-
   let it = getInfoTblPtr c
@@ -239,7 +241,7 @@ p17 e = do
   pause (Debuggee e)
   runTrace e $ do
     [so] <- request RequestSavedObjects
-    [c] <- request (RequestClosures [so])
+    c <- request (RequestClosure so)
     let it = getInfoTblPtr c
     traceWrite c
     traceWrite it
@@ -424,3 +426,15 @@ p32 e = do
     traceMsg "saved"
     loadCache "/tmp/ghc-debug-cache"
     traceMsg "loaded"
+
+p33 e = forM [0..] $ \i -> do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    traceFrom rs
+    saveCache "/tmp/ghc-debug-cache"
+  run e $ request RequestResume
+  putStrLn ("CACHED: " ++ show i)
+  threadDelay 1_000_000
+

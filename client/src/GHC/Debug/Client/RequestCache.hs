@@ -51,11 +51,11 @@ getResponseBinary RequestVersion       = getWord32be
 getResponseBinary RequestPause         = get
 getResponseBinary RequestResume        = get
 getResponseBinary RequestRoots         = get
-getResponseBinary (RequestClosures cs) = do
-    replicateM (length cs) getRawClosure
-getResponseBinary (RequestInfoTables itps) =
-    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
-      <$> replicateM (length itps) getInfoTable
+getResponseBinary (RequestClosure cs) = getRawClosure
+--    replicateM (length cs) getRawClosure
+getResponseBinary (RequestInfoTable itps) = (\(it, r) -> (StgInfoTableWithPtr itps it, r)) <$> getInfoTable
+--    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
+--      <$> replicateM (length itps) getInfoTable
 getResponseBinary (RequestStackBitmap {}) = getPtrBitmap
 getResponseBinary (RequestFunBitmap {}) = getPtrBitmap
 getResponseBinary (RequestConstrDesc _)  = getConstrDesc
@@ -70,9 +70,9 @@ putResponseBinary RequestVersion w = putWord32be w
 putResponseBinary RequestPause w       = put w
 putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs
-putResponseBinary (RequestClosures {}) rcs = mapM_ putRawClosure rcs
-putResponseBinary (RequestInfoTables itps) pitb =
-    mapM_ putInfoTable  (map (\(t, r) -> r) pitb)
+putResponseBinary (RequestClosure {}) rcs = putRawClosure rcs
+putResponseBinary (RequestInfoTable itps) (t, r) = putInfoTable r
+--    mapM_ putInfoTable  (map (\(t, r) -> r) pitb)
 putResponseBinary (RequestStackBitmap {}) pbm = putPtrBitmap pbm
 putResponseBinary (RequestFunBitmap {}) pbm = putPtrBitmap pbm
 putResponseBinary (RequestConstrDesc _) cd  = putConstrDesc cd

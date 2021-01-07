@@ -20,6 +20,8 @@ module GHC.Debug.Client.Monad
   , debuggeeRun
   , debuggeeConnect
   , debuggeeClose
+  -- * Snapshot run
+  , snapshotInit
     -- * Logging
   , outputRequestLog
   ) where
@@ -93,8 +95,11 @@ debuggeeConnect exeName socketName = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix socketName)
     hdl <- socketToHandle s ReadWriteMode
-    new_env <- newEnv @DebugM exeName socketName hdl
+    new_env <- newEnv @DebugM (Socket hdl)
     return new_env
+
+snapshotInit :: FilePath -> IO (DebugEnv DebugM)
+snapshotInit fp = newEnv @DebugM (Snapshot fp)
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: DebugEnv DebugM -> IO ()

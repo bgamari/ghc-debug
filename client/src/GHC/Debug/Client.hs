@@ -17,6 +17,7 @@ module GHC.Debug.Client
   , withDebuggeeRun
   , withDebuggeeConnect
   , socketDirectory
+  , snapshotRun
 
     -- * Pause/Resume
   , pause
@@ -190,6 +191,11 @@ withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
                    -> (Debuggee -> IO a)
                    -> IO a
 withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName (\e -> action (mkDebuggee e))
+
+snapshotRun :: FilePath -> (Debuggee -> IO a) -> IO a
+snapshotRun fp k = do
+  env <- GD.snapshotInit fp
+  k (mkDebuggee env)
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
@@ -473,7 +479,7 @@ closureReferencesAndLabels closure = case closure of
 lookupInfoTable :: RawClosure -> DebugM (StgInfoTableWithPtr, RawInfoTable, RawClosure)
 lookupInfoTable rc = do
     let ptr = getInfoTblPtr rc
-    [(itbl, rit)] <- request (RequestInfoTables [ptr])
+    (itbl, rit) <- request (RequestInfoTable ptr)
     return (itbl,rit, rc)
 
 pauseThen :: Debuggee -> DebugM b -> IO b
@@ -484,15 +490,15 @@ dereferenceClosure :: ClosurePtr -> DebugM GD.Closure
 dereferenceClosure c = noSize . head <$> dereferenceClosures [c]
 
 dereferenceSizedClosure :: ClosurePtr -> DebugM SizedClosure
-dereferenceSizedClosure c = head <$> dereferenceClosures [c]
+dereferenceSizedClosure c = do
+    raw_c <- request (RequestClosure c)
+    let it = getInfoTblPtr raw_c
+    --print $ map (lookupDwarf d) its
+    raw_it <- request (RequestInfoTable it)
+    return $ decodeClosureWithSize raw_it (c, raw_c)
 
 dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
-dereferenceClosures cs = do
-    raw_cs <- request (RequestClosures cs)
-    let its = map getInfoTblPtr raw_cs
-    --print $ map (lookupDwarf d) its
-    raw_its <- request (RequestInfoTables its)
-    return $ zipWith decodeClosureWithSize raw_its (zip cs raw_cs)
+dereferenceClosures cs = mapM dereferenceClosureFromBlock cs
 
 dereferenceStack :: StackCont -> DebugM GD.StackFrames
 dereferenceStack (StackCont sp stack) = do
@@ -576,7 +582,7 @@ dereferenceClosureFromBlock cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)
       let it = getInfoTblPtr rc
-      [st_it] <- request (RequestInfoTables [it])
+      st_it <- request (RequestInfoTable it)
       return $ decodeClosureWithSize st_it (cp, rc)
 
 precacheBlocks :: DebugM [RawBlock]

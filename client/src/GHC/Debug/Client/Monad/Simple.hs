@@ -31,12 +31,11 @@ import Control.Monad.Reader
 import Data.Binary
 
 
-data Debuggee = Debuggee { debuggeeFilename :: FilePath
-                         -- Keep track of how many of each request we make
-                         , debuggeeRequestCount :: Maybe (IORef (HM.HashMap CommandId FetchStats))
+data Debuggee = Debuggee { -- Keep track of how many of each request we make
+                           debuggeeRequestCount :: Maybe (IORef (HM.HashMap CommandId FetchStats))
                          , debuggeeBlockCache :: IORef BlockCache
                          , debuggeeRequestCache :: MVar RequestCache
-                         , debuggeeHandle :: MVar Handle
+                         , debuggeeHandle :: Maybe (MVar Handle)
                          }
 
 data FetchStats = FetchStats { _networkRequests :: !Int, _cachedRequests :: !Int }
@@ -78,7 +77,9 @@ instance DebugMonad DebugM where
       Nothing -> putStrLn "No request log in Simple(TM) mode"
   runDebug = runSimple
   runDebugTrace e a = (,[]) <$> runDebug e a
-  newEnv = mkEnv
+  newEnv m = case m of
+               Snapshot f -> mkSnapshotEnv f
+               Socket h -> mkHandleEnv h
 
   loadCache fp = DebugM $ do
     (new_req_cache, new_block_cache) <- lift $ decodeFile fp
@@ -99,22 +100,36 @@ instance DebugMonad DebugM where
 runSimple :: Debuggee -> DebugM a -> IO a
 runSimple d (DebugM a) = runReaderT a d
 
-mkEnv :: FilePath -> FilePath -> Handle -> IO Debuggee
-mkEnv exeName _sockName h = do
+mkEnv :: (RequestCache, BlockCache) -> Maybe Handle -> IO Debuggee
+mkEnv (req_c, block_c) h = do
   let enable_stats = False
   mcount <- if enable_stats then Just <$> newIORef HM.empty else return Nothing
-  bc <- newIORef emptyBlockCache
-  rc <- newMVar emptyRequestCache
-  mhdl <-  newMVar h
-  return $ Debuggee exeName mcount bc rc mhdl
+  bc <- newIORef  block_c
+  rc <- newMVar req_c
+  mhdl <-  traverse newMVar h
+  return $ Debuggee mcount bc rc mhdl
+
+mkHandleEnv :: Handle -> IO Debuggee
+mkHandleEnv h = mkEnv (emptyRequestCache, emptyBlockCache) (Just h)
+
+mkSnapshotEnv :: FilePath -> IO Debuggee
+mkSnapshotEnv fp = do
+  caches <- decodeFile fp
+  mkEnv caches Nothing
+
+
 
 -- TODO: Sending multiple pauses will clear the cache, should keep track of
 -- the pause state and only clear caches if the state changes.
 simpleReq :: Request resp -> ReaderT Debuggee IO resp
-simpleReq req | isWriteRequest req = ask >>= \Debuggee{..} -> liftIO $ do
-  atomicModifyIORef' debuggeeBlockCache (const (emptyBlockCache, ()))
-  modifyMVar_ debuggeeRequestCache (return . clearMovableRequests)
-  doRequest debuggeeHandle req
+simpleReq req | isWriteRequest req = ask >>= \Debuggee{..} -> liftIO $ withWriteRequest req (error "non-write") $ \wreq -> do
+  case debuggeeHandle of
+    Just h -> do
+      atomicModifyIORef' debuggeeBlockCache (const (emptyBlockCache, ()))
+      modifyMVar_ debuggeeRequestCache (return . clearMovableRequests)
+      doRequest h wreq
+    -- Ignore write requests in snapshot mode
+    Nothing -> return ()
 simpleReq req = do
   rc_var <- asks debuggeeRequestCache
   rc <- liftIO $ readMVar rc_var
@@ -123,11 +138,14 @@ simpleReq req = do
       logRequest True req
       return res
     Nothing -> do
-      h <- asks debuggeeHandle
-      res <- liftIO $ doRequest h req
-      liftIO $ modifyMVar_ rc_var (return . cacheReq req res)
-      logRequest False req
-      return res
+      mh <- asks debuggeeHandle
+      case mh of
+        Nothing -> error ("Cache Miss:" ++ show req)
+        Just h -> do
+          res <- liftIO $ doRequest h req
+          liftIO $ modifyMVar_ rc_var (return . cacheReq req res)
+          logRequest False req
+          return res
 
 blockReq :: BlockCacheRequest resp -> DebugM resp
 blockReq req = DebugM $ do

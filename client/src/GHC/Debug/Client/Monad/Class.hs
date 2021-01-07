@@ -15,9 +15,10 @@ class (MonadFail m, Monad m) => DebugMonad m where
   printRequestLog :: DebugEnv m -> IO ()
   runDebug :: DebugEnv m -> m a -> IO a
   runDebugTrace :: DebugEnv m -> m a -> IO (a, [String])
-  newEnv :: FilePath -> FilePath -> Handle -> IO (DebugEnv m)
+  newEnv :: Mode -> IO (DebugEnv m)
 
   saveCache :: FilePath -> m ()
   loadCache :: FilePath -> m ()
 
 
+data Mode = Snapshot FilePath | Socket Handle

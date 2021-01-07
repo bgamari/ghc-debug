@@ -27,9 +27,8 @@ import Data.Typeable
 
 import Data.IORef
 
-data Debuggee = Debuggee { debuggeeFilename :: FilePath
-                         -- Keep track of how many of each request we make
-                         , debuggeeRequestCount :: IORef (HM.HashMap CommandId Int)
+data Debuggee = Debuggee { -- Keep track of how many of each request we make
+                           debuggeeRequestCount :: IORef (HM.HashMap CommandId Int)
                          , debuggeeBatchMode :: BatchMode
                          }
 
@@ -43,7 +42,10 @@ instance DebugMonad (GenHaxl Debuggee String) where
   printRequestLog = traceRequestLog
   runDebug = runHaxl
   runDebugTrace = runHaxlWithWrites
-  newEnv = mkEnv
+  newEnv args =
+    case args of
+      Snapshot e -> error "Loading from snapshot not supported"
+      Socket h -> mkEnv h
 
 type DebugM = GenHaxl Debuggee String
 
@@ -68,7 +70,7 @@ instance DataSourceName Request where
 instance ShowP Request where
   showp = show
 
-
+{-
 -- | Group together RequestClosures and RequestInfoTables to avoid
 -- some context switching.
 groupFetches :: MVar Handle -> [([ClosurePtr], ResultVar [RawClosure])] -> [([InfoTablePtr], ResultVar [(StgInfoTableWithPtr, RawInfoTable)])] -> [BlockedFetch Request] -> [BlockedFetch Request] -> IO ()
@@ -113,7 +115,7 @@ recordResults res ((length -> n, rvar):xs) =
   where
     (here, later) = splitAt n res
 recordResults _ _ = error ("Impossible recordResults")
-
+-}
 
 _singleFetches :: MVar Handle -> [BlockedFetch Request] -> IO ()
 _singleFetches h bs = mapM_ do_one bs
@@ -128,8 +130,8 @@ instance DataSource Debuggee Request where
     -- benchmark
     SyncFetch $
       case debuggeeBatchMode u of
-        Batch -> groupFetches h [] [] []
-        OneByOne -> _singleFetches h
+        --Batch -> groupFetches h [] [] []
+        _ -> _singleFetches h
 
 
 
@@ -149,18 +151,18 @@ instance DataSource u BlockCacheRequest where
     where
       do_one :: BlockedFetch BlockCacheRequest -> IO ()
       do_one (BlockedFetch bcr resp) = do
-        res <- handleBlockReq h ref bcr
+        res <- handleBlockReq (Just h) ref bcr
         putSuccess resp res
 
 
 
-mkEnv :: FilePath -> FilePath -> Handle -> IO (Env Debuggee String)
-mkEnv exeName _sock hdl = do
+mkEnv :: Handle -> IO (Env Debuggee String)
+mkEnv hdl = do
   requestMap <- newIORef HM.empty
   bc <- newIORef emptyBlockCache
   mhdl <- newMVar hdl
   let ss = stateSet (BCRequestState bc mhdl) (stateSet (RequestState mhdl) stateEmpty)
-  new_env <- initEnv ss (Debuggee exeName requestMap Batch)
+  new_env <- initEnv ss (Debuggee requestMap Batch)
   -- Turn on data fetch stats with report = 3
   let new_flags = defaultFlags { report = 0 }
   return $ new_env { Haxl.Core.flags = new_flags }

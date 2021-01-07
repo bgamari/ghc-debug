@@ -59,6 +59,9 @@ bcSize (BlockCache b) = HM.size b
 _bcKeys :: BlockCache -> [ClosurePtr]
 _bcKeys (BlockCache b) = sort $ map ClosurePtr (HM.keys b)
 
+allBlocks :: BlockCache -> [RawBlock]
+allBlocks (BlockCache b) = HM.elems b
+
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
   PopulateBlockCache :: BlockCacheRequest [RawBlock]
@@ -70,21 +73,29 @@ instance Hashable (BlockCacheRequest a) where
   hashWithSalt s (LookupClosure cpt) = s `hashWithSalt` (1 :: Int) `hashWithSalt` cpt
   hashWithSalt s PopulateBlockCache  = s `hashWithSalt` (2 :: Int)
 
-handleBlockReq :: MVar Handle -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
-handleBlockReq h ref (LookupClosure cp) = do
+handleBlockReq :: Maybe (MVar Handle) -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
+handleBlockReq mh ref (LookupClosure cp) = do
   bc <- readIORef ref
   let mrb = lookupClosure cp bc
   rb <- case mrb of
                Nothing -> do
                  -- print ("MISS", cp)
-                 rb <- doRequest h (RequestBlock cp)
-                 atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
-                 return rb
+                 case mh of
+                   Nothing -> error ("Cache Miss:" ++ show cp)
+                   Just h -> do
+                    rb <- doRequest h (RequestBlock cp)
+                    atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
+                    return rb
                Just rb -> do
                  return rb
   return (extractFromBlock cp rb)
-handleBlockReq h ref PopulateBlockCache = do
-  blocks <- doRequest h RequestAllBlocks
+handleBlockReq mh ref PopulateBlockCache = do
+  bc <- readIORef ref
+  blocks <- case mh of
+              -- Snapshot mode, just return whatever blocks are cached
+              Nothing -> return (allBlocks bc)
+              -- Otherwise, get the blocks
+              Just h -> doRequest h RequestAllBlocks
 --  mapM_ (\rb -> print ("NEW", rawBlockAddr rb)) blocks
   print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)

@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE RankNTypes #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types, ClosureType(..)) where
 
@@ -44,9 +45,9 @@ data Request a where
     -- | Request the debuggee's root pointers.
     RequestRoots :: Request [ClosurePtr]
     -- | Request a set of closures.
-    RequestClosures :: [ClosurePtr] -> Request [RawClosure]
+    RequestClosure :: ClosurePtr -> Request RawClosure
     -- | Request a set of info tables.
-    RequestInfoTables :: [InfoTablePtr] -> Request [(StgInfoTableWithPtr, RawInfoTable)]
+    RequestInfoTable :: InfoTablePtr -> Request (StgInfoTableWithPtr, RawInfoTable)
     -- | Wait for the debuggee to pause itself and then
     -- execute an action. It currently impossible to resume after
     -- a pause caused by a poll.
@@ -79,6 +80,8 @@ data SourceInformation = SourceInformation { infoName        :: !String
                                          , infoPosition    :: !String }
                                          deriving (Show, Eq)
 
+
+
 eq1request :: Request a -> Request b -> Bool
 eq1request r1 r2 =
   case r1 of
@@ -86,8 +89,8 @@ eq1request r1 r2 =
     RequestPause   -> case r2 of {RequestPause -> True; _ -> False }
     RequestResume  -> case r2 of {RequestResume -> True; _ -> False }
     RequestRoots   -> case r2 of {RequestRoots -> True; _ -> False }
-    RequestClosures cs -> case r2 of {(RequestClosures cs') -> cs == cs'; _ -> False }
-    RequestInfoTables itp -> case r2 of { (RequestInfoTables itp') ->  itp == itp'; _ -> False }
+    RequestClosure cs -> case r2 of {(RequestClosure cs') -> cs == cs'; _ -> False }
+    RequestInfoTable itp -> case r2 of { (RequestInfoTable itp') ->  itp == itp'; _ -> False }
     RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
     RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
     RequestStackBitmap p o      -> case r2 of {(RequestStackBitmap p' o') -> p == p' && o == o'; _ -> False }
@@ -99,12 +102,15 @@ eq1request r1 r2 =
 
 -- | Whether a request mutates the debuggee state, don't cache these ones
 isWriteRequest :: Request a -> Bool
-isWriteRequest r =
+isWriteRequest r = getConst $ withWriteRequest r (Const False) (const (Const True))
+
+withWriteRequest :: Request a -> r a -> ((a ~ ()) => Request a -> r a) -> r a
+withWriteRequest r def k =
   case r of
-    RequestPause  -> True
-    RequestResume -> True
-    RequestPoll -> True
-    _ -> False
+    RequestPause  -> k RequestPause
+    RequestResume -> k RequestResume
+    RequestPoll -> k RequestPoll
+    _ -> def
 
 -- | Requests which will always answer the same.
 -- For example, info tables are immutable and so requesting an info table
@@ -114,7 +120,7 @@ isImmutableRequest :: Request a -> Bool
 isImmutableRequest r =
   case r of
     RequestVersion {} -> True
-    RequestInfoTables {} -> True
+    RequestInfoTable {} -> True
     RequestSourceInfo {} -> True
     RequestConstrDesc {} -> True
     _ -> False
@@ -133,8 +139,8 @@ instance Hashable (Request a) where
     RequestPause   ->  s `hashWithSalt` cmdRequestPause
     RequestResume  ->  s `hashWithSalt` cmdRequestResume
     RequestRoots   -> s `hashWithSalt` cmdRequestRoots
-    RequestClosures cs -> s `hashWithSalt` cmdRequestClosures `hashWithSalt` cs
-    RequestInfoTables itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
+    RequestClosure cs -> s `hashWithSalt` cmdRequestClosures `hashWithSalt` cs
+    RequestInfoTable itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
     RequestPoll           -> s `hashWithSalt` cmdRequestPoll
     RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
     RequestStackBitmap p o -> s `hashWithSalt` cmdRequestStackBitmap `hashWithSalt` p `hashWithSalt` o
@@ -161,8 +167,8 @@ requestCommandId r = case r of
     RequestPause {}   -> cmdRequestPause
     RequestResume {}  -> cmdRequestResume
     RequestRoots {}   -> cmdRequestRoots
-    RequestClosures {}  -> cmdRequestClosures
-    RequestInfoTables {}  -> cmdRequestInfoTables
+    RequestClosure {}  -> cmdRequestClosures
+    RequestInfoTable {}  -> cmdRequestInfoTables
     RequestPoll {}         -> cmdRequestPoll
     RequestSavedObjects {} -> cmdRequestSavedObjects
     RequestStackBitmap {}       -> cmdRequestStackBitmap
@@ -240,14 +246,14 @@ putRequest RequestVersion        = putCommand cmdRequestVersion mempty
 putRequest RequestPause          = putCommand cmdRequestPause mempty
 putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
-putRequest (RequestClosures cs)  =
+putRequest (RequestClosure cs)  =
   putCommand cmdRequestClosures $ do
-    putWord16be $ fromIntegral (length cs)
-    foldMap put cs
-putRequest (RequestInfoTables ts) =
+    putWord16be $ fromIntegral 1
+    put cs
+putRequest (RequestInfoTable ts) =
   putCommand cmdRequestInfoTables $ do
-    putWord16be $ fromIntegral (length ts)
-    foldMap put ts
+    putWord16be $ fromIntegral 1
+    put ts
 putRequest (RequestStackBitmap sp o)       =
   putCommand cmdRequestStackBitmap $ put sp >> putWord32be o
 putRequest (RequestFunBitmap n cp)       =
@@ -274,12 +280,14 @@ getRequest = do
       | cmd == cmdRequestRoots   -> return (AnyReq RequestRoots)
       | cmd == cmdRequestClosures -> do
           n <- getWord16be
-          cs <- replicateM (fromIntegral n) get
-          return (AnyReq (RequestClosures cs))
+--          cs <- replicateM (fromIntegral n) get
+          cp <- get
+          return (AnyReq (RequestClosure cp))
       | cmd == cmdRequestInfoTables -> do
           n <- getWord16be
-          itbs <- replicateM (fromIntegral n) get
-          return (AnyReq (RequestInfoTables itbs))
+          --itbs <- replicateM (fromIntegral n) get
+          itb <- get
+          return (AnyReq (RequestInfoTable itb))
       | cmd == cmdRequestStackBitmap -> do
           sp <- get
           o  <- getWord32be
@@ -308,11 +316,10 @@ getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
-getResponse (RequestClosures cs) = do
-    replicateM (length cs) getRawClosure
-getResponse (RequestInfoTables itps) =
-    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
-      <$> replicateM (length itps) getInfoTable
+getResponse (RequestClosure cs) = getRawClosure
+getResponse (RequestInfoTable itbp) = (\(it, r) -> (StgInfoTableWithPtr itbp it, r)) <$> getInfoTable
+--    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
+--      <$> replicateM (length itps) getInfoTable
 getResponse (RequestStackBitmap {}) = getPtrBitmap
 getResponse (RequestFunBitmap {}) = getPtrBitmap
 getResponse (RequestConstrDesc _)  = getConstrDesc
