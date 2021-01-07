@@ -31,7 +31,7 @@ findRetainers rroots bads = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroo
     closAccum cp _ k
       | cp `Set.member` bads_set = do
           ctx <- ask
-          lift $ modify ((cp: ctx) :)
+          lift $ modify' ((cp: ctx) :)
           -- Don't call k, there might be more paths to the pointer but we
           -- probably just care about this first one.
       | otherwise = local (cp:) k

@@ -36,40 +36,52 @@ type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont Closu
 
 traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
 traceFromM k cps = evalStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty)
+{-# INLINE traceFromM #-}
+{-# INLINE traceClosureFromM #-}
+{-# INLINE traceStackFromM #-}
+{-# INLINE traceConstrDescM #-}
+{-# INLINE tracePapPayloadM #-}
 
 traceClosureFromM :: C m
                   => TraceFunctions m
                   -> ClosurePtr
                   -> StateT TraceState (m DebugM) ()
-traceClosureFromM k cp = do
-    m <- get
-    if (checkVisit cp m)
-      then return (visitedVal k)
-      else do
-      modify (addVisit cp)
-      sc <- lift $ lift $ dereferenceClosureFromBlock cp
-      closTrace k cp sc
-        (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc)
+traceClosureFromM k cp = go cp
+  where
+    go cp = do
+      m <- get
+      if (checkVisit cp m)
+        then return (visitedVal k)
+        else do
+        modify (addVisit cp)
+        sc <- lift $ lift $ dereferenceClosureFromBlock cp
+        closTrace k cp sc
+          (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc)
 
 traceStackFromM :: C m
                 => TraceFunctions m
                 -> StackCont -> StateT TraceState (m DebugM) ()
-traceStackFromM f st = do
-  st' <- lift $ lift $ dereferenceStack st
-  lift $ stackTrace f st'
-  () <$ traverse (traceClosureFromM f) st'
+traceStackFromM f st = go st
+  where
+    go st = do
+      st' <- lift $ lift $ dereferenceStack st
+      lift $ stackTrace f st'
+      () <$ traverse (traceClosureFromM f) st'
 
 traceConstrDescM :: (C m)
                  => TraceFunctions m -> ConstrDescCont -> StateT s (m DebugM) ()
-traceConstrDescM f d = do
-  cd <- lift $ lift $ dereferenceConDesc d
-  lift $ conDescTrace f cd
+traceConstrDescM f d = go d
+  where
+    go d = do
+      cd <- lift $ lift $ dereferenceConDesc d
+      lift $ conDescTrace f cd
 
 tracePapPayloadM :: C m
                  => TraceFunctions m
                  -> PayloadCont
                  -> StateT TraceState (m DebugM) ()
-tracePapPayloadM f p = do
-  p' <- lift $ lift $ dereferencePapPayload p
-  lift $ papTrace f p'
-  () <$ traverse (traceClosureFromM f) p'
+tracePapPayloadM f p = go p where
+  go p = do
+    p' <- lift $ lift $ dereferencePapPayload p
+    lift $ papTrace f p'
+    () <$ traverse (traceClosureFromM f) p'

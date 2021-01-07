@@ -93,7 +93,7 @@ closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                -> StateT TraceState (StateT (Map.Map k v) DebugM) ()
     closAccum cp s k = do
       s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure s
-      lift $ modify (go cp s')
+      lift $ modify' (go cp s')
       k
 
     go :: ClosurePtr -> SizedClosureC -> Map.Map k v -> Map.Map k v
