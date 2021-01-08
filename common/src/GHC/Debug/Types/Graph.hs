@@ -163,7 +163,7 @@ generalBuildHeapGraph deref limit hg addBoxes = do
 -- >    x6 = C# 'H' : C# 'o' : x6
 -- >in (x1,x1,x6)
 ppHeapGraph :: (a -> String) -> HeapGraph a -> String
-ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++ printData (hgeData (iToE (rs !! 0))) ++ ") " ++ ppRef 0 (Just heapGraphRoot)
+ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++ printData (hgeData (iToE heapGraphRoot)) ++ ") " ++ ppRef 0 (Just heapGraphRoot)
   where
     -- All variables occuring more than once
     bindings = boundMultipleTimes (HeapGraph (heapGraphRoot :| rs) m) [heapGraphRoot]
@@ -307,7 +307,7 @@ ppClosure herald showBox prec c = case c of
     BCOClosure {..} -> app
         ["_bco", showBox 10 bcoptrs]
     ArrWordsClosure {..} -> app
-        ["toArray", "("++show (length arrWords) ++ " words)", intercalate "," (shorten (map show arrWords)) ]
+        ["toArray", "("++show (length arrWords) ++ " words)", ((show $ arrWordsBS arrWords)) ]
     MutArrClosure {..} -> app
         --["toMutArray", "("++show (length mccPayload) ++ " ptrs)",  intercalate "," (shorten (map (showBox 10) mccPayload))]
         ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]
