@@ -19,7 +19,7 @@ data TraceFunctions m =
       -- UnliftIO? The idea is that the user provided function might want
       -- to modify the context the continuation is called in.
       , closTrace :: ClosurePtr -> SizedClosure -> StateT TraceState (m DebugM) () -> StateT TraceState (m DebugM) ()
-      , visitedVal :: ()
+      , visitedVal :: ClosurePtr -> StateT TraceState (m DebugM) ()
       , conDescTrace :: ConstrDesc -> m DebugM ()
       }
 
@@ -51,7 +51,7 @@ traceClosureFromM k cp = go cp
     go cp = do
       m <- get
       if (checkVisit cp m)
-        then return (visitedVal k)
+        then visitedVal k cp
         else do
         modify (addVisit cp)
         sc <- lift $ lift $ dereferenceClosureFromBlock cp

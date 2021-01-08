@@ -82,7 +82,7 @@ closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                papTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
-              , visitedVal = ()
+              , visitedVal = const (return ())
               , conDescTrace = const (return ())
 
             }
@@ -109,7 +109,7 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                papTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
-              , visitedVal = ()
+              , visitedVal = const (return ())
               , conDescTrace = const (return ())
 
             }

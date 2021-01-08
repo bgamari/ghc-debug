@@ -19,7 +19,7 @@ findRetainers rroots bads = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroo
                papTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
-              , visitedVal = ()
+              , visitedVal = const (return ())
               , conDescTrace = const (return ())
 
             }
