@@ -78,10 +78,11 @@ heapGraphSize (HeapGraph _ g) = IM.size g
 buildHeapGraph
    :: (Monad m)
    => DerefFunction m a
+   -> Maybe Int
    -> ClosurePtr -- ^ The value to start with
    -> m (HeapGraph a)
-buildHeapGraph deref initialBox =
-    fst <$> multiBuildHeapGraph deref (NE.singleton initialBox)
+buildHeapGraph deref limit initialBox =
+    fst <$> multiBuildHeapGraph deref limit (NE.singleton initialBox)
 
 -- TODO: It is a bit undesirable that the ConstrDesc field is already
 -- dereferenced, but also, not such a big deal. It could lead to additional
@@ -98,9 +99,10 @@ type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a PapPayload Con
 multiBuildHeapGraph
     :: (Monad m)
     => DerefFunction m a
+    -> Maybe Int
     -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
-multiBuildHeapGraph deref rs = generalBuildHeapGraph deref (HeapGraph rs IM.empty) rs
+multiBuildHeapGraph deref limit rs = generalBuildHeapGraph deref limit (HeapGraph rs IM.empty) rs
 {-# INLINE multiBuildHeapGraph #-}
 
 -- | Adds an entry to an existing 'HeapGraph'.
@@ -113,7 +115,7 @@ addHeapGraph
     -> HeapGraph a -- ^ Graph to extend
     -> m (HeapGraphIndex, HeapGraph a)
 addHeapGraph deref box hg = do
-    (hg', (NE.head -> i)) <- generalBuildHeapGraph deref hg (NE.singleton box)
+    (hg', (NE.head -> i)) <- generalBuildHeapGraph deref Nothing hg (NE.singleton box)
     return (i, hg')
 {-# INLINABLE addHeapGraph #-}
 
@@ -128,18 +130,19 @@ annotateHeapGraph f i hg = updateHeapGraph go i hg
 generalBuildHeapGraph
     :: forall m a .  (Monad m)
     => DerefFunction m a
-    -- -> Maybe Int
+    -> Maybe Int
     -> HeapGraph a
     -> NonEmpty ClosurePtr
     -> m (HeapGraph a, NonEmpty HeapGraphIndex)
 --generalBuildHeapGraph _deref (Just limit) _ _ | limit <= 0 = error "buildHeapGraph: limit has to be positive"
-generalBuildHeapGraph deref hg addBoxes = do
+generalBuildHeapGraph deref limit hg addBoxes = do
     -- First collect all boxes from the existing heap graph
-    (is, hg') <- runStateT (mapM add addBoxes) hg
+    (is, hg') <- runStateT (mapM (add limit) addBoxes) hg
     return (hg', fromJust <$> is)
   where
-    add :: ClosurePtr -> StateT (HeapGraph a) m (Maybe ClosurePtr)
-    add cp = do
+    add :: Maybe Int -> ClosurePtr -> StateT (HeapGraph a) m (Maybe ClosurePtr)
+    add (Just 0) _ = return Nothing
+    add n cp = do
         -- If the box is in the map, return the index
         hm <- get
         case lookupHeapGraph cp hm of
@@ -147,7 +150,8 @@ generalBuildHeapGraph deref hg addBoxes = do
             Nothing -> do
                 -- Look up the closure
                 c <- lift $ deref cp
-                DCS e c' <- quadtraverse (traverse add) pure (traverse add) add c
+                let new_add = add (subtract 1 <$> n)
+                DCS e c' <- quadtraverse (traverse new_add) pure (traverse new_add) new_add c
                 -- Add add the resulting closure to the map
                 modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
                 return (Just cp)

@@ -233,7 +233,7 @@ p16 e = do
   pause (Debuggee e)
   hg <- run e $ do
           (so:_) <- request RequestSavedObjects
-          buildHeapGraph derefFuncM so
+          buildHeapGraph derefFuncM Nothing so
   putStrLn $ ppHeapGraph (const "") hg
 
 -- Testing IPE
@@ -270,7 +270,7 @@ p19 e = do
   run e $ request RequestPoll
   hg <- run e $ do
           (so:_) <- request RequestSavedObjects
-          hg <- buildHeapGraph derefFuncM so
+          hg <- buildHeapGraph derefFuncM Nothing so
           annotateWithSource hg
   putStrLn $ ppHeapGraph (maybe "" show) hg
 
@@ -315,7 +315,7 @@ p24 e = do
     rs <- request RequestRoots
     (hg, rs') <- case rs of
       [] -> error "Empty roots"
-      (x:xs) -> multiBuildHeapGraph derefFuncM (x :| xs)
+      (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     case retainerSize hg of
       rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
 
@@ -328,7 +328,7 @@ p26 e = do
     rs <- request RequestRoots
     (hg, rs') <- case rs of
       [] -> error "Empty roots"
-      (x:xs) -> multiBuildHeapGraph derefFuncM (x :| xs)
+      (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     traceWrite (heapGraphSize hg)
 
 p27 e = do
