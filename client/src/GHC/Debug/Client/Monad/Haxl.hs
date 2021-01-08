@@ -151,7 +151,7 @@ instance DataSource u BlockCacheRequest where
     where
       do_one :: BlockedFetch BlockCacheRequest -> IO ()
       do_one (BlockedFetch bcr resp) = do
-        res <- handleBlockReq (Just h) ref bcr
+        res <- handleBlockReq (doRequest h) ref bcr
         putSuccess resp res
 
 

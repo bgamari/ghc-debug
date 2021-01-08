@@ -97,7 +97,6 @@ getCacheLine = do
   resp <- getResponseBinary req
   return (AnyReq req, AnyResp resp (putResponseBinary req))
 
-
 putCache :: RequestCache -> Put
 putCache (RequestCache rc) = do
   put (HM.size rc)

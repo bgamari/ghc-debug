@@ -68,7 +68,6 @@ ppRequestLog hm = unlines (map row items)
 data Snapshot = Snapshot {
                     _version :: Word32
                   , _rqc :: RequestCache
-                  , _bc  :: BlockCache
                   }
 
 snapshotVersion :: Word32
@@ -78,12 +77,11 @@ instance Binary Snapshot where
   get = do
     v <- get
     if v == snapshotVersion
-      then Snapshot <$> pure v <*> get <*> get
+      then Snapshot <$> pure v <*> get
       else fail ("Wrong snapshot version.\nGot: " ++ show v ++ "\nExpected: " ++ show snapshotVersion)
-  put (Snapshot v c1 c2) = do
+  put (Snapshot v c1) = do
     put v
     put c1
-    put c2
 
 
 instance DebugMonad DebugM where
@@ -103,18 +101,24 @@ instance DebugMonad DebugM where
                SocketMode h -> mkHandleEnv h
 
   loadCache fp = DebugM $ do
-    (Snapshot _ new_req_cache new_block_cache) <- lift $ decodeFile fp
+    (Snapshot _ new_req_cache) <- lift $ decodeFile fp
     Debuggee{..} <- ask
     _old_rc <- lift $ swapMVar debuggeeRequestCache new_req_cache
-    lift $ writeIORef debuggeeBlockCache new_block_cache
+    -- Fill up the block cache with the cached blocks
+    let block_c = initBlockCacheFromReqCache new_req_cache
+    lift $ writeIORef debuggeeBlockCache block_c
 
   saveCache fp = DebugM $ do
     Debuggee{..} <- ask
     Just req_cache <- lift $ tryReadMVar debuggeeRequestCache
-    block_cache <- lift $ readIORef debuggeeBlockCache
-    lift $ encodeFile fp (Snapshot snapshotVersion req_cache block_cache)
+    lift $ encodeFile fp (Snapshot snapshotVersion req_cache)
 
 
+initBlockCacheFromReqCache :: RequestCache -> BlockCache
+initBlockCacheFromReqCache new_req_cache  =
+  case lookupReq RequestAllBlocks new_req_cache of
+        Just bs -> addBlocks bs emptyBlockCache
+        Nothing -> emptyBlockCache
 
 
 
@@ -135,10 +139,9 @@ mkHandleEnv h = mkEnv (emptyRequestCache, emptyBlockCache) (Just h)
 
 mkSnapshotEnv :: FilePath -> IO Debuggee
 mkSnapshotEnv fp = do
-  Snapshot _ req_c block_c <- decodeFile fp
+  Snapshot _ req_c <- decodeFile fp
+  let block_c = initBlockCacheFromReqCache req_c
   mkEnv (req_c, block_c) Nothing
-
-
 
 -- TODO: Sending multiple pauses will clear the cache, should keep track of
 -- the pause state and only clear caches if the state changes.
@@ -170,9 +173,9 @@ simpleReq req = do
 
 blockReq :: BlockCacheRequest resp -> DebugM resp
 blockReq req = DebugM $ do
-  hdl <- asks debuggeeHandle
   bc  <- asks debuggeeBlockCache
-  liftIO $ handleBlockReq hdl bc req
+  env <- ask
+  liftIO $ handleBlockReq (\r -> runReaderT (simpleReq r) env) bc req
 
 newtype DebugM a = DebugM (ReaderT Debuggee IO a)
                    -- Only derive the instances that DebugMonad needs

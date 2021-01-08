@@ -3,13 +3,14 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE BinaryLiterals #-}
+{-# LANGUAGE RankNTypes #-}
 -- The BlockCache stores the currently fetched blocks
 -- and is consulted first to avoid requesting too much
 -- from the debuggee. The BlockCache can either be populated
 -- via a call to RequestBlocks or on demand on a cache miss.
 
 module GHC.Debug.Client.BlockCache(BlockCache, BlockCacheRequest(..)
-                                  , handleBlockReq, emptyBlockCache, bcSize) where
+                                  , handleBlockReq, emptyBlockCache, bcSize, addBlocks) where
 
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types
@@ -59,9 +60,6 @@ bcSize (BlockCache b) = HM.size b
 _bcKeys :: BlockCache -> [ClosurePtr]
 _bcKeys (BlockCache b) = sort $ map ClosurePtr (HM.keys b)
 
-allBlocks :: BlockCache -> [RawBlock]
-allBlocks (BlockCache b) = HM.elems b
-
 data BlockCacheRequest a where
   LookupClosure :: ClosurePtr -> BlockCacheRequest RawClosure
   PopulateBlockCache :: BlockCacheRequest [RawBlock]
@@ -73,29 +71,20 @@ instance Hashable (BlockCacheRequest a) where
   hashWithSalt s (LookupClosure cpt) = s `hashWithSalt` (1 :: Int) `hashWithSalt` cpt
   hashWithSalt s PopulateBlockCache  = s `hashWithSalt` (2 :: Int)
 
-handleBlockReq :: Maybe (MVar Handle) -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
-handleBlockReq mh ref (LookupClosure cp) = do
+handleBlockReq :: (forall a . Request a -> IO a) -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
+handleBlockReq do_req ref (LookupClosure cp) = do
   bc <- readIORef ref
   let mrb = lookupClosure cp bc
   rb <- case mrb of
                Nothing -> do
-                 -- print ("MISS", cp)
-                 case mh of
-                   Nothing -> error ("Cache Miss:" ++ show cp)
-                   Just h -> do
-                    rb <- doRequest h (RequestBlock cp)
-                    atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
-                    return rb
+                  rb <- do_req (RequestBlock cp)
+                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
+                  return rb
                Just rb -> do
                  return rb
   return (extractFromBlock cp rb)
-handleBlockReq mh ref PopulateBlockCache = do
-  bc <- readIORef ref
-  blocks <- case mh of
-              -- Snapshot mode, just return whatever blocks are cached
-              Nothing -> return (allBlocks bc)
-              -- Otherwise, get the blocks
-              Just h -> doRequest h RequestAllBlocks
+handleBlockReq do_req ref PopulateBlockCache = do
+  blocks <- do_req RequestAllBlocks
 --  mapM_ (\rb -> print ("NEW", rawBlockAddr rb)) blocks
   print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
