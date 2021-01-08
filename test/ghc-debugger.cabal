@@ -21,6 +21,8 @@ executable debugger
                      , containers
                      , extra
                      , process
+                     , mtl
+                     , text
   default-language:    Haskell2010
   build-tool-depends: ghc-debug-stub:debug-test, dyepack-test:dyepack-test
   default-extensions: ApplicativeDo

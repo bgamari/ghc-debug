@@ -1,6 +1,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 module Main where
 
 import GHC.Debug.Client
@@ -10,6 +12,14 @@ import GHC.Debug.Client.Profile
 import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
+import GHC.Debug.Client.Trace
+import Control.Monad.RWS
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import Control.Monad.State
+import Data.Text (Text)
+import GHC.Exts.Heap.ClosureTypes
+import qualified Data.Foldable as F
 
 import Control.Monad
 import Debug.Trace
@@ -24,6 +34,8 @@ import System.Process
 import Data.Tree
 import Data.Maybe
 import qualified Data.Map as Map
+import Data.Ord
+import Data.List
 import Data.List.NonEmpty(NonEmpty(..))
 
 saveOnePath :: IO FilePath
@@ -44,7 +56,7 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p31 e)
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p34 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -438,3 +450,81 @@ p33 e = forM [0..] $ \i -> do
   putStrLn ("CACHED: " ++ show i)
   threadDelay 1_000_000
 
+p34 e = forM [0..] $ \i -> do
+  run e $ request RequestPause
+  res <- runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    res <- benAnalysis rs
+--    saveCache "/tmp/ghc-debug-cache"
+    return res
+  run e $ request RequestResume
+  print i
+  top10 <- printResult res
+  (hg, _) <- run e $ case top10 of
+    [] -> error "None"
+    (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
+  let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
+  mapM print (zip top10 cs)
+  putStrLn $ ppHeapGraph show hg
+  threadDelay 10_000_000
+
+data TwoContext a = TwoContext a a
+                | OneContext a
+                | NoContext
+                deriving Show
+
+consContext a (TwoContext b c) = TwoContext a b
+consContext a (OneContext b) = TwoContext a b
+consContext a NoContext = OneContext a
+
+printResult :: Show a => Map.Map a Count -> IO [a]
+printResult m = do
+  putStrLn $ "TOTAL: " ++ show total
+  mapM_ show_line top10
+  return (map fst top10)
+  where
+    show_line (k, Count v) = T.putStrLn (T.pack (show k) <> ": " <> T.pack (show v))
+    top10 = take 10 $ reverse (sortBy (comparing snd) (Map.toList m))
+    total = F.fold (Map.elems m)
+
+-- | From the given roots, find any path to one of the given pointers.
+-- Note: This function can be quite slow!
+benAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
+benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoContext (Map.empty)
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = visited
+              , conDescTrace = const (return ())
+
+            }
+
+    visited cp = do
+      sc <- lift $ lift $ dereferenceClosureFromBlock cp
+      closAccum cp sc (return ())
+    -- Add clos
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> StateT TraceState (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
+               -> StateT TraceState (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
+    closAccum cp sc k
+      | (tipe (decodedTable (info (noSize sc)))) == IND_STATIC
+      = do
+          ctx <- ask
+          case ctx of
+            TwoContext ("ghc:GHC.Core.TyCo:Rep:TyConApp", a) p -> do
+              loc <- lift $ lift $ a
+              lift $ modify' (Map.insertWith (<>) cp (Count 1))
+              k
+            OneContext p -> k
+            _ -> k
+      | otherwise = do
+          s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          let ty = closureToKey (noSize s')
+          local (consContext (ty, getSourceLoc s'))  k
+
+indStaticAnalysis :: [ClosurePtr] -> DebugM ()
+indStaticAnalysis = undefined
