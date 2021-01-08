@@ -440,13 +440,7 @@ p32 e = do
     traceMsg "loaded"
 
 p33 e = forM [0..] $ \i -> do
-  run e $ request RequestPause
-  runTrace e $ do
-    precacheBlocks
-    rs <- request RequestRoots
-    traceFrom rs
-    saveCache "/tmp/ghc-debug-cache"
-  run e $ request RequestResume
+  makeSnapshot e "/tmp/ghc-debug-cache"
   putStrLn ("CACHED: " ++ show i)
   threadDelay 1_000_000
 
@@ -456,17 +450,19 @@ p34 e = forM [0..] $ \i -> do
     precacheBlocks
     rs <- request RequestRoots
     res <- benAnalysis rs
---    saveCache "/tmp/ghc-debug-cache"
     return res
   run e $ request RequestResume
   print i
   top10 <- printResult res
+  {-
+  -- Use this code if we are returning ClosurePtr not SourceInformation
   (hg, _) <- run e $ case top10 of
     [] -> error "None"
     (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
   let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
   mapM print (zip top10 cs)
   putStrLn $ ppHeapGraph show hg
+  -}
   threadDelay 10_000_000
 
 data TwoContext a = TwoContext a a
@@ -488,8 +484,7 @@ printResult m = do
     top10 = take 10 $ reverse (sortBy (comparing snd) (Map.toList m))
     total = F.fold (Map.elems m)
 
--- | From the given roots, find any path to one of the given pointers.
--- Note: This function can be quite slow!
+-- | Analays the TyConApp[IND_STATIC, _] closures
 benAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
 benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoContext (Map.empty)
   where
@@ -502,10 +497,14 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
 
             }
 
+    -- Already visited the closure, but if it's still an IND_STATIC
+    -- closure, we still want to count it (because we are counting
+    -- TyConApp really) so call `closAccum`
     visited cp = do
       sc <- lift $ lift $ dereferenceClosureFromBlock cp
       closAccum cp sc (return ())
-    -- Add clos
+
+    -- First time we have visited a closure
     closAccum  :: ClosurePtr
                -> SizedClosure
                -> StateT TraceState (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
@@ -515,9 +514,11 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
       = do
           ctx <- ask
           case ctx of
-            TwoContext ("ghc:GHC.Core.TyCo:Rep:TyConApp", a) p -> do
+            TwoContext ("ghc:GHC.Core.TyCo.Rep:TyConApp", a) p -> do
               loc <- lift $ lift $ a
-              lift $ modify' (Map.insertWith (<>) cp (Count 1))
+              --lift $ modify' (Map.insertWith (<>) cp (Count 1))
+              lift $ modify' (Map.insertWith (<>) loc (Count 1))
+
               k
             OneContext p -> k
             _ -> k

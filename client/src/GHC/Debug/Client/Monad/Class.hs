@@ -21,4 +21,4 @@ class (MonadFail m, Monad m) => DebugMonad m where
   loadCache :: FilePath -> m ()
 
 
-data Mode = Snapshot FilePath | Socket Handle
+data Mode = SnapshotMode FilePath | SocketMode Handle

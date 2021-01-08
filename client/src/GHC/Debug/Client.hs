@@ -94,6 +94,7 @@ module GHC.Debug.Client
   , Quadtraversable(..)
   , precacheBlocks
   , traceFrom
+  , makeSnapshot
   , DebugEnv
   , DebugM
   ) where
@@ -588,16 +589,31 @@ dereferenceClosureFromBlock cp
 precacheBlocks :: DebugM [RawBlock]
 precacheBlocks = requestBlock PopulateBlockCache
 
+-- | Pause the process and create a snapshot of
+-- the heap. The snapshot can then be loaded with
+-- 'snapshotRun' in order to perform offline analysis.
+makeSnapshot :: DebugEnv DebugM -> FilePath -> IO ()
+makeSnapshot e fp = do
+  GD.run e $ request RequestPause
+  GD.runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    traceFrom rs
+    GD.saveCache fp
+  GD.run e $ request RequestResume
+
 -- Traverse the tree from GC roots, to populate the caches
 -- with everything necessary.
 traceFrom :: [ClosurePtr] -> DebugM ()
 traceFrom cps = evalStateT (mapM_ traceClosureFrom cps) IS.empty
 
+
+
 traceClosureFrom :: ClosurePtr -> StateT IS.IntSet DebugM ()
 traceClosureFrom cp@(ClosurePtr c) = do
     m <- get
     unless (IS.member (fromIntegral c) m) $ do
-      modify (IS.insert (fromIntegral c))
+      modify' (IS.insert (fromIntegral c))
       sc <- lift $ dereferenceClosureFromBlock cp
       quadtraverse tracePapFrom traceConstrDesc traceStackFrom traceClosureFrom sc
       case lookupStgInfoTableWithPtr (noSize sc) of

@@ -58,7 +58,7 @@ getResponseBinary (RequestInfoTable itps) = (\(it, r) -> (StgInfoTableWithPtr it
 --      <$> replicateM (length itps) getInfoTable
 getResponseBinary (RequestStackBitmap {}) = getPtrBitmap
 getResponseBinary (RequestFunBitmap {}) = getPtrBitmap
-getResponseBinary (RequestConstrDesc _)  = getConstrDesc
+getResponseBinary (RequestConstrDesc _)  = getConstrDescCache
 getResponseBinary RequestPoll          = get
 getResponseBinary RequestSavedObjects  = get
 getResponseBinary (RequestSourceInfo _c) = getIPE
@@ -75,12 +75,22 @@ putResponseBinary (RequestInfoTable itps) (t, r) = putInfoTable r
 --    mapM_ putInfoTable  (map (\(t, r) -> r) pitb)
 putResponseBinary (RequestStackBitmap {}) pbm = putPtrBitmap pbm
 putResponseBinary (RequestFunBitmap {}) pbm = putPtrBitmap pbm
-putResponseBinary (RequestConstrDesc _) cd  = putConstrDesc cd
+putResponseBinary (RequestConstrDesc _) cd  = putConstrDescCache cd
 putResponseBinary RequestPoll         r = put r
 putResponseBinary RequestSavedObjects os = putList os
 putResponseBinary (RequestSourceInfo _c) ipe = putIPE ipe
 putResponseBinary RequestAllBlocks rs = put rs
 putResponseBinary RequestBlock {} r = put r
+
+putConstrDescCache :: ConstrDesc -> Put
+putConstrDescCache (ConstrDesc a b c) = do
+  put a
+  put b
+  put c
+
+getConstrDescCache :: Get ConstrDesc
+getConstrDescCache =
+  ConstrDesc <$> get <*> get <*> get
 
 putLine :: AnyReq -> AnyResp -> Put -> Put
 putLine (AnyReq req) (AnyResp resp p) k = putRequest req >> p resp >> k

@@ -95,11 +95,11 @@ debuggeeConnect exeName socketName = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix socketName)
     hdl <- socketToHandle s ReadWriteMode
-    new_env <- newEnv @DebugM (Socket hdl)
+    new_env <- newEnv @DebugM (SocketMode hdl)
     return new_env
 
 snapshotInit :: FilePath -> IO (DebugEnv DebugM)
-snapshotInit fp = newEnv @DebugM (Snapshot fp)
+snapshotInit fp = newEnv @DebugM (SnapshotMode fp)
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: DebugEnv DebugM -> IO ()

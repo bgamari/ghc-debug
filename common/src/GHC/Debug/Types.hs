@@ -335,16 +335,6 @@ getConstrDesc = do
   len <- getInt32be
   parseConstrDesc . C8.unpack <$> getByteString (fromIntegral len)
 
-putConstrDesc :: ConstrDesc -> Put
-putConstrDesc cd = do
-  let s = case cd of
-            ConstrDesc "" "" c -> c
-            ConstrDesc a b c -> a ++ ":" ++ b ++ ":" ++ c
-  putInt32be (fromIntegral $ length s)
-  putByteString (C8.pack s)
-
-
-
 getIPE :: Get (Maybe SourceInformation)
 getIPE = do
   num <- getInt32be

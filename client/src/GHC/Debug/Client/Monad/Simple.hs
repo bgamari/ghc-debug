@@ -29,6 +29,7 @@ import GHC.Debug.Client.Monad.Class
 
 import Control.Monad.Reader
 import Data.Binary
+--import Debug.Trace
 
 
 data Debuggee = Debuggee { -- Keep track of how many of each request we make
@@ -64,6 +65,26 @@ ppRequestLog hm = unlines (map row items)
     row (cid, FetchStats net cache) = unwords [show cid ++ ":", show net, show cache]
     items = sortBy (comparing fst) (HM.toList hm)
 
+data Snapshot = Snapshot {
+                    _version :: Word32
+                  , _rqc :: RequestCache
+                  , _bc  :: BlockCache
+                  }
+
+snapshotVersion :: Word32
+snapshotVersion = 0
+
+instance Binary Snapshot where
+  get = do
+    v <- get
+    if v == snapshotVersion
+      then Snapshot <$> pure v <*> get <*> get
+      else fail ("Wrong snapshot version.\nGot: " ++ show v ++ "\nExpected: " ++ show snapshotVersion)
+  put (Snapshot v c1 c2) = do
+    put v
+    put c1
+    put c2
+
 
 instance DebugMonad DebugM where
   type DebugEnv DebugM = Debuggee
@@ -78,11 +99,11 @@ instance DebugMonad DebugM where
   runDebug = runSimple
   runDebugTrace e a = (,[]) <$> runDebug e a
   newEnv m = case m of
-               Snapshot f -> mkSnapshotEnv f
-               Socket h -> mkHandleEnv h
+               SnapshotMode f -> mkSnapshotEnv f
+               SocketMode h -> mkHandleEnv h
 
   loadCache fp = DebugM $ do
-    (new_req_cache, new_block_cache) <- lift $ decodeFile fp
+    (Snapshot _ new_req_cache new_block_cache) <- lift $ decodeFile fp
     Debuggee{..} <- ask
     lift $ swapMVar debuggeeRequestCache new_req_cache
     lift $ writeIORef debuggeeBlockCache new_block_cache
@@ -91,7 +112,7 @@ instance DebugMonad DebugM where
     Debuggee{..} <- ask
     Just req_cache <- lift $ tryReadMVar debuggeeRequestCache
     block_cache <- lift $ readIORef debuggeeBlockCache
-    lift $ encodeFile fp (req_cache, block_cache)
+    lift $ encodeFile fp (Snapshot snapshotVersion req_cache block_cache)
 
 
 
@@ -114,8 +135,8 @@ mkHandleEnv h = mkEnv (emptyRequestCache, emptyBlockCache) (Just h)
 
 mkSnapshotEnv :: FilePath -> IO Debuggee
 mkSnapshotEnv fp = do
-  caches <- decodeFile fp
-  mkEnv caches Nothing
+  Snapshot _ req_c block_c <- decodeFile fp
+  mkEnv (req_c, block_c) Nothing
 
 
 
