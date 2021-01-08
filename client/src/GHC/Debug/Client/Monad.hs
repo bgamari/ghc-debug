@@ -91,7 +91,7 @@ debuggeeRun exeName socketName = do
 debuggeeConnect :: FilePath  -- ^ path to executable to run as the debuggee
                 -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO (DebugEnv DebugM)
-debuggeeConnect exeName socketName = do
+debuggeeConnect _exeName socketName = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix socketName)
     hdl <- socketToHandle s ReadWriteMode

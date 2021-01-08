@@ -248,11 +248,11 @@ putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
 putRequest (RequestClosure cs)  =
   putCommand cmdRequestClosures $ do
-    putWord16be $ fromIntegral 1
+    putWord16be 1
     put cs
 putRequest (RequestInfoTable ts) =
   putCommand cmdRequestInfoTables $ do
-    putWord16be $ fromIntegral 1
+    putWord16be 1
     put ts
 putRequest (RequestStackBitmap sp o)       =
   putCommand cmdRequestStackBitmap $ put sp >> putWord32be o
@@ -268,6 +268,7 @@ putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
 putRequest (RequestAllBlocks) = putCommand cmdRequestAllBlocks $ return ()
 putRequest (RequestBlock cp)  = putCommand cmdRequestBlock $ put cp
 
+-- This is used to serialise the RequestCache
 getRequest :: Get AnyReq
 getRequest = do
   len <- getWord32be
@@ -279,12 +280,12 @@ getRequest = do
       | cmd == cmdRequestResume  -> return (AnyReq RequestResume)
       | cmd == cmdRequestRoots   -> return (AnyReq RequestRoots)
       | cmd == cmdRequestClosures -> do
-          n <- getWord16be
+          _n <- getWord16be
 --          cs <- replicateM (fromIntegral n) get
           cp <- get
           return (AnyReq (RequestClosure cp))
       | cmd == cmdRequestInfoTables -> do
-          n <- getWord16be
+          _n <- getWord16be
           --itbs <- replicateM (fromIntegral n) get
           itb <- get
           return (AnyReq (RequestInfoTable itb))
@@ -316,7 +317,7 @@ getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
-getResponse (RequestClosure cs) = getRawClosure
+getResponse (RequestClosure {}) = getRawClosure
 getResponse (RequestInfoTable itbp) = (\(it, r) -> (StgInfoTableWithPtr itbp it, r)) <$> getInfoTable
 --    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
 --      <$> replicateM (length itps) getInfoTable

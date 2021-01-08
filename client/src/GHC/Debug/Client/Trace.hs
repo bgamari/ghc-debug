@@ -46,7 +46,7 @@ traceClosureFromM :: C m
                   => TraceFunctions m
                   -> ClosurePtr
                   -> StateT TraceState (m DebugM) ()
-traceClosureFromM k cp = go cp
+traceClosureFromM k = go
   where
     go cp = do
       m <- get
@@ -61,7 +61,7 @@ traceClosureFromM k cp = go cp
 traceStackFromM :: C m
                 => TraceFunctions m
                 -> StackCont -> StateT TraceState (m DebugM) ()
-traceStackFromM f st = go st
+traceStackFromM f = go
   where
     go st = do
       st' <- lift $ lift $ dereferenceStack st
@@ -70,7 +70,7 @@ traceStackFromM f st = go st
 
 traceConstrDescM :: (C m)
                  => TraceFunctions m -> ConstrDescCont -> StateT s (m DebugM) ()
-traceConstrDescM f d = go d
+traceConstrDescM f = go
   where
     go d = do
       cd <- lift $ lift $ dereferenceConDesc d
@@ -80,8 +80,9 @@ tracePapPayloadM :: C m
                  => TraceFunctions m
                  -> PayloadCont
                  -> StateT TraceState (m DebugM) ()
-tracePapPayloadM f p = go p where
-  go p = do
-    p' <- lift $ lift $ dereferencePapPayload p
-    lift $ papTrace f p'
-    () <$ traverse (traceClosureFromM f) p'
+tracePapPayloadM f = go
+  where
+    go p = do
+      p' <- lift $ lift $ dereferencePapPayload p
+      lift $ papTrace f p'
+      () <$ traverse (traceClosureFromM f) p'

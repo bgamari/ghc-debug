@@ -105,7 +105,7 @@ instance DebugMonad DebugM where
   loadCache fp = DebugM $ do
     (Snapshot _ new_req_cache new_block_cache) <- lift $ decodeFile fp
     Debuggee{..} <- ask
-    lift $ swapMVar debuggeeRequestCache new_req_cache
+    _old_rc <- lift $ swapMVar debuggeeRequestCache new_req_cache
     lift $ writeIORef debuggeeBlockCache new_block_cache
 
   saveCache fp = DebugM $ do

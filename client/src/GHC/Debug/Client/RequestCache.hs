@@ -9,17 +9,13 @@ module GHC.Debug.Client.RequestCache(RequestCache
                                     , putCache
                                     , getCache ) where
 
-import Data.Hashable
 import qualified Data.HashMap.Strict as HM
 import GHC.Debug.Types
 import Unsafe.Coerce
-import GHC.Exts
 import Data.Binary
-import Control.Applicative
 import Control.Monad
 import Data.Binary.Put
 import Data.Binary.Get
-import Debug.Trace
 
 newtype RequestCache = RequestCache (HM.HashMap AnyReq AnyResp)
 
@@ -51,7 +47,7 @@ getResponseBinary RequestVersion       = getWord32be
 getResponseBinary RequestPause         = get
 getResponseBinary RequestResume        = get
 getResponseBinary RequestRoots         = get
-getResponseBinary (RequestClosure cs) = getRawClosure
+getResponseBinary (RequestClosure {}) = getRawClosure
 --    replicateM (length cs) getRawClosure
 getResponseBinary (RequestInfoTable itps) = (\(it, r) -> (StgInfoTableWithPtr itps it, r)) <$> getInfoTable
 --    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
@@ -71,7 +67,7 @@ putResponseBinary RequestPause w       = put w
 putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs
 putResponseBinary (RequestClosure {}) rcs = putRawClosure rcs
-putResponseBinary (RequestInfoTable itps) (t, r) = putInfoTable r
+putResponseBinary (RequestInfoTable {}) (_, r) = putInfoTable r
 --    mapM_ putInfoTable  (map (\(t, r) -> r) pitb)
 putResponseBinary (RequestStackBitmap {}) pbm = putPtrBitmap pbm
 putResponseBinary (RequestFunBitmap {}) pbm = putPtrBitmap pbm
