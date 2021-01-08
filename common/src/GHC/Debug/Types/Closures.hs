@@ -93,6 +93,10 @@ instance Show (f (Fix1 pap string f g)) => Show (Fix2 pap string f g) where
         showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
                 "Fix2 " ++ showsPrec 11 x s
 
+instance Show (pap (Fix1 pap string f g)) => Show (Fix3 pap string f g) where
+        showsPrec n (MkFix3 x) = showParen (n > 10) $ \s ->
+                "Fix3 " ++ showsPrec 11 x s
+
 type UClosure = Fix1 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
 type UStack   = Fix2 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
 type UPapPayload = Fix3 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
