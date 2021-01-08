@@ -12,6 +12,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# OPTIONS_GHC -Wno-warn-orphans #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
 - additional support for STACK closures which are only possible to decode
 - out of process
@@ -217,7 +219,7 @@ type DebugClosureWithSize = DebugClosureWithExtra Size
 
 data DebugClosureWithExtra x pap string s b = DCS { extraDCS :: x
                                               , unDCS :: DebugClosure pap string s b }
-    deriving (Show)
+    deriving (Show, Ord, Eq)
 
 -- | Exclusive size
 newtype Size = Size { getSize :: Int }
@@ -247,6 +249,12 @@ data StgInfoTableWithPtr = StgInfoTableWithPtr {
                               tableId :: InfoTablePtr
                             , decodedTable :: StgInfoTable
                             } deriving (Show)
+
+instance Ord StgInfoTableWithPtr where
+  compare t1 t2 = compare (tableId t1) (tableId t2)
+
+instance Eq StgInfoTableWithPtr where
+  t1 == t2 = tableId t1 == tableId t2
 
 
 -- | This is the representation of a Haskell value on the heap. It reflects
@@ -473,7 +481,16 @@ data DebugClosure pap string s b
   | UnsupportedClosure
         { info       :: !StgInfoTableWithPtr
         }
-  deriving (Show, Generic, Functor, Foldable, Traversable)
+  deriving (Show, Generic, Functor, Foldable, Traversable, Ord, Eq)
+
+deriving instance Ord GHC.WhatNext
+deriving instance Ord GHC.WhyBlocked
+deriving instance Ord GHC.TsoFlags
+deriving instance Ord CostCentreStack
+deriving instance Ord CostCentre
+deriving instance Ord IndexTable
+deriving instance Ord StgTSOProfInfo
+deriving instance Eq StgTSOProfInfo
 
 data TRecEntry b = TRecEntry { tvar :: !b
                              , expected_value :: !b
@@ -481,28 +498,30 @@ data TRecEntry b = TRecEntry { tvar :: !b
                              , trec_num_updates :: Int -- Only in THREADED, TODO: This is not an Int,
                                                        -- is it a pointer
                                                        -- to a haskell int
-                             } deriving (Show, Generic, Functor, Foldable, Traversable)
+                             } deriving (Show, Generic, Functor, Foldable, Traversable, Ord, Eq)
 
 newtype GenPapPayload b = GenPapPayload { getValues :: [FieldValue b] }
-  deriving (Functor, Foldable, Traversable, Show)
+  deriving (Functor, Foldable, Traversable, Show, Ord, Eq)
 
 type PapPayload = GenPapPayload ClosurePtr
 
 type StackFrames = GenStackFrames ClosurePtr
 newtype GenStackFrames b = GenStackFrames { getFrames :: [DebugStackFrame b] }
-  deriving (Functor, Foldable, Traversable, Show)
+  deriving (Functor, Foldable, Traversable, Show, Ord, Eq)
 
 data DebugStackFrame b
   = DebugStackFrame
         { frame_info :: !StgInfoTableWithPtr
         , values     :: [FieldValue b]
-        } deriving (Traversable, Functor, Foldable, Show)
+        } deriving (Traversable, Functor, Foldable, Show, Ord, Eq)
+
+
 
 data ConstrDesc = ConstrDesc {
           pkg        :: !String         -- ^ Package name
         , modl       :: !String         -- ^ Module name
         , name       :: !String         -- ^ Constructor name
-        } deriving (Show, Eq)
+        } deriving (Show, Eq, Ord)
 
 
 -- Copied from ghc-heap
@@ -555,7 +574,7 @@ allClosures :: DebugClosure (GenPapPayload c) a (GenStackFrames c) c -> [c]
 allClosures c = getConst $ quadtraverse (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b
-                  | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable)
+                  | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable, Ord, Eq)
 
 
 instance Quadtraversable DebugClosure where

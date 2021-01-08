@@ -52,7 +52,7 @@ newtype ClosurePtr = ClosurePtr Word64
 
 instance Binary ClosurePtr where
   put (ClosurePtr p) = putWord64be (toBE64 p)
-  get = ClosurePtr . fromBE64 <$> getWord64be
+  get = untagClosurePtr . ClosurePtr . fromBE64 <$> getWord64be
 
 instance Ord ClosurePtr where
   (ClosurePtr x) `compare` (ClosurePtr y) = x `compare` y

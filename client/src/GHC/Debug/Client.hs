@@ -8,6 +8,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ViewPatterns #-}
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
     Debuggee(..)
@@ -491,7 +492,7 @@ dereferenceClosure :: ClosurePtr -> DebugM GD.Closure
 dereferenceClosure c = noSize . head <$> dereferenceClosures [c]
 
 dereferenceSizedClosure :: ClosurePtr -> DebugM SizedClosure
-dereferenceSizedClosure c = do
+dereferenceSizedClosure (untagClosurePtr -> c) = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
     --print $ map (lookupDwarf d) its
@@ -521,7 +522,7 @@ dereferencePapPayload (PayloadCont fp raw) = do
       modify tail
       return v
 
-    decodeField True  = SPtr . ClosurePtr <$> getWord
+    decodeField True  = SPtr . untagClosurePtr . ClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord
 
 
@@ -578,7 +579,7 @@ traceProfile e = do
 -- closure, if it's not there then try to fetch the right block, if that
 -- fails, call 'dereferenceClosure'
 dereferenceClosureFromBlock :: ClosurePtr -> DebugM SizedClosure
-dereferenceClosureFromBlock cp
+dereferenceClosureFromBlock (untagClosurePtr -> cp)
   | not (heapAlloced cp) = dereferenceSizedClosure cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)

@@ -163,10 +163,14 @@ generalBuildHeapGraph deref limit hg addBoxes = do
 -- >    x6 = C# 'H' : C# 'o' : x6
 -- >in (x1,x1,x6)
 ppHeapGraph :: (a -> String) -> HeapGraph a -> String
-ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++ printData (hgeData (iToE heapGraphRoot)) ++ ") " ++ ppRef 0 (Just heapGraphRoot)
+ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++ printData (hgeData (iToE heapGraphRoot)) ++ ") " ++ roots
   where
     -- All variables occuring more than once
     bindings = boundMultipleTimes (HeapGraph (heapGraphRoot :| rs) m) [heapGraphRoot]
+
+    roots = unlines [
+              "r" ++ show n ++ ": " ++ ppRef 0 (Just r)
+              | (n, r) <- zip [0..] (heapGraphRoot : rs) ]
 
     letWrapper =
         if null bindings

@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ViewPatterns #-}
 -- | Functions to support the constant space traversal of a heap.
 module GHC.Debug.Client.Trace where
 
@@ -48,7 +49,7 @@ traceClosureFromM :: C m
                   -> StateT TraceState (m DebugM) ()
 traceClosureFromM k = go
   where
-    go cp = do
+    go (untagClosurePtr -> cp) = do
       m <- get
       if (checkVisit cp m)
         then visitedVal k cp

@@ -14,6 +14,7 @@ import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
 import GHC.Debug.Client.Trace
+import GHC.Debug.Client.ObjectEquiv
 import Control.Monad.RWS
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -57,7 +58,7 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p34 e)
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p35 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -450,7 +451,7 @@ p34 e = forM [0..] $ \i -> do
   res <- runTrace e $ do
     precacheBlocks
     rs <- request RequestRoots
-    res <- benAnalysis rs
+    res <- sebAnalysis rs
     return res
   run e $ request RequestResume
   print i
@@ -465,6 +466,9 @@ p34 e = forM [0..] $ \i -> do
   putStrLn $ ppHeapGraph show hg
   -}
   threadDelay 10_000_000
+
+
+p35 e = objectEquiv e
 
 data TwoContext a = TwoContext a a
                 | OneContext a
@@ -528,5 +532,32 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
           let ty = closureToKey (noSize s')
           local (consContext (ty, getSourceLoc s'))  k
 
+-- | Analays the TyConApp[IND_STATIC, _] closures
+sebAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
+sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    -- First time we have visited a closure
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> StateT TraceState (RWST () () (Map.Map _ Count) DebugM) ()
+               -> StateT TraceState (RWST () () (Map.Map _ Count) DebugM) ()
+    closAccum cp sc k = do
+          s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          let ty = closureToKey (noSize s')
+          when (ty == "ghc:GHC.Types.Demand:DmdType") $ do
+            loc <- lift $ lift $ getSourceLoc sc
+            lift $ modify' (Map.insertWith (<>) loc (Count 1))
+          k
+
 indStaticAnalysis :: [ClosurePtr] -> DebugM ()
 indStaticAnalysis = undefined
+
