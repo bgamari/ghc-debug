@@ -78,7 +78,7 @@ data SourceInformation = SourceInformation { infoName        :: !String
                                          , infoLabel       :: !String
                                          , infoModule      :: !String
                                          , infoPosition    :: !String }
-                                         deriving (Show, Eq)
+                                         deriving (Show, Eq, Ord)
 
 
 
