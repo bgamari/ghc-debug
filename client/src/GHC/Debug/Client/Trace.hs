@@ -10,6 +10,7 @@ import           GHC.Debug.Client
 import qualified Data.IntSet as IS
 import Control.Monad.State
 import Debug.Trace
+import Control.Monad.Identity
 
 data TraceState = TraceState { visited :: !(IS.IntSet) }
 
@@ -34,6 +35,21 @@ checkVisit :: ClosurePtr -> TraceState -> Bool
 checkVisit (ClosurePtr c) st = IS.member (fromIntegral c) (visited st)
 
 type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
+
+-- Traverse the tree from GC roots, to populate the caches
+-- with everything necessary.
+traceFrom :: [ClosurePtr] -> DebugM ()
+traceFrom cps = runIdentityT (traceFromM funcs cps)
+  where
+    nop = const (return ())
+    funcs = TraceFunctions nop nop clos (const (return ())) nop
+
+    clos :: ClosurePtr -> SizedClosure -> StateT TraceState (IdentityT DebugM) ()
+              -> StateT TraceState (IdentityT DebugM) ()
+    clos cp sc k = do
+      case lookupStgInfoTableWithPtr (noSize sc) of
+        infoTableWithptr -> lift $ lift $ request (RequestSourceInfo (tableId infoTableWithptr))
+      k
 
 traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
 traceFromM k cps = evalStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty)
