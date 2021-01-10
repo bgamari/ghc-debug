@@ -87,7 +87,7 @@ traceClosureFromM :: C m
                   -> ReaderT (IORef TraceState) (m DebugM) ()
 traceClosureFromM k = go
   where
-    go (untagClosurePtr -> cp) = do
+    go cp = do
       mref <- ask
       b <- lift $ lift $ unsafeLiftIO (checkVisit cp mref)
       if b

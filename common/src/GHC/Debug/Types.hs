@@ -328,8 +328,8 @@ getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
 getResponse (RequestSourceInfo _c) = getIPE
-getResponse RequestAllBlocks = many getBlock
-getResponse RequestBlock {}  = getBlock
+getResponse RequestAllBlocks = many get
+getResponse RequestBlock {}  = get
 
 
 getConstrDesc :: Get ConstrDesc

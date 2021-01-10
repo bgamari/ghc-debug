@@ -492,7 +492,7 @@ dereferenceClosure :: ClosurePtr -> DebugM GD.Closure
 dereferenceClosure c = noSize . head <$> dereferenceClosures [c]
 
 dereferenceSizedClosure :: ClosurePtr -> DebugM SizedClosure
-dereferenceSizedClosure (untagClosurePtr -> c) = do
+dereferenceSizedClosure c = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
     --print $ map (lookupDwarf d) its
@@ -522,7 +522,7 @@ dereferencePapPayload (PayloadCont fp raw) = do
       modify tail
       return v
 
-    decodeField True  = SPtr . untagClosurePtr . ClosurePtr <$> getWord
+    decodeField True  = SPtr . mkClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord
 
 
@@ -579,7 +579,7 @@ traceProfile e = do
 -- closure, if it's not there then try to fetch the right block, if that
 -- fails, call 'dereferenceClosure'
 dereferenceClosureFromBlock :: ClosurePtr -> DebugM SizedClosure
-dereferenceClosureFromBlock (untagClosurePtr -> cp)
+dereferenceClosureFromBlock cp
   | not (heapAlloced cp) = dereferenceSizedClosure cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)

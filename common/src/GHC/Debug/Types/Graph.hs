@@ -350,7 +350,7 @@ closurePtrToInt :: ClosurePtr -> Int
 closurePtrToInt (ClosurePtr p) = fromIntegral p
 
 intToClosurePtr :: Int -> ClosurePtr
-intToClosurePtr i = ClosurePtr (fromIntegral i)
+intToClosurePtr i = mkClosurePtr (fromIntegral i)
 
 convertToDom :: HeapGraph a -> DO.Rooted
 convertToDom  (HeapGraph roots is) = (0, graph)

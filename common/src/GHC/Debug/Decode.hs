@@ -118,10 +118,9 @@ decodeAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
   carity <- getWord32le
   nargs <- getWord32le
-  fun_ptr <- getWord64le
+  funp <- getClosurePtr
   cpayload <- replicateM (fromIntegral nargs) getWord64le
-  let funp = (ClosurePtr fun_ptr)
-      cont = PayloadCont funp cpayload
+  let cont = PayloadCont funp cpayload
   return $ (GHC.Debug.Types.Closures.APClosure infot carity nargs funp cont)
 
 
@@ -134,7 +133,7 @@ decodeTVarClosure (infot, _) (_, rc) = decodeFromBS rc $ do
   return $ (TVarClosure infot ptr watch_queue (fromIntegral updates))
 
 getClosurePtr :: Get ClosurePtr
-getClosurePtr = ClosurePtr <$> getWord64le
+getClosurePtr = mkClosurePtr <$> getWord64le
 
 getWord :: Get Word64
 getWord = getWord64le
@@ -213,12 +212,12 @@ decodeFromBS (RawClosure rc) parser =
       in DCS (Size s) v
 
 decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeAPStack (infot, _) (cp, rc) = decodeFromBS rc $ do
+decodeAPStack (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
   st_size <- getWord
   fun_closure <- getClosurePtr
   k <- bytesRead
-  let sp = addStackPtr (coerce cp) (fromIntegral k)
+  let sp = addStackPtr (StackPtr cp) (fromIntegral k)
   clos_payload <- RawStack <$> getByteString (fromIntegral st_size)
   return $ GHC.Debug.Types.Closures.APStackClosure
               infot
@@ -265,7 +264,7 @@ decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $
         return $ DCS s . quadmap absurd
                         id
                         absurd
-                        ClosurePtr . convertClosure itb
+                        mkClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> (W64# w)) r
   where
 --    stackCont :: (Word32, StackPtr) -> StackCont
@@ -302,5 +301,5 @@ extractFromBlock cp (RawBlock bp _ b) =
     --traceShow ("FP", fp `plusForeignPtr` offset)
     RawClosure (B.drop offset b)
     where
-      offset = fromIntegral (subtractBlockPtr (untagClosurePtr cp) bp)
+      offset = fromIntegral (subtractBlockPtr cp bp)
 

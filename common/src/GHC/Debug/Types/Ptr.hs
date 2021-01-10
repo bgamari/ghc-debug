@@ -5,6 +5,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 -- | Data types for representing different pointers and raw information
 -- All pointers are stored in little-endian to make arithmetic easier.
@@ -12,7 +13,49 @@
 -- We have to send and recieve the pointers in big endiant though. This
 -- conversion is dealt with in the Binary instance for ClosurePtr and
 -- then the other pointers are derived from this instance using DerivingVia
-module GHC.Debug.Types.Ptr where
+module GHC.Debug.Types.Ptr( InfoTablePtr(..)
+                          , RawInfoTable(..)
+                          -- UntaggedClosurePtr constructor not exported so
+                          -- we can maintain the invariant that all
+                          -- ClosurePtr are untagged
+                          , ClosurePtr(ClosurePtr)
+                          , mkClosurePtr
+                          , RawClosure(..)
+                          , BlockPtr(..)
+                          , StackPtr(..)
+                          , StackCont(..)
+                          , RawStack(..)
+                          , RawBlock(..)
+                          , isLargeBlock
+                          , isPinnedBlock
+                          , rawBlockAddr
+                          , applyBlockMask
+                          , applyMBlockMask
+                          , getBlockOffset
+                          , blockMask
+                          , mblockMask
+                          , mblockMaxSize
+                          , blockMaxSize
+                          , blockMBlock
+                          , subtractStackPtr
+                          , calculateStackLen
+                          , addStackPtr
+                          , subtractBlockPtr
+                          , arrWordsBS
+
+                          , getInfoTblPtr
+                          , heapAlloced
+
+                          , profiling
+                          , tablesNextToCode
+
+                          , printStack
+                          , rawStackSize
+                          , rawBlockSize
+                          , rawClosureSize
+                          , prettyPrint
+                          , printBS
+                          )  where
 
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
@@ -46,13 +89,24 @@ newtype InfoTablePtr = InfoTablePtr Word64
                      deriving newtype (Hashable)
                      deriving (Show, Binary) via ClosurePtr
 
-newtype ClosurePtr = ClosurePtr Word64
+-- Invariant, ClosurePtrs are *always* untagged, we take some care to
+-- untag them when making a ClosurePtr so we don't have to do it on every
+-- call to decodeClosure
+newtype ClosurePtr = UntaggedClosurePtr Word64
                    deriving (Eq)
                    deriving newtype (Hashable)
 
+pattern ClosurePtr :: Word64 -> ClosurePtr
+pattern ClosurePtr p <- UntaggedClosurePtr p
+
+{-# COMPLETE ClosurePtr #-}
+
+mkClosurePtr :: Word64 -> ClosurePtr
+mkClosurePtr = untagClosurePtr . UntaggedClosurePtr
+
 instance Binary ClosurePtr where
   put (ClosurePtr p) = putWord64be (toBE64 p)
-  get = untagClosurePtr . ClosurePtr . fromBE64 <$> getWord64be
+  get = mkClosurePtr . fromBE64 <$> getWord64be
 
 instance Ord ClosurePtr where
   (ClosurePtr x) `compare` (ClosurePtr y) = x `compare` y
@@ -197,7 +251,7 @@ tAG_MASK :: Word64
 tAG_MASK = 0b111
 
 untagClosurePtr :: ClosurePtr -> ClosurePtr
-untagClosurePtr (ClosurePtr w) = ClosurePtr (w .&. complement tAG_MASK)
+untagClosurePtr (ClosurePtr w) = UntaggedClosurePtr (w .&. complement tAG_MASK)
 
 getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = runGet (isolate 8 get) (BSL.fromStrict bs)

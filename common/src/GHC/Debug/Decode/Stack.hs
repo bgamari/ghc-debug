@@ -48,7 +48,7 @@ getFrame st_bitmap itbl =
         fields <- traversePtrBitmap decodeField st_bitmap
         return (DebugStackFrame itbl fields)
   where
-    decodeField True  = SPtr . ClosurePtr <$> getWord
+    decodeField True  = SPtr . mkClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord
 
     headerSize RET_FUN = 3
