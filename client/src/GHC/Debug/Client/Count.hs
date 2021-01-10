@@ -6,7 +6,8 @@ import           GHC.Debug.Client.Profile
 import           GHC.Debug.Client.Trace
 import Control.Monad.State
 
--- | General function for performing a heap census in constant memory
+-- | Simple statistics about a heap, total objects, size and maximum object
+-- size
 count :: [ClosurePtr] -> DebugM CensusStats
 count cps = snd <$> runStateT (traceFromM funcs cps) (CS 0 0 0)
   where
@@ -18,7 +19,7 @@ count cps = snd <$> runStateT (traceFromM funcs cps) (CS 0 0 0)
               , conDescTrace = const (return ())
 
             }
-    -- Add cos
+
     closAccum  :: ClosurePtr
                -> SizedClosure
                ->  (StateT CensusStats DebugM) ()
