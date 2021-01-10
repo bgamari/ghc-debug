@@ -7,8 +7,6 @@ import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client
 
---import qualified Data.IntSet as IS
-import qualified GHC.Debug.Client.IntSet as IS
 import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO
 import Control.Monad.Reader
@@ -17,7 +15,7 @@ import Debug.Trace
 import Control.Monad.Identity
 import Data.Word
 
-newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word64))
+newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word16))
 
 newtype TraceState = TraceState { visited :: VisitedSet }
 
@@ -32,12 +30,12 @@ data TraceFunctions m =
 
 type C m = (MonadTrans m, Monad (m DebugM))
 
-getKeyPair :: ClosurePtr -> (Int, Word64)
+getKeyPair :: ClosurePtr -> (Int, Word16)
 getKeyPair cp =
   let BlockPtr raw_bk = applyBlockMask cp
       bk = fromIntegral raw_bk `div` 8
       offset = (getBlockOffset cp) `div` 8
-  in (bk, offset)
+  in (bk, fromIntegral offset)
 
 checkVisit :: ClosurePtr -> IORef TraceState -> IO Bool
 checkVisit cp mref = do
@@ -46,7 +44,7 @@ checkVisit cp mref = do
       (bk, offset) = getKeyPair cp
   case IM.lookup bk v of
     Nothing -> do
-      na <- newArray (0, blockMask `div` 8) False
+      na <- newArray (0, fromIntegral (blockMask `div` 8)) False
       writeArray na offset True
       writeIORef mref (TraceState (VisitedSet (IM.insert bk na v)))
       return False
