@@ -10,6 +10,7 @@ import GHC.Debug.Client hiding (traceFrom)
 import GHC.Debug.Client.Retainers
 import GHC.Debug.Client.Fragmentation
 import GHC.Debug.Client.Profile
+import GHC.Debug.Client.Count
 import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
 import GHC.Debug.Types.Closures
@@ -58,7 +59,7 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p36 e)
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p37 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -476,6 +477,16 @@ p36 e = do
     precacheBlocks
     rs <- request RequestRoots
     traceFrom rs
+    traceFrom rs
+
+p37 e = do
+  run e $ request RequestPause
+  cs <- runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    count rs
+  print cs
+
 
 data TwoContext a = TwoContext a a
                 | OneContext a
