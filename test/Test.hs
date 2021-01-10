@@ -60,7 +60,7 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p39 e)
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p40 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -506,6 +506,26 @@ p39 e = do
   putStrLn $ ppHeapGraph show hg
   displayRetainerStack [rs]
 
+p40 e = forM [0..] $ \i -> do
+  run e $ request RequestPause
+  res <- runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    res <- thunkAnalysis rs
+    return res
+  run e $ request RequestResume
+  print i
+  top10 <- printResult res
+  {-
+  -- Use this code if we are returning ClosurePtr not SourceInformation
+  (hg, _) <- run e $ case top10 of
+    [] -> error "None"
+    (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
+  let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
+  mapM print (zip top10 cs)
+  putStrLn $ ppHeapGraph show hg
+  -}
+  threadDelay 10_000_000
 
 
 data TwoContext a = TwoContext a a
@@ -524,7 +544,7 @@ printResult m = do
   return (map fst top10)
   where
     show_line (k, Count v) = T.putStrLn (T.pack (show k) <> ": " <> T.pack (show v))
-    top10 = take 10 $ reverse (sortBy (comparing snd) (Map.toList m))
+    top10 = take 100 $ reverse (sortBy (comparing snd) (Map.toList m))
     total = F.fold (Map.elems m)
 
 -- | Analays the TyConApp[IND_STATIC, _] closures
@@ -569,6 +589,31 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
           s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
           let ty = closureToKey (noSize s')
           local (consContext (ty, getSourceLoc s'))  k
+
+-- | Analays the TyConApp[IND_STATIC, _] closures
+thunkAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
+thunkAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    -- First time we have visited a closure
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+    closAccum cp sc k = do
+          case (noSize sc) of
+            ThunkClosure {} ->  do
+              loc <- lift $ getSourceLoc sc
+              modify' (Map.insertWith (<>) loc (Count 1))
+            _ -> k
 
 -- | Analays the TyConApp[IND_STATIC, _] closures
 sebAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
@@ -630,7 +675,6 @@ findUnfoldings rroots = execStateT (traceFromM funcs rroots) []
           s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
           let ty = closureToKey (noSize s')
           when (ty == "ghc:GHC.Core:CoreUnfolding") $ do
-            loc <- lift $ getSourceLoc sc
             modify' (cp :)
           k
 
