@@ -17,6 +17,7 @@ import GHC.Debug.Types.Closures
 import GHC.Debug.Client.Trace
 import GHC.Debug.Client.ObjectEquiv
 import Control.Monad.RWS
+import Control.Monad.Writer
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Control.Monad.State
@@ -59,7 +60,7 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p37 e)
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p39 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -377,9 +378,7 @@ p30 e = profile 10_000_000 e
 p31 e = analyseFragmentation 1_000_000 e
 
 -- Given the roots and bad closures, find out why they are being retained
-doAnalysis rs bad_ptrs = do
-  let ptrs = snd (fst bad_ptrs)
-      l = snd bad_ptrs
+doAnalysis rs (l, ptrs) = do
   rs <- findRetainers rs ptrs
   stack <- case rs of
     [] -> traceWrite "EMPTY RETAINERS" >> return Nothing
@@ -389,6 +388,18 @@ doAnalysis rs bad_ptrs = do
       locs <- mapM getSourceLoc cs'
       return $ Just (zip cs' locs)
   return ((l,) <$> stack)
+
+displayRetainerStack :: _
+displayRetainerStack rs = do
+      let disp (d, l) =
+            maybe "nl" infoModule l ++ ":" ++ (ppClosure (maybe "" tdisplay l)  (\_ -> show) 0 . noSize $ d)
+            where
+              tdisplay sl = infoModule sl ++ ":" ++ infoPosition sl
+          do_one k (l, stack) = do
+            putStrLn (show k ++ "-------------------------------------")
+            print l
+            mapM (putStrLn . disp) stack
+      zipWithM do_one [0..] (catMaybes rs)
 
 analyseFragmentation :: Int -> DebugEnv DebugM -> IO ()
 analyseFragmentation interval e = loop
@@ -409,20 +420,12 @@ analyseFragmentation interval e = loop
         traceWrite ("FRAG_OBJECTS", (foldl1 (<>) (map (fst . fst) bads)))
         -- Only take 5 bad results as otherwise can take a long time as
         -- each call to `doAnalysis` will perform a full heap traversal.
-        as <- mapM (doAnalysis rs) (take 5 bads)
+        as <- mapM (doAnalysis rs) ([(l, ptrs) | ((c, ptrs), l) <- take 5 (bads)])
         return (mb_census, bs, as)
       run e $ request RequestResume
       summariseBlocks bs
       outBlockCensus (Map.map fst mb_census)
-      let disp (d, l) =
-            maybe "nl" infoModule l ++ ":" ++ (ppClosure (maybe "" tdisplay l)  (\_ -> show) 0 . noSize $ d)
-            where
-              tdisplay sl = infoModule sl ++ ":" ++ infoPosition sl
-          do_one k (l, stack) = do
-            putStrLn (show k ++ "-------------------------------------")
-            print l
-            mapM (putStrLn . disp) stack
-      zipWithM do_one [0..] (catMaybes rs)
+      displayRetainerStack rs
       putStrLn "------------------------"
       loop
 
@@ -486,6 +489,23 @@ p37 e = do
     rs <- request RequestRoots
     count rs
   print cs
+
+p38 e = do
+  u <- pauseThen (Debuggee e) $ unfoldingAnalysis
+  printCensusByClosureType u
+
+p39 e = do
+  run e $ request RequestPause
+  (hg, rs) <- runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    Just (Biggest cp sc) <- bigBoyAnalysis rs
+    (hg, _) <- multiBuildHeapGraph derefFuncM (Just 10) (cp :| [])
+    rs <- doAnalysis rs ("BIG", [cp])
+    return (hg, rs)
+  putStrLn $ ppHeapGraph show hg
+  displayRetainerStack [rs]
+
 
 
 data TwoContext a = TwoContext a a
@@ -576,6 +596,67 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
             modify' (Map.insertWith (<>) loc (Count 1))
           k
 
-indStaticAnalysis :: [ClosurePtr] -> DebugM ()
-indStaticAnalysis = undefined
+
+-- | 1. Find all CoreUnfolding closures.
+-- 2. Perform a census of everything they retain.
+unfoldingAnalysis :: DebugM CensusByClosureType
+unfoldingAnalysis = do
+  rroots <- request RequestRoots
+  precacheBlocks
+  unfolding_ptrs <- findUnfoldings rroots
+  traceWrite (length unfolding_ptrs)
+  count rroots >>= traceWrite
+  count unfolding_ptrs >>= traceWrite
+  censusClosureType unfolding_ptrs
+
+
+
+findUnfoldings rroots = execStateT (traceFromM funcs rroots) []
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> StateT [ClosurePtr] DebugM ()
+               -> StateT [ClosurePtr] DebugM ()
+    closAccum cp sc k = do
+          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          let ty = closureToKey (noSize s')
+          when (ty == "ghc:GHC.Core:CoreUnfolding") $ do
+            loc <- lift $ getSourceLoc sc
+            modify' (cp :)
+          k
+
+
+data Biggest = Biggest ClosurePtr SizedClosure
+
+instance Semigroup Biggest where
+  (Biggest cp sc) <> (Biggest cp1 sc1) = if dcSize sc > dcSize sc1 then Biggest cp sc
+                                                                   else Biggest cp1 sc1
+
+-- What is the biggest closure?
+-- This is probably going to be something like an ARR_WORDS closure usually
+bigBoyAnalysis rroots = execWriterT (traceFromM funcs rroots)
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> WriterT (Maybe Biggest)  DebugM ()
+               -> WriterT (Maybe Biggest) DebugM ()
+    closAccum cp sc k = tell (Just $ Biggest cp sc) >> k
 
