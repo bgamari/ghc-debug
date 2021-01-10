@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
 
 module GHC.Debug.Types(module T, module GHC.Debug.Types, ClosureType(..)) where
 
@@ -223,7 +224,7 @@ cmdRequestBlock = CommandId 15
 cmdRequestFunBitmap :: CommandId
 cmdRequestFunBitmap = CommandId 16
 
-data AnyReq = forall req . AnyReq (Request req)
+data AnyReq = forall req . AnyReq !(Request req)
 
 instance Hashable AnyReq where
   hashWithSalt s (AnyReq r) = hashWithSalt s r
@@ -231,7 +232,7 @@ instance Hashable AnyReq where
 instance Eq AnyReq where
   (AnyReq r1) == (AnyReq r2) = eq1request r1 r2
 
-data AnyResp = forall a . AnyResp a (a -> Put)
+data AnyResp = forall a . AnyResp !a !(a -> Put)
 
 putCommand :: CommandId -> Put -> Put
 putCommand c body = do
@@ -342,13 +343,13 @@ getIPE = do
   res <- replicateM (fromIntegral num) getOne
   case res of
     (id_name:cty:ty:lab:modu:loc:[]) ->
-      return . Just $ SourceInformation id_name (readCTy cty) ty lab modu loc
+      return . Just $! SourceInformation id_name (readCTy cty) ty lab modu loc
     [] -> return Nothing
     fs -> fail (show ("Expecting 6 or 0 fields in IPE" :: String,  fs,num))
   where
     getOne = do
-      len <- getInt32be
-      res <- C8.unpack <$> getByteString (fromIntegral len)
+      !len <- getInt32be
+      !res <- C8.unpack <$> getByteString (fromIntegral len)
       return res
     -- All constructor nodes get 0, this is a wibble in the implementation
     -- of IPEs
@@ -390,7 +391,7 @@ getRawClosure = do
   len <- getWord32be
   -- The copy here is key to ensure alignment, we do some dodgy things by
   -- just passing around the Addr# which assume it.
-  RawClosure . C8.copy <$> getByteString (fromIntegral len)
+  RawClosure . C8.copy <$!> getByteString (fromIntegral len)
 
 putRawClosure :: RawClosure -> Put
 putRawClosure (RawClosure rc) = do
@@ -401,9 +402,10 @@ putRawClosure (RawClosure rc) = do
 
 getInfoTable :: Get (StgInfoTable, RawInfoTable)
 getInfoTable = do
-  len <- getInt32be
-  r <- RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
-  return (decodeInfoTable r, r)
+  !len <- getInt32be
+  !r <- RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
+  let !it = decodeInfoTable r
+  return (it, r)
 
 putInfoTable :: RawInfoTable -> Put
 putInfoTable (RawInfoTable rc) = do

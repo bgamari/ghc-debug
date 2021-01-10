@@ -89,11 +89,11 @@ closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
     -- Add cos
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT TraceState (StateT (Map.Map k v) DebugM) ()
-               -> StateT TraceState (StateT (Map.Map k v) DebugM) ()
+               ->  (StateT (Map.Map k v) DebugM) ()
+               ->  (StateT (Map.Map k v) DebugM) ()
     closAccum cp s k = do
-      s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure s
-      lift $ modify' (go cp s')
+      s' <- lift $ quadtraverse pure dereferenceConDesc pure pure s
+      modify' (go cp s')
       k
 
     go :: ClosurePtr -> SizedClosureC -> Map.Map k v -> Map.Map k v
@@ -116,15 +116,15 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
     -- Add cos
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT TraceState (StateT CensusByClosureType DebugM) ()
-               -> StateT TraceState (StateT CensusByClosureType DebugM) ()
+               -> (StateT CensusByClosureType DebugM) ()
+               -> (StateT CensusByClosureType DebugM) ()
     closAccum _ s k = do
-      s' <- lift $ lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
-      pts <- lift $ lift $ mapM dereferenceClosureFromBlock (allClosures (noSize s'))
-      pts' <- lift $ lift $ mapM (quadtraverse pure dereferenceConDesc pure pure) pts
+      s' <- lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
+      pts <- lift $ mapM dereferenceClosureFromBlock (allClosures (noSize s'))
+      pts' <- lift $ mapM (quadtraverse pure dereferenceConDesc pure pure) pts
 
 
-      lift $ modify' (go s' pts')
+      modify' (go s' pts')
       k
 
     go d args =

@@ -7,32 +7,54 @@ import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client
 
-import qualified Data.IntSet as IS
-import Control.Monad.State
+--import qualified Data.IntSet as IS
+import qualified GHC.Debug.Client.IntSet as IS
+import qualified Data.IntMap as IM
+import Data.Array.BitArray.IO
+import Control.Monad.Reader
+import Data.IORef
 import Debug.Trace
 import Control.Monad.Identity
+import Data.Word
 
-data TraceState = TraceState { visited :: !(IS.IntSet) }
+newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word64))
+
+newtype TraceState = TraceState { visited :: VisitedSet }
 
 data TraceFunctions m =
       TraceFunctions { papTrace :: GenPapPayload ClosurePtr -> m DebugM ()
       , stackTrace :: GenStackFrames ClosurePtr -> m DebugM ()
-      -- TODO: This interface is not very nice, it is something a bit like
-      -- UnliftIO? The idea is that the user provided function might want
-      -- to modify the context the continuation is called in.
-      , closTrace :: ClosurePtr -> SizedClosure -> StateT TraceState (m DebugM) () -> StateT TraceState (m DebugM) ()
-      , visitedVal :: ClosurePtr -> StateT TraceState (m DebugM) ()
+      , closTrace :: ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ()
+      , visitedVal :: ClosurePtr -> (m DebugM) ()
       , conDescTrace :: ConstrDesc -> m DebugM ()
       }
 
 
 type C m = (MonadTrans m, Monad (m DebugM))
 
-addVisit :: ClosurePtr -> TraceState -> TraceState
-addVisit (ClosurePtr c) st = st { visited = IS.insert (fromIntegral c) (visited st) }
+getKeyPair :: ClosurePtr -> (Int, Word64)
+getKeyPair cp =
+  let BlockPtr raw_bk = applyBlockMask cp
+      bk = fromIntegral raw_bk `div` 8
+      offset = (getBlockOffset cp) `div` 8
+  in (bk, offset)
 
-checkVisit :: ClosurePtr -> TraceState -> Bool
-checkVisit (ClosurePtr c) st = IS.member (fromIntegral c) (visited st)
+checkVisit :: ClosurePtr -> IORef TraceState -> IO Bool
+checkVisit cp mref = do
+  st <- readIORef mref
+  let VisitedSet v = visited st
+      (bk, offset) = getKeyPair cp
+  case IM.lookup bk v of
+    Nothing -> do
+      na <- newArray (0, blockMask `div` 8) False
+      writeArray na offset True
+      writeIORef mref (TraceState (VisitedSet (IM.insert bk na v)))
+      return False
+    Just bm -> do
+      res <- readArray bm offset
+      unless res (writeArray bm offset True)
+      return res
+
 
 type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
 
@@ -44,15 +66,17 @@ traceFrom cps = runIdentityT (traceFromM funcs cps)
     nop = const (return ())
     funcs = TraceFunctions nop nop clos (const (return ())) nop
 
-    clos :: ClosurePtr -> SizedClosure -> StateT TraceState (IdentityT DebugM) ()
-              -> StateT TraceState (IdentityT DebugM) ()
+    clos :: ClosurePtr -> SizedClosure -> (IdentityT DebugM) ()
+              ->  (IdentityT DebugM) ()
     clos cp sc k = do
-      case lookupStgInfoTableWithPtr (noSize sc) of
-        infoTableWithptr -> lift $ lift $ request (RequestSourceInfo (tableId infoTableWithptr))
+      let itb = info (noSize sc)
+      lift $ request (RequestSourceInfo (tableId itb))
       k
 
 traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
-traceFromM k cps = evalStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.empty)
+traceFromM k cps = do
+  st <- lift (unsafeLiftIO (newIORef (TraceState (VisitedSet IM.empty))))
+  runReaderT (mapM_ (traceClosureFromM k) cps) st
 {-# INLINE traceFromM #-}
 {-# INLINE traceClosureFromM #-}
 {-# INLINE traceStackFromM #-}
@@ -62,22 +86,22 @@ traceFromM k cps = evalStateT (mapM_ (traceClosureFromM k) cps) (TraceState IS.e
 traceClosureFromM :: C m
                   => TraceFunctions m
                   -> ClosurePtr
-                  -> StateT TraceState (m DebugM) ()
+                  -> ReaderT (IORef TraceState) (m DebugM) ()
 traceClosureFromM k = go
   where
     go (untagClosurePtr -> cp) = do
-      m <- get
-      if (checkVisit cp m)
-        then visitedVal k cp
+      mref <- ask
+      b <- lift $ lift $ unsafeLiftIO (checkVisit cp mref)
+      if b
+        then lift $ visitedVal k cp
         else do
-        modify (addVisit cp)
         sc <- lift $ lift $ dereferenceClosureFromBlock cp
-        closTrace k cp sc
-          (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc)
+        ReaderT $ \st -> closTrace k cp sc
+         (runReaderT (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc) st)
 
 traceStackFromM :: C m
                 => TraceFunctions m
-                -> StackCont -> StateT TraceState (m DebugM) ()
+                -> StackCont -> ReaderT (IORef TraceState) (m DebugM) ()
 traceStackFromM f = go
   where
     go st = do
@@ -86,7 +110,7 @@ traceStackFromM f = go
       () <$ traverse (traceClosureFromM f) st'
 
 traceConstrDescM :: (C m)
-                 => TraceFunctions m -> ConstrDescCont -> StateT s (m DebugM) ()
+                 => TraceFunctions m -> ConstrDescCont -> ReaderT s (m DebugM) ()
 traceConstrDescM f = go
   where
     go d = do
@@ -96,7 +120,7 @@ traceConstrDescM f = go
 tracePapPayloadM :: C m
                  => TraceFunctions m
                  -> PayloadCont
-                 -> StateT TraceState (m DebugM) ()
+                 -> ReaderT (IORef TraceState) (m DebugM) ()
 tracePapPayloadM f = go
   where
     go p = do

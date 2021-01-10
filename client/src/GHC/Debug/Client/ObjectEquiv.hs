@@ -113,19 +113,19 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
     -- Add cos
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT TraceState (StateT ObjectEquivState DebugM) ()
-               -> StateT TraceState (StateT ObjectEquivState DebugM) ()
+               -> (StateT ObjectEquivState DebugM) ()
+               -> (StateT ObjectEquivState DebugM) ()
     closAccum cp s k = do
       -- Step 0: Check to see whether there is already an equivalence class
       -- for this cp
       -- Step 1: Decode a bit more of the object, so we can see all the
       -- pointers.
-      s' <- lift $ lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
+      s' <- lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
       -- Step 2: Replace all the pointers in the closure by things they are
       -- equivalent to we have already seen.
       s''  <- quadtraverse (traverse rep_c) pure (traverse rep_c) rep_c s'
       -- Step 3: Have we seen a closure like this one before?
-      lift $ modify' (addEquiv cp s'')
+      modify' (addEquiv cp s'')
 
 {-
         -- Yes, we have seen something of identical shape
@@ -150,7 +150,7 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
       -- Step 5: Call the continuation to carry on with the analysis
       k
 
-    rep_c cp@(ClosurePtr k) = lift $ do
+    rep_c cp@(ClosurePtr k) = do
       m <- gets emap2
       case IM.lookup (fromIntegral k) m of
         -- There is an equivalence class already

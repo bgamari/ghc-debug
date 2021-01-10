@@ -145,6 +145,9 @@ applyMBlockMask (ClosurePtr p) = BlockPtr (p .&. complement mblockMask)
 applyBlockMask :: ClosurePtr -> BlockPtr
 applyBlockMask (ClosurePtr p) = BlockPtr (p .&. complement blockMask)
 
+getBlockOffset :: ClosurePtr -> Word64
+getBlockOffset (ClosurePtr p) = p .&. blockMask
+
 mblockMaxSize, blockMaxSize :: Word64
 mblockMaxSize = mblockMask + 1
 blockMaxSize = blockMask + 1

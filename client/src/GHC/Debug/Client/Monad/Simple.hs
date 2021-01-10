@@ -113,6 +113,8 @@ instance DebugMonad DebugM where
     Just req_cache <- lift $ tryReadMVar debuggeeRequestCache
     lift $ encodeFile fp (Snapshot snapshotVersion req_cache)
 
+  unsafeLiftIO f = DebugM $ liftIO f
+
 
 initBlockCacheFromReqCache :: RequestCache -> BlockCache
 initBlockCacheFromReqCache new_req_cache  =

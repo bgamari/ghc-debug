@@ -20,5 +20,7 @@ class (MonadFail m, Monad m) => DebugMonad m where
   saveCache :: FilePath -> m ()
   loadCache :: FilePath -> m ()
 
+  unsafeLiftIO :: IO a -> m a
+
 
 data Mode = SnapshotMode FilePath | SocketMode Handle

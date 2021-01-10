@@ -26,12 +26,12 @@ findRetainers rroots bads = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroo
     -- Add clos
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT TraceState (RWST [ClosurePtr] () [[ClosurePtr]] DebugM) ()
-               -> StateT TraceState (RWST [ClosurePtr] () [[ClosurePtr]] DebugM) ()
+               -> RWST [ClosurePtr] () [[ClosurePtr]] DebugM ()
+               -> RWST [ClosurePtr] () [[ClosurePtr]] DebugM ()
     closAccum cp _ k
       | cp `Set.member` bads_set = do
           ctx <- ask
-          lift $ modify' ((cp: ctx) :)
+          modify' ((cp: ctx) :)
           -- Don't call k, there might be more paths to the pointer but we
           -- probably just care about this first one.
       | otherwise = local (cp:) k

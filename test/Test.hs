@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Main where
 
-import GHC.Debug.Client
+import GHC.Debug.Client hiding (traceFrom)
 import GHC.Debug.Client.Retainers
 import GHC.Debug.Client.Fragmentation
 import GHC.Debug.Client.Profile
@@ -58,7 +58,7 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p35 e)
+main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p36 e)
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -470,6 +470,13 @@ p34 e = forM [0..] $ \i -> do
 
 p35 e = objectEquiv e
 
+p36 e = do
+  run e $ request RequestPause
+  runTrace e $ do
+    precacheBlocks
+    rs <- request RequestRoots
+    traceFrom rs
+
 data TwoContext a = TwoContext a a
                 | OneContext a
                 | NoContext
@@ -506,29 +513,29 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
     -- closure, we still want to count it (because we are counting
     -- TyConApp really) so call `closAccum`
     visited cp = do
-      sc <- lift $ lift $ dereferenceClosureFromBlock cp
+      sc <- lift $ dereferenceClosureFromBlock cp
       closAccum cp sc (return ())
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT TraceState (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
-               -> StateT TraceState (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
+               -> (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
+               -> (RWST (TwoContext _) () (Map.Map _ Count) DebugM) ()
     closAccum cp sc k
       | (tipe (decodedTable (info (noSize sc)))) == IND_STATIC
       = do
           ctx <- ask
           case ctx of
             TwoContext ("ghc:GHC.Core.TyCo.Rep:TyConApp", a) p -> do
-              loc <- lift $ lift $ a
+              loc <-  lift $ a
               --lift $ modify' (Map.insertWith (<>) cp (Count 1))
-              lift $ modify' (Map.insertWith (<>) loc (Count 1))
+              modify' (Map.insertWith (<>) loc (Count 1))
 
               k
             OneContext p -> k
             _ -> k
       | otherwise = do
-          s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
           let ty = closureToKey (noSize s')
           local (consContext (ty, getSourceLoc s'))  k
 
@@ -548,14 +555,14 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT TraceState (RWST () () (Map.Map _ Count) DebugM) ()
-               -> StateT TraceState (RWST () () (Map.Map _ Count) DebugM) ()
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
     closAccum cp sc k = do
-          s' <- lift $ lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
           let ty = closureToKey (noSize s')
           when (ty == "ghc:GHC.Types.Demand:DmdType") $ do
-            loc <- lift $ lift $ getSourceLoc sc
-            lift $ modify' (Map.insertWith (<>) loc (Count 1))
+            loc <- lift $ getSourceLoc sc
+            modify' (Map.insertWith (<>) loc (Count 1))
           k
 
 indStaticAnalysis :: [ClosurePtr] -> DebugM ()
