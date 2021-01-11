@@ -499,7 +499,7 @@ p39 e = do
   (hg, rs) <- runTrace e $ do
     precacheBlocks
     rs <- request RequestRoots
-    Just (Biggest cp sc) <- bigBoyAnalysis rs
+    (Biggest cp sc) <- bigBoyAnalysis rs
     (hg, _) <- multiBuildHeapGraph derefFuncM (Just 10) (cp :| [])
     rs <- doAnalysis rs ("BIG", [cp])
     return (hg, rs)
@@ -526,6 +526,8 @@ p40 e = forM [0..] $ \i -> do
   putStrLn $ ppHeapGraph show hg
   -}
   threadDelay 10_000_000
+
+
 
 
 data TwoContext a = TwoContext a a
@@ -679,15 +681,20 @@ findUnfoldings rroots = execStateT (traceFromM funcs rroots) []
           k
 
 
-data Biggest = Biggest ClosurePtr SizedClosure
+data Biggest = Biggest ClosurePtr SizedClosure | NoBiggest
+
+instance Monoid Biggest where
+    mempty = NoBiggest
 
 instance Semigroup Biggest where
   (Biggest cp sc) <> (Biggest cp1 sc1) = if dcSize sc > dcSize sc1 then Biggest cp sc
                                                                    else Biggest cp1 sc1
+  NoBiggest <> b = b
+  b <> NoBiggest = b
 
 -- What is the biggest closure?
 -- This is probably going to be something like an ARR_WORDS closure usually
-bigBoyAnalysis rroots = execWriterT (traceFromM funcs rroots)
+bigBoyAnalysis rroots = execStateT (traceFromM funcs rroots) NoBiggest
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
@@ -700,7 +707,9 @@ bigBoyAnalysis rroots = execWriterT (traceFromM funcs rroots)
 
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> WriterT (Maybe Biggest)  DebugM ()
-               -> WriterT (Maybe Biggest) DebugM ()
-    closAccum cp sc k = tell (Just $ Biggest cp sc) >> k
+               -> StateT Biggest  DebugM ()
+               -> StateT Biggest DebugM ()
+    closAccum cp sc k = do
+      modify' (Biggest cp sc <>)
+      k
 
