@@ -19,6 +19,7 @@ import System.FilePath
 import System.Directory
 import System.Environment
 import System.Mem
+import System.IO
 
 import GHC.Debug.Convention (socketDirectory)
 
@@ -46,7 +47,7 @@ withGhcDebug main = do
             return (dir </> socketName)
 
     createDirectoryIfMissing True (takeDirectory socketPath)
-    putStrLn $ "Starting ghc-debug on socket: " ++ socketPath
+    hPutStrLn stderr $ "Starting ghc-debug on socket: " ++ socketPath
 
     -- Start a thread to handle requests
     _threadId <- forkIO $ withCString socketPath start_c
