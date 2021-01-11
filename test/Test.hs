@@ -379,7 +379,7 @@ p31 e = analyseFragmentation 1_000_000 e
 
 -- Given the roots and bad closures, find out why they are being retained
 doAnalysis rs (l, ptrs) = do
-  rs <- findRetainers rs ptrs
+  rs <- findRetainers (Just 10) rs ptrs
   stack <- case rs of
     [] -> traceWrite "EMPTY RETAINERS" >> return Nothing
     (r:_) -> do
