@@ -83,15 +83,11 @@ p5 :: Debuggee -> IO ()
 p6 :: Debuggee -> IO ()
 p7 :: Debuggee -> IO ()
 p8 :: Debuggee -> IO ()
-p13 :: Debuggee -> IO ()
-p14 :: Debuggee -> IO ()
 p16 :: Debuggee -> IO ()
 p17 :: Debuggee -> IO ()
-p18 :: Debuggee -> IO ()
 p19 :: Debuggee -> IO ()
 p20 :: Debuggee -> IO ()
 p21 :: Debuggee -> IO ()
-p22 :: Debuggee -> IO ()
 p24 :: Debuggee -> IO ()
 p25 :: Debuggee -> IO ()
 p26 :: Debuggee -> IO ()
@@ -185,32 +181,6 @@ p8 e = pauseThen e $ do
   sos <- request RequestSavedObjects
   traceWrite =<< dereferenceClosures sos
 
--- testing stack decoding
-p13 e = pauseThen e $ do
-  rs <- request RequestRoots
-  traceWrite ("NUMBER OF ROOTS = " ++ show (length rs))
-  results <- forM (zip rs [0..]) $ \(r, n) -> do
-              traceWrite ("ROOT", n, r)
-              fullTraversal r
-  return results
-  traceMsg "Full Traversal complete"
-  traceMsg ("Number of roots traversed: " ++ show (length results))
-  let counts = map countNodes results
-      inclusive_counts = map inclusive results
-  forM (zip results [0..]) $ \(re@(MkFix1 r), n) -> do
-    traceMsg (show n ++ "(" ++ show (tipe (decodedTable (info (noSize r)))) ++ "): " ++ show (treeSize re))
-    --print (inclusive re)
-  traceMsg ("Total: " ++ show (sum counts))
-
-
-p14 e = pauseThen e $ do
-  rs <- request RequestSavedObjects
-  forM_ rs $ \r -> do
-    traceWrite r
-    res <- fullTraversal r
-    return res
-    --traceWrite res
-
 -- pretty-print graph
 p16 e = do
   pause e
@@ -230,17 +200,6 @@ p17 e = do
     traceWrite it
     traceWrite =<< request (RequestSourceInfo it)
 
-
--- Use with large-thunk
-p18 e = do
-  -- Wait fro the pause
-  run e $ request RequestPoll
-  runTrace e $ do
-    rs <- request RequestSavedObjects
-    forM_ rs $ \r -> do
-      traceWrite r
-      fullTraversal r
-      traceWrite ("DONE", r)
 
 derefFunc e c = run e $ derefFuncM c
 
@@ -276,19 +235,6 @@ p21 e = pauseThen e $ do
   forM_ r $ \c -> do
     traceWrite c
     dereferenceClosureFromBlock c
-
--- Use with large-thunk
-p22 e = do
-  run e $ request RequestPause
-  runTrace e $ do
-    precacheBlocks
-    rs <- request RequestRoots
-    s <- forM rs $ \r -> do
-      traceWrite r
-      c <- fullTraversalViaBlocks r
-      traceWrite ("DONE", countNodes c)
-      return $ countNodes c
-    traceWrite (sum s)
 
 -- Use with large-thunk
 p24 e = do

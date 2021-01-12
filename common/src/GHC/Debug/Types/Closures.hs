@@ -13,9 +13,9 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{- This module is mostly a copy of GHC.Exts.Heap.Closures but with
-- additional support for STACK closures which are only possible to decode
-- out of process
+{- | The Haskell representation of a heap closure, the 'DebugClosure' type
+- is quite similar to the one found in the @ghc-heap@ package but with some
+- more type parameters and other changes..
 -}
 module GHC.Debug.Types.Closures (
     -- * Closures
@@ -42,19 +42,8 @@ module GHC.Debug.Types.Closures (
     , GHC.PrimType(..)
     , lookupStgInfoTableWithPtr
     , allClosures
-    , Fix1(..)
-    , foldFix1
-    , Fix2(..)
-    , foldFix2
-    , Fix3(..)
-    , UClosure
-    , UStack
-    , UPapPayload
     , Quadtraversable(..)
     , quadmap
-    , countNodes
-    , treeSize
-    , inclusive
     , ConstrDesc(..)
     , ConstrDescCont
     , parseConstrDesc
@@ -80,127 +69,6 @@ import Data.Kind
 
 import Control.Applicative
 import Data.Monoid
-
-data Fix1 (pap :: Type -> Type) (string :: Type) (f :: Type -> Type) (g :: Type -> Type -> Type -> Type -> Type) =
-  MkFix1 (g (Fix3 pap string f g) string (Fix2 pap string f g) (Fix1 pap string f g))
-data Fix2 p s f g = MkFix2 (f (Fix1 p s f g))
-data Fix3 p s f g = MkFix3 (p (Fix1 p s f g))
-
-instance Show (g (Fix3 pap string f g) string (Fix2 pap string f g) (Fix1 pap string f g)) => Show (Fix1 pap string f g) where
-        showsPrec n (MkFix1 x) = showParen (n > 10) $ \s ->
-                "Fix1 " ++ showsPrec 11 x s
-
-instance Show (f (Fix1 pap string f g)) => Show (Fix2 pap string f g) where
-        showsPrec n (MkFix2 x) = showParen (n > 10) $ \s ->
-                "Fix2 " ++ showsPrec 11 x s
-
-instance Show (pap (Fix1 pap string f g)) => Show (Fix3 pap string f g) where
-        showsPrec n (MkFix3 x) = showParen (n > 10) $ \s ->
-                "Fix3 " ++ showsPrec 11 x s
-
-type UClosure = Fix1 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
-type UStack   = Fix2 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
-type UPapPayload = Fix3 GenPapPayload ConstrDesc GenStackFrames DebugClosureWithSize
-
-foldFix1 :: (Functor f, Functor pap, Quadtraversable g)
-         => (pap r_clos -> r_pap)
-         -> (string -> r_string)
-         -> (f r_clos -> r_stack)
-         -> (g r_pap r_string r_stack r_clos -> r_clos)
-         -> Fix1 pap string f g
-         -> r_clos
-foldFix1 p f g h (MkFix1 v) = h (quadmap (foldFix3 p f g h) f (foldFix2 p f g h) (foldFix1 p f g h) v)
-
-foldFix2 :: (Functor f, Functor pap,  Quadtraversable g)
-         => (pap r_clos -> r_pap)
-         -> (s -> r_string)
-         -> (f r_clos -> r_stack)
-         -> (g r_pap r_string r_stack r_clos -> r_clos)
-         -> Fix2 pap s f g
-         -> r_stack
-foldFix2 p f g h (MkFix2 v) = g (fmap (foldFix1 p f g h) v)
-
-foldFix3 :: (Functor pap, Functor f, Quadtraversable g)
-         => (pap r_clos -> r_pap)
-         -> (s -> r_string)
-         -> (f r_clos -> r_stack)
-         -> (g r_pap r_string r_stack r_clos -> r_clos)
-         -> Fix3 pap s f g
-         -> r_pap
-foldFix3 p f g h (MkFix3 v) = p (fmap (foldFix1 p f g h) v)
-
--- TODO: Perhaps these summary functions can be moved into another module
-
-countNodes :: UClosure -> Int
-countNodes =
-  getSum . foldFix1 pap
-                    (const (Sum 1))
-                    (add . getConst . traverse go)
-                    (add . getConst . quadtraverse go go go go)
-  where
-    go x = Const x
-    add = mappend (Sum 1)
-
-    pap = getConst . traverse go
-
--- | Calculate the total in-memory size of a closure
-treeSize :: UClosure -> Size
-treeSize =
-  foldFix1
-              -- This is probably not right, should be something to do with
-              -- length of string
-              papSize
-              (const (Size 1))
-              stackSize
-              closSize
-  where
-    stackSize :: GenStackFrames Size -> Size
-    stackSize s = (getConst (traverse Const s))
-
-    papSize s = getConst (traverse Const s)
-
-    closSize :: DebugClosureWithSize Size Size Size Size ->  Size
-    closSize d = (dcSize d) `mappend` getConst (quadtraverse Const Const Const Const d)
-
-fullSize :: UClosure_Inclusive -> InclusiveSize
-fullSize (MkFix1 (DCS (_, i) _)) = i
-
--- | A tree annotation with inclusive size of subtrees
-type UClosure_Inclusive = Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
-
-inclusive :: UClosure -> Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
-inclusive =
-  foldFix1 papSize stringSize stackSize closSize
-  where
-    -- TODO
-    stringSize :: ConstrDesc -> ConstrDesc
-    stringSize x = x
-
-    papSize s = MkFix3 s
-
-
-    -- No where to put inclusive size on stacks yet
-    stackSize :: GenStackFrames (Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize)))
-              -> Fix2 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
-    stackSize s = MkFix2 s
-
-    closSize :: DebugClosureWithSize (Fix3
-                        GenPapPayload
-                        ConstrDesc
-                        GenStackFrames
-                        (DebugClosureWithExtra (Size, InclusiveSize)))
-                  ConstrDesc (Fix2 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))) UClosure_Inclusive
-                      -> Fix1 GenPapPayload ConstrDesc GenStackFrames (DebugClosureWithExtra (Size, InclusiveSize))
-
-    closSize (DCS s b) =
-      let new_size = coerce s `mappend` getConst (quadtraverse pap (const (Const (InclusiveSize 0))) stack (Const . fullSize) b)
-      in MkFix1 (DCS (s, new_size) b)
-
-      where
-        stack (MkFix2 st) = traverse (Const . fullSize) st
-        pap (MkFix3 p) = traverse (Const . fullSize) p
-
-
 
 
 ------------------------------------------------------------------------

@@ -47,8 +47,6 @@ module GHC.Debug.Client.Query
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
-  , fullTraversal
-  , fullTraversalViaBlocks
   , Quadtraversable(..)
   , precacheBlocks
   ) where
@@ -142,32 +140,6 @@ _noConDesc c = traceShow c (return emptyConDesc)
 
 emptyConDesc :: ConstrDesc
 emptyConDesc = ConstrDesc "" "" ""
-
--- | Do a traversal requesting closures one by one using RequestClosure
-fullTraversal :: ClosurePtr -> DebugM UClosure
-fullTraversal = fullTraversalX dereferenceSizedClosure
-
--- | Do a traversal using the block cache
-fullTraversalViaBlocks :: ClosurePtr -> DebugM UClosure
-fullTraversalViaBlocks = fullTraversalX dereferenceClosureFromBlock
-
-fullTraversalX :: (ClosurePtr -> DebugM SizedClosure) -> ClosurePtr -> DebugM UClosure
-fullTraversalX derefClosure c = do
---  putStrLn ("TIME TO DEREFERENCE: " ++ show c)
-  dc <- derefClosure c
---  putStrLn ("FULL TRAVERSE(" ++ show c ++ ") = " ++ show dc)
-  MkFix1 <$> quadtraverse (fullPAPTraversal derefClosure) dereferenceConDesc (fullStackTraversal derefClosure) (fullTraversalX derefClosure) dc
-
-fullStackTraversal :: (ClosurePtr -> DebugM SizedClosure) -> StackCont -> DebugM UStack
-fullStackTraversal k sc = do
-  ds <- dereferenceStack sc
---  print ("FULL STACK", ds)
-  MkFix2 <$> traverse (fullTraversalX k) ds
-
-fullPAPTraversal :: (ClosurePtr -> DebugM SizedClosure) -> PayloadCont -> DebugM UPapPayload
-fullPAPTraversal k pa = do
-  p <- dereferencePapPayload pa
-  MkFix3 <$> traverse (fullTraversalX k) p
 
 {-
 -- | Print out the number of request made for each request type

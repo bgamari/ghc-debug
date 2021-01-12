@@ -58,8 +58,6 @@ module GHC.Debug.Client
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
-  , fullTraversal
-  , fullTraversalViaBlocks
   , Quadtraversable(..)
   , precacheBlocks
   , traceFromM

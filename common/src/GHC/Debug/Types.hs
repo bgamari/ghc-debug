@@ -33,11 +33,9 @@ module GHC.Debug.Types(module T
 import Control.Applicative
 import Control.Exception
 import Control.Monad
-import qualified Data.Array.Unboxed as A
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
-import qualified Data.Foldable as F
 import Data.Word
 import System.IO
 
@@ -64,9 +62,9 @@ data Request a where
     RequestResume :: Request ()
     -- | Request the debuggee's root pointers.
     RequestRoots :: Request [ClosurePtr]
-    -- | Request a set of closures.
+    -- | Request a closure
     RequestClosure :: ClosurePtr -> Request RawClosure
-    -- | Request a set of info tables.
+    -- | Request an info table
     RequestInfoTable :: InfoTablePtr -> Request (StgInfoTableWithPtr, RawInfoTable)
     -- | Wait for the debuggee to pause itself and then
     -- execute an action. It currently impossible to resume after
@@ -75,15 +73,14 @@ data Request a where
     -- | A client can save objects by calling a special RTS method
     -- This function returns the closures it saved.
     RequestSavedObjects :: Request [ClosurePtr]
---    -- | Calls the debugging `findPtr` function and returns the retainers
---    RequestFindPtr :: ClosurePtr -> Request [ClosurePtr]
-    -- | Request the pointer bitmap for a stack frame.
+    -- | Request the pointer bitmap for a stack frame at a given offset
+    -- from a StackPtr.
     RequestStackBitmap :: StackPtr -> Word32 -> Request PtrBitmap
-    -- | Decode the bitmap container in a StgFunInfoTable
+    -- | Decode the bitmap contained in a StgFunInfoTable
     -- Used by PAP and AP closure types.
     RequestFunBitmap :: Word16 -> ClosurePtr -> Request PtrBitmap
-    -- | Request the description for an info table.
-    -- The `InfoTablePtr` is just used for the equality
+    -- | Request the constructor description for an info table.
+    -- The info table must be from a 'ConstrClosure'
     RequestConstrDesc :: InfoTablePtr -> Request ConstrDesc
     -- | Lookup source information of an info table
     RequestSourceInfo :: InfoTablePtr -> Request (Maybe SourceInformation)
@@ -99,8 +96,6 @@ data SourceInformation = SourceInformation { infoName        :: !String
                                          , infoModule      :: !String
                                          , infoPosition    :: !String }
                                          deriving (Show, Eq, Ord)
-
-
 
 eq1request :: Request a -> Request b -> Bool
 eq1request r1 r2 =
@@ -146,12 +141,8 @@ isImmutableRequest r =
     _ -> False
 
 
-
-
-
 deriving instance Show (Request a)
 deriving instance Eq (Request a)
---deriving instance Ord (Request a)
 
 instance Hashable (Request a) where
   hashWithSalt s r = case r of
@@ -169,7 +160,6 @@ instance Hashable (Request a) where
     RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
     RequestAllBlocks       -> s `hashWithSalt` cmdRequestAllBlocks
     RequestBlock cp        -> s `hashWithSalt` cmdRequestBlock `hashWithSalt` cp
-
 
 
 newtype CommandId = CommandId Word32
@@ -219,9 +209,6 @@ cmdRequestPoll = CommandId 8
 
 cmdRequestSavedObjects :: CommandId
 cmdRequestSavedObjects = CommandId 9
-
---cmdRequestFindPtr :: CommandId
---cmdRequestFindPtr = CommandId 10
 
 cmdRequestConstrDesc :: CommandId
 cmdRequestConstrDesc = CommandId 11
@@ -457,11 +444,10 @@ throwStream = f
 concatStream :: Stream BS.ByteString (Maybe Error) -> BSL.ByteString
 concatStream = BSL.fromChunks . throwStream
 
+-- | Perform a request
 doRequest :: MVar Handle -> Request a -> IO a
 doRequest mhdl req = withMVar mhdl $ \hdl -> do
     BSL.hPutStr hdl $ runPut $ putRequest req
     bframes <- readFrames hdl
     let x = runGet (getResponse req) (concatStream bframes)
     return x
-
-
