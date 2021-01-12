@@ -13,48 +13,56 @@
 -- We have to send and recieve the pointers in big endian though. This
 -- conversion is dealt with in the Binary instance for ClosurePtr and
 -- then the other pointers are derived from this instance using DerivingVia
-module GHC.Debug.Types.Ptr( InfoTablePtr(..)
+module GHC.Debug.Types.Ptr( -- * InfoTables
+                            InfoTablePtr(..)
                           , RawInfoTable(..)
                           -- UntaggedClosurePtr constructor not exported so
                           -- we can maintain the invariant that all
                           -- ClosurePtr are untagged
+                          -- * Closures
                           , ClosurePtr(ClosurePtr)
                           , mkClosurePtr
                           , RawClosure(..)
+                          , rawClosureSize
+                          , getInfoTblPtr
+                          -- * Operations on 'ClosurePtr'
+                          , applyBlockMask
+                          , applyMBlockMask
+                          , subtractBlockPtr
+                          , heapAlloced
+
+                          , getBlockOffset
+                          -- * Blocks
                           , BlockPtr(..)
-                          , StackPtr(..)
-                          , RawStack(..)
                           , RawBlock(..)
-                          , PtrBitmap(..)
-                          , traversePtrBitmap
                           , isLargeBlock
                           , isPinnedBlock
                           , rawBlockAddr
                           , extractFromBlock
-                          , applyBlockMask
-                          , applyMBlockMask
-                          , getBlockOffset
+                          , blockMBlock
+                          , rawBlockSize
+                          -- * Stacks
+                          , StackPtr(..)
+                          , RawStack(..)
+
+                          , subtractStackPtr
+                          , calculateStackLen
+                          , addStackPtr
+                          , rawStackSize
+                          , printStack
+                          -- * Bitmaps
+                          , PtrBitmap(..)
+                          , traversePtrBitmap
+                          -- * Constants
                           , blockMask
                           , mblockMask
                           , mblockMaxSize
                           , blockMaxSize
-                          , blockMBlock
-                          , subtractStackPtr
-                          , calculateStackLen
-                          , addStackPtr
-                          , subtractBlockPtr
-                          , arrWordsBS
-
-                          , getInfoTblPtr
-                          , heapAlloced
-
                           , profiling
                           , tablesNextToCode
 
-                          , printStack
-                          , rawStackSize
-                          , rawBlockSize
-                          , rawClosureSize
+                          -- * Other utility
+                          , arrWordsBS
                           , prettyPrint
                           , printBS
                           )  where
