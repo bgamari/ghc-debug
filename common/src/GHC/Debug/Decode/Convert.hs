@@ -1,17 +1,13 @@
 {- Convert a GenClosure to a DebugClosure -}
 module GHC.Debug.Decode.Convert where
 
-
 import qualified GHC.Exts.Heap as GHC
---import qualified GHC.Exts.Heap.InfoTable as Itbl
---import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
 import GHC.Debug.Types.Closures
 import GHC.Debug.Types.Ptr
 import Data.Void
 
--- | Convert a GenClosure from ghc-heap to a DebugClosure,
--- it is mostly an identity function, apart from STACK closures.
+-- | Convert a GenClosure from ghc-heap to a 'DebugClosure',
 convertClosure :: (Num a, Eq a, Show a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure Void InfoTablePtr Void a
 convertClosure itb g =
   case g of

@@ -6,7 +6,9 @@
 {-# LANGUAGE BangPatterns #-}
 -- | Low-level functions for decoding a closure representation from the raw
 -- bytes
-module GHC.Debug.Decode (decodeClosure, decodeClosureWithSize, decodeInfoTable, extractFromBlock) where
+module GHC.Debug.Decode ( decodeClosure
+                        , decodeInfoTable
+                        ) where
 
 import GHC.Ptr (plusPtr, castPtr)
 import GHC.Exts hiding (closureSize#) -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
@@ -94,9 +96,6 @@ allocateByPtr (BSI.PS fp o _l) action =
   withForeignPtr (fp `plusForeignPtr` o) $ \p -> do
     --print (fp, p, o, l)
     action (castPtr p)
-
-decodeClosureWithSize :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
-decodeClosureWithSize itb (ptr, rc) = decodeClosure itb (ptr, rc)
 
 skipClosureHeader :: Get ()
 skipClosureHeader
@@ -227,6 +226,10 @@ decodeAPStack (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
 
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeClosure i@(itb, _) c
+  -- MP: It was far easier to implement the decoding of these closures in
+  -- ghc-heap using binary rather than patching GHC and going through that
+  -- dance. I think in the future it's better to do this for all the
+  -- closures... it's simpler and probably much faster.
   | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
   | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
   | (StgInfoTable { tipe = TVAR }) <- decodedTable itb = decodeTVarClosure i c
@@ -285,21 +288,3 @@ decodeInfoTable :: RawInfoTable -> StgInfoTable
 decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
   allocate itbl $ \itblPtr -> do
     peekItbl itblPtr
-
--- | Invariant: ClosurePtr is within the range of the block
--- The 'RawClosure' this returns is actually the tail of the whole block,
--- this is fine because the memory for each block is only allocated once
--- due to how BS.drop is implemented via pointer arithmetic.
-extractFromBlock :: ClosurePtr
-                -> RawBlock
-                -> RawClosure
-extractFromBlock cp (RawBlock bp _ b) =
---  Calling closureSize doesn't work as the info table addresses are bogus
---  clos_size_w <- withForeignPtr fp' (\p -> return $ closureSize (ptrToBox p))
---  let clos_size = clos_size_w * 8
-    --traceShow (fp, offset, cp, bp,o, l)
-    --traceShow ("FP", fp `plusForeignPtr` offset)
-    RawClosure (B.drop offset b)
-    where
-      offset = fromIntegral (subtractBlockPtr cp bp)
-

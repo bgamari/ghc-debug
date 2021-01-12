@@ -18,7 +18,6 @@ import qualified Data.HashMap.Strict as HM
 import GHC.Word
 import Data.Hashable
 import Data.IORef
-import GHC.Debug.Decode
 import Data.Bits
 import Data.List
 import Data.Binary
@@ -79,5 +78,6 @@ handleBlockReq do_req ref PopulateBlockCache = do
   print ("CACHING", length blocks)
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
   return blocks
+
 
 

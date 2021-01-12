@@ -14,8 +14,8 @@ import Data.Coerce
 import Debug.Trace
 
 decodeStack :: Monad m
-            => (RawClosure -> m StgInfoTableWithPtr)
-            -> (Word32 -> m PtrBitmap)
+            => (RawClosure -> m StgInfoTableWithPtr) -- ^ How to decode the info table for the stack frame
+            -> (Word32 -> m PtrBitmap) -- ^ How to decode the bitmap for the stack frame at a given offset
             -> RawStack
             -> m StackFrames
 decodeStack decodeInfoTable getBitmap rs = do

@@ -104,7 +104,7 @@ dereferenceSizedClosure c = do
     let it = getInfoTblPtr raw_c
     --print $ map (lookupDwarf d) its
     raw_it <- request (RequestInfoTable it)
-    return $ decodeClosureWithSize raw_it (c, raw_c)
+    return $ decodeClosure raw_it (c, raw_c)
 
 dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
 dereferenceClosures cs = mapM dereferenceClosureFromBlock cs
@@ -192,7 +192,7 @@ dereferenceClosureFromBlock cp
       rc <-  requestBlock (LookupClosure cp)
       let it = getInfoTblPtr rc
       st_it <- request (RequestInfoTable it)
-      return $ decodeClosureWithSize st_it (cp, rc)
+      return $ decodeClosure st_it (cp, rc)
 
 precacheBlocks :: DebugM [RawBlock]
 precacheBlocks = requestBlock PopulateBlockCache

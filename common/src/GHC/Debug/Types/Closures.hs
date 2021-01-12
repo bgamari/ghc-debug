@@ -13,7 +13,6 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# OPTIONS_GHC -Wno-warn-orphans #-}
 {- This module is mostly a copy of GHC.Exts.Heap.Closures but with
 - additional support for STACK closures which are only possible to decode
 - out of process

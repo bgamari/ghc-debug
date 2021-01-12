@@ -29,6 +29,7 @@ module GHC.Debug.Types.Ptr( InfoTablePtr(..)
                           , isLargeBlock
                           , isPinnedBlock
                           , rawBlockAddr
+                          , extractFromBlock
                           , applyBlockMask
                           , applyMBlockMask
                           , getBlockOffset
@@ -246,6 +247,23 @@ rawBlockSize (RawBlock _ _ bs) = BS.length bs
 
 rawBlockAddr :: RawBlock -> BlockPtr
 rawBlockAddr (RawBlock addr _ _) = addr
+
+-- | Invariant: ClosurePtr is within the range of the block
+-- The 'RawClosure' this returns is actually the tail of the whole block,
+-- this is fine because the memory for each block is only allocated once
+-- due to how BS.drop is implemented via pointer arithmetic.
+extractFromBlock :: ClosurePtr
+                -> RawBlock
+                -> RawClosure
+extractFromBlock cp (RawBlock bp _ b) =
+--  Calling closureSize doesn't work as the info table addresses are bogus
+--  clos_size_w <- withForeignPtr fp' (\p -> return $ closureSize (ptrToBox p))
+--  let clos_size = clos_size_w * 8
+    --traceShow (fp, offset, cp, bp,o, l)
+    --traceShow ("FP", fp `plusForeignPtr` offset)
+    RawClosure (BS.drop offset b)
+    where
+      offset = fromIntegral (subtractBlockPtr cp bp)
 
 tAG_MASK :: Word64
 tAG_MASK = 0b111

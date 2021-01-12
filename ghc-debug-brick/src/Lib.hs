@@ -82,6 +82,7 @@ import           GHC.Debug.Client.Monad (request, run, Debuggee)
 import qualified GHC.Debug.Client.Monad as GD
 import qualified GHC.Debug.Client.Query as GD
 import qualified GHC.Debug.Types.Graph as HG
+import qualified GHC.Debug.Client.Dominators as HG
 import qualified Data.HashMap.Strict as HM
 import Data.Tree
 import Control.Monad
@@ -104,7 +105,7 @@ initialTraversal e = run e $ do
     let derefFuncM cPtr = do
           c <- GD.dereferenceClosureFromBlock cPtr
           quadtraverse GD.dereferencePapPayload GD.dereferenceConDesc GD.dereferenceStack pure c
-    (hg, _) <- case rs of
+    hg <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     return hg

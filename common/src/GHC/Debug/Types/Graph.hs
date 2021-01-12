@@ -28,6 +28,7 @@ module GHC.Debug.Types.Graph( -- * Types
                             , annotateHeapGraph
 
                             -- * Reverse Graph
+                            , ReverseGraph
                             , mkReverseGraph
                             , reverseEdges
                             )
