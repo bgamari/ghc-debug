@@ -18,35 +18,41 @@
 - more type parameters and other changes..
 -}
 module GHC.Debug.Types.Closures (
-    -- * Closures
+    -- * Closure Representation
       Closure
     , SizedClosure
     , DebugClosure(..)
+    , TRecEntry(..)
+    -- * Wrappers
     , DebugClosureWithSize
+    , DebugClosureWithExtra(..)
     , Size(..)
     , InclusiveSize(..)
     , RetainerSize(..)
-    , DebugClosureWithExtra(..)
-    , TRecEntry(..)
     , noSize
     , dcSize
+    , allClosures
+    -- * Info Table Representation
     , StgInfoTable(..)
     , StgInfoTableWithPtr(..)
-    , FieldValue(..)
+    -- * Stack Frame Representation
     , DebugStackFrame(..)
+    , FieldValue(..)
     , GenStackFrames(..)
     , StackFrames
+    , StackCont(..)
+    -- * PAP payload representation
     , GenPapPayload(..)
     , PapPayload
     , PayloadCont(..)
-    , GHC.PrimType(..)
-    , lookupStgInfoTableWithPtr
-    , allClosures
-    , Quadtraversable(..)
-    , quadmap
+    -- * Constructor Description Representation
     , ConstrDesc(..)
     , ConstrDescCont
     , parseConstrDesc
+
+    -- * Traversing functions
+    , Quadtraversable(..)
+    , quadmap
     ) where
 
 import Prelude -- See note [Why do we import Prelude here?]
@@ -78,8 +84,10 @@ import Data.Monoid
 type Closure = DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr
 type SizedClosure = DebugClosureWithSize PayloadCont ConstrDescCont StackCont ClosurePtr
 
+-- | Information needed to decode a 'ConstrDesc'
 type ConstrDescCont = InfoTablePtr
 
+-- | Information needed to decode a PAP payload
 data PayloadCont = PayloadCont ClosurePtr [Word64] deriving Show
 
 type DebugClosureWithSize = DebugClosureWithExtra Size
@@ -127,8 +135,8 @@ instance Eq StgInfoTableWithPtr where
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
 --
--- The data type is parametrized by the type to store references in. Usually
--- this is a 'Box' with the type synonym 'Closure'.
+-- The data type is parametrized by 4 type parameters which correspond to
+-- different pointer types.
 --
 -- All Heap objects have the same basic layout. A header containing a pointer
 -- to the info table and a payload with various fields. The @info@ field below
@@ -372,6 +380,11 @@ newtype GenPapPayload b = GenPapPayload { getValues :: [FieldValue b] }
 
 type PapPayload = GenPapPayload ClosurePtr
 
+-- | Information needed to decode a set of stack frames
+data StackCont = StackCont StackPtr -- Address of start of frames
+                           RawStack -- The raw frames
+                           deriving Show
+
 type StackFrames = GenStackFrames ClosurePtr
 newtype GenStackFrames b = GenStackFrames { getFrames :: [DebugStackFrame b] }
   deriving (Functor, Foldable, Traversable, Show, Ord, Eq)
@@ -477,6 +490,3 @@ instance Quadtraversable DebugClosure where
       MutPrimClosure a1 a2 a3 -> MutPrimClosure a1 <$> traverse g a2 <*> pure a3
       OtherClosure a1 bs ws -> OtherClosure a1 <$> traverse g bs <*> pure ws
       UnsupportedClosure i  -> pure (UnsupportedClosure i)
-
-lookupStgInfoTableWithPtr :: DebugClosure pap string s b -> StgInfoTableWithPtr
-lookupStgInfoTableWithPtr dc = info dc

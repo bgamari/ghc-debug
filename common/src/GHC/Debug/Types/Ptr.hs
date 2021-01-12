@@ -23,7 +23,6 @@ module GHC.Debug.Types.Ptr( InfoTablePtr(..)
                           , RawClosure(..)
                           , BlockPtr(..)
                           , StackPtr(..)
-                          , StackCont(..)
                           , RawStack(..)
                           , RawBlock(..)
                           , PtrBitmap(..)
@@ -121,9 +120,6 @@ instance Show ClosurePtr where
   show (ClosurePtr 0) = "null"
   show (ClosurePtr p) =  "0x" ++ showHex p ""
 
-data StackCont = StackCont StackPtr -- Address of start of frames
-                           RawStack -- The raw frames
-                           deriving Show
 
 newtype StackPtr = StackPtr Word64
                    deriving (Eq, Ord)

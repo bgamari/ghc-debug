@@ -342,9 +342,7 @@ analyseFragmentation interval e = loop
       putStrLn "------------------------"
       loop
 
-getSourceLoc c = do
-  case lookupStgInfoTableWithPtr (noSize c) of
-    infoTableWithptr -> request (RequestSourceInfo (tableId infoTableWithptr))
+getSourceLoc c = request (RequestSourceInfo (tableId (info (noSize c))))
 
 -- Testing the snapshot
 p32 e = do
