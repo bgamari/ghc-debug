@@ -46,6 +46,9 @@ foreign import ccall safe "unistd.h getpid"
 -- in this as it performs some cleanup on exit. If not used on the Main thread,
 -- user interupt (Ctrl-C) may skip the cleanup step.
 --
+-- By default the socket is created by referring to 'socketDirectory' which is
+-- in your XDG data directory.
+--
 -- The socket created can also be controlled using the @GHC_DEBUG_SOCKET@
 -- environment variable.
 withGhcDebug :: IO a -> IO a
