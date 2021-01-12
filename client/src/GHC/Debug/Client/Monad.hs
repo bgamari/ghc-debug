@@ -23,6 +23,7 @@ module GHC.Debug.Client.Monad
   , debuggeeClose
   -- * Snapshot run
   , snapshotInit
+  , snapshotRun
     -- * Logging
   , outputRequestLog
   ) where
@@ -35,6 +36,7 @@ import System.Environment
 import GHC.Debug.Client.Monad.Class
 import qualified GHC.Debug.Client.Monad.Haxl as H
 import qualified GHC.Debug.Client.Monad.Simple as S
+import System.IO
 
 -- Modify this to switch between the haxl/non-haxl implementations
 -- type DebugM = H.DebugM
@@ -104,9 +106,16 @@ debuggeeConnect _exeName socketName = do
 snapshotInit :: FilePath -> IO Debuggee
 snapshotInit fp = Debuggee <$> newEnv @DebugM (SnapshotMode fp)
 
+-- | Start an analysis session using a snapshot. This will not connect to a
+-- debuggee.
+snapshotRun :: FilePath -> (Debuggee -> IO a) -> IO a
+snapshotRun fp k = do
+  denv <- snapshotInit fp
+  k denv
+
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()
-debuggeeClose _ = putStrLn "TODO: debuggeeClose: cleanly disconnect from debuggee"
+debuggeeClose _ = hPutStr stderr "TODO: debuggeeClose: cleanly disconnect from debuggee"
 
 debuggeeProcess :: FilePath -> FilePath -> IO CreateProcess
 debuggeeProcess exe sockName = do

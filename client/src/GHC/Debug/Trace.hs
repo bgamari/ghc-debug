@@ -1,7 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 -- | Functions to support the constant space traversal of a heap.
-module GHC.Debug.Trace ( traceFromM, TraceFunctions(..), traceFrom ) where
+module GHC.Debug.Trace ( traceFromM, TraceFunctions(..) ) where
 
 import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
@@ -11,7 +11,6 @@ import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO
 import Control.Monad.Reader
 import Data.IORef
-import Control.Monad.Identity
 import Data.Word
 
 newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word16))
@@ -43,20 +42,6 @@ checkVisit cp mref = do
       return res
 
 
--- Traverse the tree from GC roots, to populate the caches
--- with everything necessary.
-traceFrom :: [ClosurePtr] -> DebugM ()
-traceFrom cps = runIdentityT (traceFromM funcs cps)
-  where
-    nop = const (return ())
-    funcs = TraceFunctions nop nop clos (const (return ())) nop
-
-    clos :: ClosurePtr -> SizedClosure -> (IdentityT DebugM) ()
-              ->  (IdentityT DebugM) ()
-    clos _cp sc k = do
-      let itb = info (noSize sc)
-      _traced <- lift $ request (RequestSourceInfo (tableId itb))
-      k
 
 data TraceFunctions m =
       TraceFunctions { papTrace :: GenPapPayload ClosurePtr -> m DebugM ()

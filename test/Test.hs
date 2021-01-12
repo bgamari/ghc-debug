@@ -11,6 +11,7 @@ import GHC.Debug.Retainers
 import GHC.Debug.Fragmentation
 import GHC.Debug.Profile
 import GHC.Debug.Dominators
+import GHC.Debug.Snapshot
 import GHC.Debug.Count
 import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
 --import GHC.Debug.Types.Closures
@@ -310,7 +311,8 @@ analyseFragmentation interval e = loop
         return (mb_census, bs, as)
       resume e
       summariseBlocks bs
-      outBlockCensus (Map.map fst mb_census)
+      let go (PinnedCensusStats (m, _)) = m
+      printBlockCensus (Map.map go mb_census)
       displayRetainerStack rs
       putStrLn "------------------------"
       loop

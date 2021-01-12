@@ -12,7 +12,19 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-module GHC.Debug.Profile where
+{-# LANGUAGE NumericUnderscores #-}
+{- | Functions for performing whole heap census in the style of the normal
+- heap profiling -}
+module GHC.Debug.Profile( profile
+                        , censusClosureType
+                        , census2LevelClosureType
+                        , closureCensusBy
+                        , CensusByClosureType
+                        , printCensusByClosureType
+                        , CensusStats(..)
+                        , mkCS
+                        , Count(..)
+                        , closureToKey ) where
 
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client
@@ -47,7 +59,6 @@ instance Semigroup CensusStats where
   (CS a b c) <> (CS a1 b1 c1) = CS (a <> a1) (b <> b1) (c <> c1)
 
 type CensusByClosureType = Map.Map Text CensusStats
-type CensusByMBlock = Map.Map Text CensusStats
 
 -- | Perform a heap census in the same style as the -hT profile.
 censusClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
@@ -100,7 +111,9 @@ closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                 Just (k, v) -> Map.insertWith (<>) k v
                 Nothing -> id
 
--- | General function for performing a heap census in constant memory
+-- | Perform a 2-level census where the keys are the type of the closure
+-- in addition to the type of ptrs of the closure. This can be used to
+-- distinguish between lists of different type for example.
 census2LevelClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
 census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
   where
@@ -142,12 +155,14 @@ printCensusByClosureType c = do
   writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
 
 
+-- | Peform a profile at the given interval (in seconds), the result will
+-- be rendered after each iteration using @eventlog2html@.
 profile :: Int -> Debuggee -> IO ()
 profile interval e = loop [(0, Map.empty)] 0
   where
     loop :: [(Int, CensusByClosureType)] -> Int -> IO ()
     loop ss i = do
-      threadDelay interval
+      threadDelay (interval * 1_000_000)
       pause e
       r <- runTrace e $ do
         precacheBlocks

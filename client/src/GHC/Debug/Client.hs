@@ -24,6 +24,7 @@ module GHC.Debug.Client
     -- * Running DebugM
   , run
   , runTrace
+  , runAnalysis
 
     -- * Pause/Resume
   , pause
@@ -45,8 +46,6 @@ module GHC.Debug.Client
   , dereferenceConDesc
 
   , Quadtraversable(..)
-  , makeSnapshot
-
 
   -- * Building a Heap Graph
   , buildHeapGraph
@@ -83,7 +82,6 @@ import           GHC.Debug.Types.Closures
 import           GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.Query
-import           GHC.Debug.Snapshot
 import qualified GHC.Debug.Types.Graph as HG
 import Data.List.NonEmpty (NonEmpty)
 
@@ -104,3 +102,13 @@ buildHeapGraph = HG.buildHeapGraph derefFuncM
 -- memory.
 multiBuildHeapGraph :: Maybe Int -> NonEmpty ClosurePtr -> DebugM (HG.HeapGraph Size)
 multiBuildHeapGraph = HG.multiBuildHeapGraph derefFuncM
+
+-- | Perform the given analysis whilst the debuggee is paused, then resume
+-- and apply the continuation to the result.
+runAnalysis :: DebugM a -> (a -> IO r) -> Debuggee -> IO r
+runAnalysis a k e = do
+  pause e
+  r <- run e $ a
+  resume e
+  k r
+

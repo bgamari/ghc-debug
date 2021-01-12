@@ -1,5 +1,5 @@
 -- | Functions for computing retainers
-module GHC.Debug.Retainers where
+module GHC.Debug.Retainers(findRetainers) where
 
 import GHC.Debug.Client
 import Control.Monad.State
@@ -13,7 +13,9 @@ addOne _ (Just 0, cp) = (Just 0, cp)
 addOne cp (n, cps)    = (subtract 1 <$> n, cp:cps)
 
 -- | From the given roots, find any path to one of the given pointers.
--- Note: This function can be quite slow!
+-- Note: This function can be quite slow! The first argument is a limit to
+-- how many paths to find. You should normally set this to a small number
+-- such as 10.
 findRetainers :: Maybe Int -> [ClosurePtr] -> [ClosurePtr] -> DebugM [[ClosurePtr]]
 findRetainers limit rroots bads = (\(_, r, _) -> snd r) <$> runRWST (traceFromM funcs rroots) [] (limit, [])
   where

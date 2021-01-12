@@ -14,7 +14,10 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ViewPatterns #-}
-module GHC.Debug.ObjectEquiv(objectEquiv) where
+-- | Attempt to find duplicate objects on the heap. The analysis is not
+-- exact but attempts to find closures which are identical, and could be
+-- shared.
+module GHC.Debug.ObjectEquiv(objectEquiv, objectEquivAnalysis, printObjectEquiv, EquivMap) where
 
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client
@@ -40,7 +43,6 @@ limit = 100_000
 -- "interesting" and kept for the future.
 of_interest :: Int
 of_interest = 1000
-
 
 -- Pick a representative ClosurePtr for each object
 type EquivMap = PS.OrdPSQ PtrClosure -- Object
@@ -152,8 +154,6 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
         -- No equivalence class yet
         Nothing -> return cp
 
-
-
 printObjectEquiv :: EquivMap -> IO ()
 printObjectEquiv c = do
   let cmp (_, b,_) = b
@@ -163,26 +163,22 @@ printObjectEquiv c = do
   mapM_ (putStrLn . showLine) res
 --  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
 
-
-objectEquiv :: Debuggee -> IO ()
-objectEquiv e = do
-  pause e
-  r <- runTrace e $ do
-        precacheBlocks
-        rs <- gcRoots
-        traceWrite (length rs)
-        r <- censusObjectEquiv rs
-        return r
-  resume e
-  let elems = (snd $ PS.atMostView of_interest (emap r))
+objectEquivAnalysis :: DebugM (EquivMap, HeapGraph Size)
+objectEquivAnalysis = do
+  precacheBlocks
+  rs <- gcRoots
+  traceWrite (length rs)
+  r1 <- emap <$> censusObjectEquiv rs
+  let elems = (snd $ PS.atMostView of_interest r1)
       cmp (_, b,_) = b
       cps = map (\(_, _, cp) -> cp) (reverse (sortBy (comparing cmp) (PS.toList elems)))
   -- Use this code if we are returning ClosurePtr not SourceInformation
-  hg <- run e $ case cps of
+  r2 <- case cps of
     [] -> error "None"
     (c:cs) -> multiBuildHeapGraph (Just 10) (c :| cs)
---  let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
---  mapM print (zip top10 cs)
-  putStrLn $ ppHeapGraph show hg
-  (printObjectEquiv elems)
-  return ()
+  return (r1, r2)
+
+objectEquiv :: Debuggee -> IO ()
+objectEquiv = runAnalysis objectEquivAnalysis $ \(emap, hg) -> do
+                                                    printObjectEquiv emap
+                                                    putStrLn $ ppHeapGraph show hg

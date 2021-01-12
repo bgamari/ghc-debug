@@ -17,8 +17,14 @@ module GHC.Debug.Client.Query
   , pausePoll
   , withPause
 
+  -- * General Requests
+  , precacheBlocks
+  , gcRoots
+  , allBlocks
+  , getSourceInfo
+  , savedObjects
+
   -- * Dereferencing functions
-  , DebugClosure(..)
   , dereferenceClosures
   , dereferenceClosure
   , dereferenceClosureC
@@ -26,11 +32,6 @@ module GHC.Debug.Client.Query
   , dereferencePapPayload
   , dereferenceConDesc
 
-  , precacheBlocks
-  , gcRoots
-  , allBlocks
-  , getSourceInfo
-  , savedObjects
   ) where
 
 import           Control.Exception
