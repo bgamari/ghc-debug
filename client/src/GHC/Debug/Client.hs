@@ -49,10 +49,10 @@ module GHC.Debug.Client
 
 
   -- * Building a Heap Graph
-  , HG.HeapGraph(..)
-  , HG.HeapGraphEntry(..)
   , buildHeapGraph
   , multiBuildHeapGraph
+  , HG.HeapGraph(..)
+  , HG.HeapGraphEntry(..)
 
   -- * Printing a heap graph
   , HG.ppHeapGraph

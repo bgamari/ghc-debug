@@ -49,6 +49,7 @@ pause :: Debuggee -> IO ()
 pause e = do
   run e $ request RequestPause
 
+-- | Resume the debuggee
 resume :: Debuggee -> IO ()
 resume e = run e $ request RequestResume
 
@@ -73,17 +74,18 @@ pauseThen :: Debuggee -> DebugM b -> IO b
 pauseThen e d =
   pause e >> run e d
 
+-- | Decode a closure corresponding to the given 'ClosurePtr'
 dereferenceClosure :: ClosurePtr -> DebugM SizedClosure
 dereferenceClosure c = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
-    --print $ map (lookupDwarf d) its
     raw_it <- request (RequestInfoTable it)
     return $ decodeClosure raw_it (c, raw_c)
 
 dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
 dereferenceClosures cs = mapM dereferenceClosureFromBlock cs
 
+-- | Deference some StackFrames from a given 'StackCont'
 dereferenceStack :: StackCont -> DebugM StackFrames
 dereferenceStack (StackCont sp stack) = do
 --  req_stack <- request (RequestStack (coerce cp))
@@ -94,6 +96,7 @@ dereferenceStack (StackCont sp stack) = do
   decoded_stack <- decodeStack get_info_table get_bitmap stack
   return decoded_stack
 
+-- | Derference the PapPayload from the 'PayloadCont'
 dereferencePapPayload :: PayloadCont -> DebugM PapPayload
 dereferencePapPayload (PayloadCont fp raw) = do
   bm <- request (RequestFunBitmap (fromIntegral $ length raw) fp)
@@ -106,7 +109,6 @@ dereferencePapPayload (PayloadCont fp raw) = do
 
     decodeField True  = SPtr . mkClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord
-
 
 
 dereferenceConDesc :: ConstrDescCont -> DebugM ConstrDesc
@@ -143,18 +145,24 @@ dereferenceClosureFromBlock cp
       st_it <- request (RequestInfoTable it)
       return $ decodeClosure st_it (cp, rc)
 
+-- | Fetch all the blocks from the debuggee and add them to the block cache
 precacheBlocks :: DebugM [RawBlock]
 precacheBlocks = requestBlock PopulateBlockCache
 
+-- | Query the debuggee for the list of GC Roots
 gcRoots :: DebugM [ClosurePtr]
 gcRoots = request RequestRoots
 
+-- | Query the debuggee for all the blocks it knows about
 allBlocks :: DebugM [RawBlock]
 allBlocks = request RequestAllBlocks
 
+-- | Query the debuggee for source information about a specific info table.
+-- This requires your executable to be built with @-finfo-table-map@.
 getSourceInfo :: InfoTablePtr -> DebugM (Maybe SourceInformation)
 getSourceInfo = request . RequestSourceInfo
 
+-- | Query the debuggee for the list of saved objects.
 savedObjects :: DebugM [ClosurePtr]
 savedObjects = request RequestSavedObjects
 

@@ -72,6 +72,10 @@ data TraceFunctions m =
 
 type C m = (MonadTrans m, Monad (m DebugM))
 
+-- | A generic heap traversal function which will use a small amount of
+-- memory linear in the heap size. Using this function with appropiate
+-- accumulation functions you should be able to traverse quite big heaps in
+-- not a huge amount of memory.
 traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
 traceFromM k cps = do
   st <- lift (unsafeLiftIO (newIORef (TraceState (VisitedSet IM.empty))))
