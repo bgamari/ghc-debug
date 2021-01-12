@@ -11,7 +11,6 @@ import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO
 import Control.Monad.Reader
 import Data.IORef
-import Debug.Trace
 import Control.Monad.Identity
 import Data.Word
 
@@ -19,16 +18,6 @@ newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word16))
 
 newtype TraceState = TraceState { visited :: VisitedSet }
 
-data TraceFunctions m =
-      TraceFunctions { papTrace :: GenPapPayload ClosurePtr -> m DebugM ()
-      , stackTrace :: GenStackFrames ClosurePtr -> m DebugM ()
-      , closTrace :: ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ()
-      , visitedVal :: ClosurePtr -> (m DebugM) ()
-      , conDescTrace :: ConstrDesc -> m DebugM ()
-      }
-
-
-type C m = (MonadTrans m, Monad (m DebugM))
 
 getKeyPair :: ClosurePtr -> (Int, Word16)
 getKeyPair cp =
@@ -66,10 +55,21 @@ traceFrom cps = runIdentityT (traceFromM funcs cps)
 
     clos :: ClosurePtr -> SizedClosure -> (IdentityT DebugM) ()
               ->  (IdentityT DebugM) ()
-    clos cp sc k = do
+    clos _cp sc k = do
       let itb = info (noSize sc)
-      lift $ request (RequestSourceInfo (tableId itb))
+      _traced <- lift $ request (RequestSourceInfo (tableId itb))
       k
+
+data TraceFunctions m =
+      TraceFunctions { papTrace :: GenPapPayload ClosurePtr -> m DebugM ()
+      , stackTrace :: GenStackFrames ClosurePtr -> m DebugM ()
+      , closTrace :: ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ()
+      , visitedVal :: ClosurePtr -> (m DebugM) ()
+      , conDescTrace :: ConstrDesc -> m DebugM ()
+      }
+
+
+type C m = (MonadTrans m, Monad (m DebugM))
 
 traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
 traceFromM k cps = do

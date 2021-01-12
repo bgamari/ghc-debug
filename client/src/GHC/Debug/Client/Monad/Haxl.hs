@@ -44,8 +44,12 @@ instance DebugMonad (GenHaxl Debuggee String) where
   runDebugTrace = runHaxlWithWrites
   newEnv args =
     case args of
-      SnapshotMode e -> error "Loading from snapshot not supported"
+      SnapshotMode _e -> error "Loading from snapshot not supported"
       SocketMode h -> mkEnv h
+
+  saveCache = error "TODO"
+  loadCache = error "TODO"
+  unsafeLiftIO = error "TODO"
 
 type DebugM = GenHaxl Debuggee String
 

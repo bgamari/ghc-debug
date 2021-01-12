@@ -68,13 +68,10 @@ module GHC.Debug.Client
   , DebugM
   ) where
 
-import qualified GHC.Debug.Types
 import           GHC.Debug.Types hiding (Closure, DebugClosure)
 import           GHC.Debug.Decode
-import           GHC.Debug.Decode.Stack
 import           GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad
-import           GHC.Debug.Client.BlockCache
 import           GHC.Debug.Client.Query
 import           GHC.Debug.Client.Snapshot
 import           GHC.Debug.Client.Trace

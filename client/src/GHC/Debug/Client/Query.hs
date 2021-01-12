@@ -54,22 +54,13 @@ module GHC.Debug.Client.Query
   ) where
 
 import           Control.Exception
-import           Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.Graph as G
-import           Data.Maybe (fromMaybe, mapMaybe)
-import GHC.Debug.Types
-import           GHC.Debug.Types hiding (Closure, DebugClosure)
+import           GHC.Debug.Types
 import           GHC.Debug.Decode
 import           GHC.Debug.Decode.Stack
-import           GHC.Debug.Convention (socketDirectory)
-import           GHC.Debug.Client.Monad (DebugEnv, DebugM, request, requestBlock, run)
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.BlockCache
 import qualified GHC.Debug.Types.Graph as HG
-import qualified Data.IntSet as IS
-import qualified Data.HashMap.Strict as HM
 import Control.Monad.State
-import Data.Tree
 
 import Debug.Trace
 

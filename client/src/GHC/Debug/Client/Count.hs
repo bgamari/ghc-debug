@@ -24,7 +24,7 @@ count cps = snd <$> runStateT (traceFromM funcs cps) (CS 0 0 0)
                -> SizedClosure
                ->  (StateT CensusStats DebugM) ()
                ->  (StateT CensusStats DebugM) ()
-    closAccum cp s k = do
+    closAccum _cp s k = do
       modify' (go s)
       k
 

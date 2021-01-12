@@ -23,32 +23,27 @@ import           GHC.Debug.Client.Trace
 import           GHC.Debug.Client.Profile
 import           GHC.Debug.Types.Graph
 
-import qualified Data.Map.Strict as Map
 import Control.Monad.State
-import Control.Monad.RWS
 import Data.List
 import Data.Ord
-import Control.Concurrent
-import Eventlog.Types
-import Eventlog.Data
-import Eventlog.Total
-import Eventlog.HtmlTemplate
-import Eventlog.Args (defaultArgs)
-import Data.Text (pack, Text, unpack)
-import Data.Semigroup
-import qualified Data.Text as T
 import Debug.Trace
 import qualified Data.OrdPSQ as PS
 import qualified Data.IntMap.Strict as IM
 import Data.List.NonEmpty(NonEmpty(..))
 
+derefFuncM :: ClosurePtr -> DebugM PtrClosure
 derefFuncM c = do
-  c <- dereferenceClosureFromBlock c
-  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c
+  c' <- dereferenceClosureFromBlock c
+  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c'
 
 type CensusByObjectEquiv = IM.IntMap CensusStats
 
+-- | How big to allow the priority queue to grow to
+limit :: Int
 limit = 100_000
+of_interest :: Int
+-- | How many times an object must appear per 100 000 closures to be
+-- "interesting" and kept for the future.
 of_interest = 1000
 
 
@@ -63,7 +58,7 @@ type Equiv2Map = IM.IntMap -- Pointer
 data ObjectEquivState = ObjectEquivState  {
                             emap   :: !EquivMap
                           , emap2 :: !Equiv2Map
-                          , census :: !CensusByObjectEquiv
+                          , _census :: !CensusByObjectEquiv
                           }
 -- Don't need to add identity mapping in emap2 because lookup failure is
 -- the identity anyway.
@@ -90,11 +85,15 @@ trimMap :: ObjectEquivState -> ObjectEquivState
 trimMap o = if checkSize o > limit
               then let new_o = o { emap = snd $ PS.atMostView of_interest (emap o) }
                    in traceShow (checkSize new_o) new_o
+                   -- TODO: Here would be good to also keep everything
+                   -- which is referenced by the kept closures, otherwise
+                   -- you end up with duplicates in the map
 
               else o
 
+-- | O(1) due to psqueues implementation
 checkSize :: ObjectEquivState -> Int
-checkSize (ObjectEquivState e1 e2 _) = PS.size e1
+checkSize (ObjectEquivState e1 _ _) = PS.size e1
 
 type PtrClosure = DebugClosureWithSize PapPayload ConstrDesc StackFrames ClosurePtr
 

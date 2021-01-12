@@ -18,14 +18,10 @@ import qualified Data.HashMap.Strict as HM
 import GHC.Word
 import Data.Hashable
 import Data.IORef
-import Control.Concurrent
-import System.IO
 import GHC.Debug.Decode
 import Data.Bits
 import Data.List
 import Data.Binary
-import Data.Binary.Get
-import Control.Applicative
 
 data BlockCache = BlockCache (HM.HashMap Word64 RawBlock)
 
@@ -40,16 +36,13 @@ addBlock :: RawBlock -> BlockCache -> BlockCache
 addBlock rb@(RawBlock (BlockPtr bp) _ _) (BlockCache bc) =
   BlockCache (HM.insert bp rb bc)
 
--- 12 bits
-bLOCK_MASK :: Word64
-bLOCK_MASK = 0b111111111111
 
 addBlocks :: [RawBlock] -> BlockCache -> BlockCache
 addBlocks bc bs = Prelude.foldr addBlock bs bc
 
 lookupClosure :: ClosurePtr -> BlockCache -> Maybe RawBlock
 lookupClosure (ClosurePtr cp) (BlockCache b) =
-  HM.lookup (cp .&. complement bLOCK_MASK) b
+  HM.lookup (cp .&. complement blockMask) b
 
 bcSize :: BlockCache -> Int
 bcSize (BlockCache b) = HM.size b
