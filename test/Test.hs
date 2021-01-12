@@ -10,6 +10,7 @@ import GHC.Debug.Client hiding (traceFrom)
 import GHC.Debug.Client.Retainers
 import GHC.Debug.Client.Fragmentation
 import GHC.Debug.Client.Profile
+import GHC.Debug.Client.Dominators
 import GHC.Debug.Client.Count
 import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
 import GHC.Debug.Types.Graph
@@ -295,7 +296,7 @@ p24 e = do
   runTrace e $ do
     precacheBlocks
     rs <- request RequestRoots
-    (hg, rs') <- case rs of
+    hg <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     case retainerSize hg of
@@ -308,7 +309,7 @@ p26 e = do
   runTrace e $ do
     precacheBlocks
     rs <- request RequestRoots
-    (hg, rs') <- case rs of
+    hg <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
     traceWrite (heapGraphSize hg)
@@ -466,7 +467,7 @@ p39 e = do
     precacheBlocks
     rs <- request RequestRoots
     (Biggest cp sc) <- bigBoyAnalysis rs
-    (hg, _) <- multiBuildHeapGraph derefFuncM (Just 10) (cp :| [])
+    hg <- multiBuildHeapGraph derefFuncM (Just 10) (cp :| [])
     rs <- doAnalysis rs ("BIG", [cp])
     return (hg, rs)
   putStrLn $ ppHeapGraph show hg

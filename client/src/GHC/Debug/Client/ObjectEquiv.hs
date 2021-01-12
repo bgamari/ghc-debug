@@ -41,9 +41,9 @@ type CensusByObjectEquiv = IM.IntMap CensusStats
 -- | How big to allow the priority queue to grow to
 limit :: Int
 limit = 100_000
-of_interest :: Int
 -- | How many times an object must appear per 100 000 closures to be
 -- "interesting" and kept for the future.
+of_interest :: Int
 of_interest = 1000
 
 
@@ -183,7 +183,7 @@ objectEquiv e = do
       cmp (_, b,_) = b
       cps = map (\(_, _, cp) -> cp) (reverse (sortBy (comparing cmp) (PS.toList elems)))
   -- Use this code if we are returning ClosurePtr not SourceInformation
-  (hg, _) <- run e $ case cps of
+  hg <- run e $ case cps of
     [] -> error "None"
     (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
 --  let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10

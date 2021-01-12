@@ -45,6 +45,7 @@ checkVisit cp mref = do
 
 type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
 
+
 -- Traverse the tree from GC roots, to populate the caches
 -- with everything necessary.
 traceFrom :: [ClosurePtr] -> DebugM ()
