@@ -23,10 +23,9 @@ import Brick.Widgets.List
 import IOTree
 import TextCursor
 
-import GHC.Debug.Client
-
 import Namespace
 import Common
+import Lib
 
 
 initialAppState :: AppState

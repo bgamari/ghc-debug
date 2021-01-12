@@ -35,8 +35,8 @@ import Brick.BChan
 import Brick.Widgets.Border
 import Brick.Widgets.List
 
-import GHC.Debug.Client as GD
 import GHC.Debug.Client.Search as GD
+import Lib as GD
 
 import Model
 

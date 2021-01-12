@@ -5,7 +5,7 @@ module GHC.Debug.Client.Trace where
 
 import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
-import           GHC.Debug.Client
+import           GHC.Debug.Client.Query
 
 import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO

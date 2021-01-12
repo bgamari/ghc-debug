@@ -143,20 +143,20 @@ printCensusByClosureType c = do
   writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
 
 
-profile :: Int -> DebugEnv DebugM -> IO ()
+profile :: Int -> Debuggee -> IO ()
 profile interval e = loop [(0, Map.empty)] 0
   where
     loop :: [(Int, CensusByClosureType)] -> Int -> IO ()
     loop ss i = do
       threadDelay interval
-      run e $ request RequestPause
+      pause e
       r <- runTrace e $ do
         precacheBlocks
         rs <- request RequestRoots
         traceWrite (length rs)
         r <- census2LevelClosureType rs
         return r
-      run e $ request RequestResume
+      resume e
       printCensusByClosureType r
       let new_data = (((i + 1) * interval, r) : ss)
       renderProfile new_data

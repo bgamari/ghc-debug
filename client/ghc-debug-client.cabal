@@ -22,6 +22,8 @@ library
                        GHC.Debug.Client.Profile,
                        GHC.Debug.Client.Trace,
                        GHC.Debug.Client.Count,
+                       GHC.Debug.Client.Query
+                       GHC.Debug.Client.Snapshot
                        GHC.Debug.Client.Monad,
                        GHC.Debug.Client.BlockCache,
                        GHC.Debug.Client.RequestCache,

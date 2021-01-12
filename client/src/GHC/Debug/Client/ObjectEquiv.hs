@@ -158,7 +158,6 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
         -- No equivalence class yet
         Nothing -> return cp
 
-    go (ClosurePtr cp) d o = o { census = IM.insertWith (<>) (fromIntegral cp) (mkCS (dcSize d)) (census o) }
 
 
 printObjectEquiv :: EquivMap -> IO ()
@@ -171,16 +170,16 @@ printObjectEquiv c = do
 --  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
 
 
-objectEquiv :: DebugEnv DebugM -> IO ()
+objectEquiv :: Debuggee -> IO ()
 objectEquiv e = do
-  run e $ request RequestPause
+  pause e
   r <- runTrace e $ do
         precacheBlocks
         rs <- request RequestRoots
         traceWrite (length rs)
         r <- censusObjectEquiv rs
         return r
-  run e $ request RequestResume
+  resume e
   let elems = (snd $ PS.atMostView of_interest (emap r))
       cmp (_, b,_) = b
       cps = map (\(_, _, cp) -> cp) (reverse (sortBy (comparing cmp) (PS.toList elems)))

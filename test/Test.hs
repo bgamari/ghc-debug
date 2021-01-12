@@ -58,9 +58,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p33 e  >> outputRequestLog e)
+--main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p40 e  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (\(Debuggee e) -> p40 e)
+main = snapshotRun "/tmp/ghc-debug-cache" p39
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -74,6 +74,40 @@ main = do
   -}
 
 -- Test pause/resume
+p1 :: Debuggee -> IO ()
+p2 :: Debuggee -> IO ()
+p3 :: Debuggee -> IO ()
+p4 :: Debuggee -> IO ()
+p5 :: Debuggee -> IO ()
+p6 :: Debuggee -> IO ()
+p7 :: Debuggee -> IO ()
+p8 :: Debuggee -> IO ()
+p13 :: Debuggee -> IO ()
+p14 :: Debuggee -> IO ()
+p16 :: Debuggee -> IO ()
+p17 :: Debuggee -> IO ()
+p18 :: Debuggee -> IO ()
+p19 :: Debuggee -> IO ()
+p20 :: Debuggee -> IO ()
+p21 :: Debuggee -> IO ()
+p22 :: Debuggee -> IO ()
+p24 :: Debuggee -> IO ()
+p25 :: Debuggee -> IO ()
+p26 :: Debuggee -> IO ()
+p27 :: Debuggee -> IO ()
+p28 :: Debuggee -> IO ()
+p29 :: Debuggee -> IO ()
+p30 :: Debuggee -> IO ()
+p31 :: Debuggee -> IO ()
+p32 :: Debuggee -> IO ()
+p33 :: Debuggee -> IO ()
+p34 :: Debuggee -> IO ()
+p35 :: Debuggee -> IO ()
+p36 :: Debuggee -> IO ()
+p37 :: Debuggee -> IO ()
+p38 :: Debuggee -> IO ()
+p39 :: Debuggee -> IO ()
+p40 :: Debuggee -> IO ()
 p1 e = withPause e ((void $ getChar))
 
 
@@ -90,7 +124,7 @@ p3 e = runTrace e $ do
   ver <- request RequestVersion
   request RequestPause
   request RequestResume
-  return ver
+  traceWrite ver
 
 
 -- Testing get roots
@@ -135,10 +169,10 @@ p6 e = do
   run e $ request RequestPoll
   putStrLn "POLL"
   -- Should return already paused
-  pause (Debuggee e)
+  pause e
   putStrLn "PAUSE"
   -- Now unpause
-  resume (Debuggee e)
+  resume e
   putStrLn "RESUME"
 
 -- Request saved objects
@@ -149,64 +183,6 @@ p7 e = pauseThen e $ do
 p8 e = pauseThen e $ do
   sos <- request RequestSavedObjects
   traceWrite =<< dereferenceClosures sos
-
--- Using findPtr
-{-
-p9 d = do
-  request d RequestPause
-  (s:_) <- request d RequestSavedObjects
-  print s
-  sos <- request d (RequestFindPtr s)
-  print ("FIND_PTR_RES", sos)
-  dereferenceClosures d sos
-
-p10 d = do
-  request d RequestPause
-  (s:_) <- request d RequestRoots
-  request d (RequestFindPtr s) >>= print
-
-p11 e = do
-  threadDelay 10000000
-  pause e
-  itb <- runTrace e $ do
-    ss <- request d RequestSavedObjects
-    [c] <- request d (RequestClosures ss)
-    return (getInfoTblPtr c)
-  case lookupDwarf d itb of
-    Just r -> showFileSnippet d r
-    Nothing -> print "No Dwarf!"
-  -}
-
-{-
-p12 d = do
-  request d RequestPoll
-  [ss] <- request d RequestSavedObjects
-  r <- request d (RequestFindPtr ss)
-  print ss
-  putStrLn "Retaining closures"
-  dcs <- dereferenceClosures d r
-  mapM print dcs
-  putStrLn ""
-  cs <- request d (RequestClosures r)
-  forM_ cs $ \c -> do
-    let itb = getInfoTblPtr c
-    case lookupDwarf d itb of
-      Just r -> showFileSnippet d r
-      Nothing -> return ()
-
-  print "Following thunk"
-  let thunk = r !! 2
-  r <- request d (RequestFindPtr thunk)
-  putStrLn "Retaining closures 2"
-  dereferenceClosures d r >>= mapM print
-  putStrLn ""
-  cs <- request d (RequestClosures r)
-  forM_ cs $ \c -> do
-    let itb = getInfoTblPtr c
-    case lookupDwarf d itb of
-      Just r -> showFileSnippet d r
-      Nothing -> return ()
-      -}
 
 -- testing stack decoding
 p13 e = pauseThen e $ do
@@ -234,19 +210,9 @@ p14 e = pauseThen e $ do
     return res
     --traceWrite res
 
--- Testing ghc-vis
-{-
-p15 d = do
-  request d RequestPause
-  (r:_) <- request d RequestSavedObjects
-  vis d
-  view r "saved"
-  getChar
-  -}
-
 -- pretty-print graph
 p16 e = do
-  pause (Debuggee e)
+  pause e
   hg <- run e $ do
           (so:_) <- request RequestSavedObjects
           buildHeapGraph derefFuncM Nothing so
@@ -254,7 +220,7 @@ p16 e = do
 
 -- Testing IPE
 p17 e = do
-  pause (Debuggee e)
+  pause e
   runTrace e $ do
     [so] <- request RequestSavedObjects
     c <- request (RequestClosure so)
@@ -399,9 +365,9 @@ displayRetainerStack rs = do
             putStrLn (show k ++ "-------------------------------------")
             print l
             mapM (putStrLn . disp) stack
-      zipWithM do_one [0..] (catMaybes rs)
+      zipWithM_ do_one [0..] (catMaybes rs)
 
-analyseFragmentation :: Int -> DebugEnv DebugM -> IO ()
+analyseFragmentation :: Int -> Debuggee -> IO ()
 analyseFragmentation interval e = loop
   where
     loop ::IO ()
@@ -445,12 +411,12 @@ p32 e = do
     loadCache "/tmp/ghc-debug-cache"
     traceMsg "loaded"
 
-p33 e = forM [0..] $ \i -> do
+p33 e = forM_ [0..] $ \i -> do
   makeSnapshot e "/tmp/ghc-debug-cache"
   putStrLn ("CACHED: " ++ show i)
   threadDelay 1_000_000
 
-p34 e = forM [0..] $ \i -> do
+p34 e = forM_ [0..] $ \i -> do
   run e $ request RequestPause
   res <- runTrace e $ do
     precacheBlocks
@@ -491,7 +457,7 @@ p37 e = do
   print cs
 
 p38 e = do
-  u <- pauseThen (Debuggee e) $ unfoldingAnalysis
+  u <- pauseThen e $ unfoldingAnalysis
   printCensusByClosureType u
 
 p39 e = do
@@ -506,7 +472,7 @@ p39 e = do
   putStrLn $ ppHeapGraph show hg
   displayRetainerStack [rs]
 
-p40 e = forM [0..] $ \i -> do
+p40 e = forM_ [0..] $ \i -> do
   run e $ request RequestPause
   res <- runTrace e $ do
     precacheBlocks
@@ -707,7 +673,7 @@ bigBoyAnalysis rroots = execStateT (traceFromM funcs rroots) NoBiggest
 
     closAccum  :: ClosurePtr
                -> SizedClosure
-               -> StateT Biggest  DebugM ()
+               -> StateT Biggest DebugM ()
                -> StateT Biggest DebugM ()
     closAccum cp sc k = do
       modify' (Biggest cp sc <>)
