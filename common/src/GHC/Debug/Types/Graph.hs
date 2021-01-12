@@ -55,8 +55,7 @@ import Data.List.NonEmpty (NonEmpty(..))
 -- exceeding the recursion bound passed to 'buildHeapGraph'.
 --
 -- Besides a pointer to the stored value and the closure representation we
--- also keep track of whether the value was still alive at the last update of the
--- heap graph. In addition we have a slot for arbitrary data, for the user's convenience.
+-- have a slot for arbitrary data, for the user's convenience.
 data HeapGraphEntry a = HeapGraphEntry {
         hgeClosurePtr :: ClosurePtr,
         hgeClosure :: DebugClosure PapHI ConstrDesc StackHI (Maybe HeapGraphIndex),
@@ -98,7 +97,7 @@ heapGraphSize :: HeapGraph a -> Int
 heapGraphSize (HeapGraph _ g) = IM.size g
 
 -- | Creates a 'HeapGraph' for the value in the box, but not recursing further
--- than the given limit. The initial value has index 'heapGraphRoot'.
+-- than the given limit.
 buildHeapGraph
    :: (Monad m)
    => DerefFunction m a
@@ -116,10 +115,6 @@ type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a PapPayload Con
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
---
---   Returns the 'HeapGraph' and the indices of initial values. The arbitrary
---   type @a@ can be used to make the connection between the input and the
---   resulting list of indices, and to store additional data.
 multiBuildHeapGraph
     :: (Monad m)
     => DerefFunction m a
