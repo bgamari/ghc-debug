@@ -30,7 +30,6 @@ library
                        GHC.Debug.Client.Monad.Class
                        GHC.Debug.Client.Monad.Haxl
                        GHC.Debug.Client.Monad.Simple
-                       GHC.Debug.Client.Utils
                        GHC.Debug.Client.Dominators
 
   build-depends:       base >=4.12 && <4.14,
