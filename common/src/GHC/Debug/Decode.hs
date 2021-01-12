@@ -20,7 +20,8 @@ import qualified Data.ByteString.Internal as BSI
 import Data.ByteString.Short.Internal (ShortByteString(..), toShort)
 import qualified Data.ByteString.Lazy as BSL
 
-import GHC.Exts.Heap hiding (Closure)
+import GHC.Exts.Heap (GenClosure)
+import GHC.Exts.Heap hiding (GenClosure(..), Closure)
 import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
@@ -224,6 +225,19 @@ decodeAPStack (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
               fun_closure
               (StackCont sp clos_payload)
 
+decodeStandardLayout :: Get ()
+                     -> ([ClosurePtr] -> [Word] -> Closure)
+                     -> (StgInfoTableWithPtr, RawInfoTable)
+                     -> (ClosurePtr, RawClosure)
+                     -> SizedClosure
+decodeStandardLayout extra k (infot, _) (_, rc) = decodeFromBS rc $ do
+  _itbl <- skipClosureHeader
+  -- For the THUNK header
+  extra
+  pts <- replicateM (fromIntegral (ptrs (decodedTable infot))) getClosurePtr
+  cwords <- replicateM (fromIntegral (nptrs (decodedTable infot))) getWord
+  return $ k pts (map fromIntegral cwords)
+
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeClosure i@(itb, _) c
   -- MP: It was far easier to implement the decoding of these closures in
@@ -238,6 +252,18 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = BLOCKING_QUEUE }) <- decodedTable itb = decodeBlockingQueue i c
   | (StgInfoTable { tipe = STACK }) <- decodedTable itb = decodeStack i c
   | (StgInfoTable { tipe = AP_STACK }) <- decodedTable itb = decodeAPStack i c
+  | (StgInfoTable { tipe = ty }) <- decodedTable itb
+  , CONSTR <= ty && ty <= CONSTR_0_2 =
+      decodeStandardLayout (return ()) (\pts ws -> ConstrClosure itb pts ws (tableId itb)) i c
+  | (StgInfoTable { tipe = ty }) <- decodedTable itb
+  , CONSTR <= ty && ty <= CONSTR_NOCAF =
+      decodeStandardLayout (return ()) (\pts ws -> ConstrClosure itb pts ws (tableId itb)) i c
+  | (StgInfoTable { tipe = ty }) <- decodedTable itb
+  , FUN <= ty && ty <= FUN_STATIC =
+      decodeStandardLayout (return ()) (FunClosure itb) i c
+  | (StgInfoTable { tipe = ty }) <- decodedTable itb
+  , THUNK <= ty && ty <= THUNK_0_2 =
+      decodeStandardLayout (() <$ getWord) (ThunkClosure itb) i c
 decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
