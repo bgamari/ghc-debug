@@ -10,7 +10,7 @@
 -- | Data types for representing different pointers and raw information
 -- All pointers are stored in little-endian to make arithmetic easier.
 --
--- We have to send and recieve the pointers in big endiant though. This
+-- We have to send and recieve the pointers in big endian though. This
 -- conversion is dealt with in the Binary instance for ClosurePtr and
 -- then the other pointers are derived from this instance using DerivingVia
 module GHC.Debug.Types.Ptr( InfoTablePtr(..)
