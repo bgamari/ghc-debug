@@ -12,6 +12,7 @@ module GHC.Debug.Types.Graph( -- * Types
                             , PapHI
                             , StackHI
                             -- * Building a heap graph
+                            , DerefFunction
                             , buildHeapGraph
                             , multiBuildHeapGraph
                             , generalBuildHeapGraph

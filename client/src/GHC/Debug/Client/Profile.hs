@@ -14,10 +14,9 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 module GHC.Debug.Client.Profile where
 
-import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
-import           GHC.Debug.Client
-import           GHC.Debug.Client.Trace
+import GHC.Debug.Client
+import GHC.Debug.Client.Trace
 
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
@@ -64,7 +63,7 @@ censusClosureType = closureCensusBy go
 
 
 
-closureToKey :: GHC.Debug.Types.DebugClosure a ConstrDesc c d -> Text
+closureToKey :: DebugClosure a ConstrDesc c d -> Text
 closureToKey d =
   case d of
      ConstrClosure { constrDesc = ConstrDesc a b c }
@@ -120,7 +119,7 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                -> (StateT CensusByClosureType DebugM) ()
     closAccum _ s k = do
       s' <- lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
-      pts <- lift $ mapM dereferenceClosureFromBlock (allClosures (noSize s'))
+      pts <- lift $ mapM dereferenceClosure (allClosures (noSize s'))
       pts' <- lift $ mapM (quadtraverse pure dereferenceConDesc pure pure) pts
 
 
@@ -152,7 +151,7 @@ profile interval e = loop [(0, Map.empty)] 0
       pause e
       r <- runTrace e $ do
         precacheBlocks
-        rs <- request RequestRoots
+        rs <- gcRoots
         traceWrite (length rs)
         r <- census2LevelClosureType rs
         return r

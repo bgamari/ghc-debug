@@ -13,8 +13,9 @@ module GHC.Debug.Client.Fragmentation (summariseBlocks
                                       ) where
 
 import GHC.Debug.Client.Profile
+import GHC.Debug.Client
 import GHC.Debug.Types
-import GHC.Debug.Client.Monad
+--import GHC.Debug.Client.Monad
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set

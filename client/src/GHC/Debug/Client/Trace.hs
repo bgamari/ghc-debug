@@ -94,7 +94,7 @@ traceClosureFromM k = go
       if b
         then lift $ visitedVal k cp
         else do
-        sc <- lift $ lift $ dereferenceClosureFromBlock cp
+        sc <- lift $ lift $ dereferenceClosure cp
         ReaderT $ \st -> closTrace k cp sc
          (runReaderT (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc) st)
 

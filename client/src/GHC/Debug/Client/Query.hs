@@ -12,43 +12,24 @@
 module GHC.Debug.Client.Query
   ( -- * Pause/Resume
     pause
+  , pauseThen
   , resume
   , pausePoll
   , withPause
 
-  -- * Types
-  , ConstrDesc(..)
-  , ConstrDescCont
-  , GenPapPayload(..)
-  , StackCont
-  , PayloadCont
-  , ClosurePtr
-  , HG.StackHI
-  , HG.PapHI
-  , HG.HeapGraphIndex
-    --
-    -- $dominatorTree
-
-    -- * All this stuff feels too low level to be exposed to the frontend, but
-    --   still could be used for tests.
-  , pauseThen -- This feels odd. Like we should just have a better choice of monad
-  , request
-  , Request(..)
-  , getInfoTblPtr
-  , decodeClosure
-  , FieldValue(..)
-  , decodeInfoTable
-  , lookupInfoTable
+  -- * Dereferencing functions
   , DebugClosure(..)
   , dereferenceClosures
   , dereferenceClosure
-  , dereferenceSizedClosure
-  , dereferenceClosureFromBlock
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
-  , Quadtraversable(..)
+
   , precacheBlocks
+  , gcRoots
+  , allBlocks
+  , getSourceInfo
+  , savedObjects
   ) where
 
 import           Control.Exception
@@ -57,7 +38,6 @@ import           GHC.Debug.Decode
 import           GHC.Debug.Decode.Stack
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.BlockCache
-import qualified GHC.Debug.Types.Graph as HG
 import Control.Monad.State
 
 import Debug.Trace
@@ -93,11 +73,8 @@ pauseThen :: Debuggee -> DebugM b -> IO b
 pauseThen e d =
   pause e >> run e d
 
-dereferenceClosure :: ClosurePtr -> DebugM Closure
-dereferenceClosure c = noSize . head <$> dereferenceClosures [c]
-
-dereferenceSizedClosure :: ClosurePtr -> DebugM SizedClosure
-dereferenceSizedClosure c = do
+dereferenceClosure :: ClosurePtr -> DebugM SizedClosure
+dereferenceClosure c = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
     --print $ map (lookupDwarf d) its
@@ -159,7 +136,7 @@ traceProfile e = do
 -- fails, call 'dereferenceClosure'
 dereferenceClosureFromBlock :: ClosurePtr -> DebugM SizedClosure
 dereferenceClosureFromBlock cp
-  | not (heapAlloced cp) = dereferenceSizedClosure cp
+  | not (heapAlloced cp) = dereferenceClosure cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)
       let it = getInfoTblPtr rc
@@ -169,4 +146,15 @@ dereferenceClosureFromBlock cp
 precacheBlocks :: DebugM [RawBlock]
 precacheBlocks = requestBlock PopulateBlockCache
 
+gcRoots :: DebugM [ClosurePtr]
+gcRoots = request RequestRoots
+
+allBlocks :: DebugM [RawBlock]
+allBlocks = request RequestAllBlocks
+
+getSourceInfo :: InfoTablePtr -> DebugM (Maybe SourceInformation)
+getSourceInfo = request . RequestSourceInfo
+
+savedObjects :: DebugM [ClosurePtr]
+savedObjects = request RequestSavedObjects
 

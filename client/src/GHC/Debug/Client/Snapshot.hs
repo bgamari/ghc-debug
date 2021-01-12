@@ -13,7 +13,7 @@ makeSnapshot e fp = do
   pause e
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     traceFrom rs
     saveCache fp
   resume e

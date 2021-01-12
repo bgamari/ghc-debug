@@ -6,15 +6,14 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Main where
 
-import GHC.Debug.Client hiding (traceFrom)
+import GHC.Debug.Client
 import GHC.Debug.Client.Retainers
 import GHC.Debug.Client.Fragmentation
 import GHC.Debug.Client.Profile
 import GHC.Debug.Client.Dominators
 import GHC.Debug.Client.Count
-import GHC.Debug.Client.Monad  hiding (withDebuggeeConnect)
-import GHC.Debug.Types.Graph
-import GHC.Debug.Types.Closures
+import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
+--import GHC.Debug.Types.Closures
 import GHC.Debug.Client.Trace
 import GHC.Debug.Client.ObjectEquiv
 import Control.Monad.RWS
@@ -75,9 +74,6 @@ main = do
   -}
 
 -- Test pause/resume
-p1 :: Debuggee -> IO ()
-p2 :: Debuggee -> IO ()
-p3 :: Debuggee -> IO ()
 p4 :: Debuggee -> IO ()
 p5 :: Debuggee -> IO ()
 p6 :: Debuggee -> IO ()
@@ -105,32 +101,15 @@ p37 :: Debuggee -> IO ()
 p38 :: Debuggee -> IO ()
 p39 :: Debuggee -> IO ()
 p40 :: Debuggee -> IO ()
-p1 e = withPause e ((void $ getChar))
-
-
--- Testing error codes
-p2 e = runTrace e $ do
-  request RequestPause
-  traceWrite "req1"
-  request RequestPause
-  request RequestPause
-  request RequestPause
-
--- Testing get version
-p3 e = runTrace e $ do
-  ver <- request RequestVersion
-  request RequestPause
-  request RequestResume
-  traceWrite ver
 
 
 -- Testing get roots
 p4 e = pauseThen e $ do
-  request RequestRoots >>= traceWrite
+  gcRoots >>= traceWrite
 
 -- request closures
 p5 e = pauseThen e $ do
-  r <- request RequestRoots
+  r <- gcRoots
   traceWrite (length r)
   forM_ [0..length r - 1] $ \i -> do
     let cs = [r !! i]
@@ -139,7 +118,7 @@ p5 e = pauseThen e $ do
 
 -- request all closures
 p5a e = pauseThen e $ do
-  rs <- request RequestRoots
+  rs <- gcRoots
   traceWrite rs
   cs <- dereferenceClosures rs
   traceWrite cs
@@ -154,7 +133,7 @@ p5a e = pauseThen e $ do
 
 -- request all closures
 p5b e = pauseThen e $ do
-  rs <- request RequestRoots
+  rs <- gcRoots
   dereferenceClosures rs
 
 
@@ -163,7 +142,7 @@ p5b e = pauseThen e $ do
 
 p6 e = do
   -- This blocks until a pause
-  run e $ request RequestPoll
+  pausePoll e
   putStrLn "POLL"
   -- Should return already paused
   pause e
@@ -174,45 +153,39 @@ p6 e = do
 
 -- Request saved objects
 p7 e = pauseThen e $ do
-  request RequestSavedObjects >>= traceWrite
+  savedObjects >>= traceWrite
 
 -- request saved objects
 p8 e = pauseThen e $ do
-  sos <- request RequestSavedObjects
+  sos <- savedObjects
   traceWrite =<< dereferenceClosures sos
 
 -- pretty-print graph
 p16 e = do
   pause e
   hg <- run e $ do
-          (so:_) <- request RequestSavedObjects
-          buildHeapGraph derefFuncM Nothing so
+          (so:_) <- savedObjects
+          buildHeapGraph Nothing so
   putStrLn $ ppHeapGraph (const "") hg
 
 -- Testing IPE
 p17 e = do
   pause e
   runTrace e $ do
-    [so] <- request RequestSavedObjects
-    c <- request (RequestClosure so)
-    let it = getInfoTblPtr c
+    [so] <- savedObjects
+    c <- dereferenceClosure so
+    let it = tableId (info (noSize c))
     traceWrite c
     traceWrite it
-    traceWrite =<< request (RequestSourceInfo it)
+    traceWrite =<< getSourceInfo it
 
-
-derefFunc e c = run e $ derefFuncM c
-
-derefFuncM c = do
-  c <- dereferenceClosureFromBlock c
-  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c
 
 -- Use with large-thunk
 p19 e = do
-  run e $ request RequestPoll
+  pausePoll e
   hg <- run e $ do
-          (so:_) <- request RequestSavedObjects
-          hg <- buildHeapGraph derefFuncM Nothing so
+          (so:_) <- savedObjects
+          hg <- buildHeapGraph Nothing so
           annotateWithSource hg
   putStrLn $ ppHeapGraph (maybe "" show) hg
 
@@ -221,67 +194,67 @@ annotateWithSource :: HeapGraph a -> DebugM (HeapGraph (Maybe SourceInformation)
 annotateWithSource hg = traverseHeapGraph go2 hg
   where
     go2 (HeapGraphEntry a1 a2 _) = HeapGraphEntry a1 a2 <$> go a2
-    go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = request (RequestSourceInfo i)
+    go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = getSourceInfo i
     go _ = return Nothing
 
 p20 e = do
-  res <- pauseThen e $ request RequestAllBlocks
+  res <- pauseThen e $ allBlocks
   print (length res)
 
 -- request closures, using blocks
 p21 e = pauseThen e $ do
-  r <- request RequestRoots
+  r <- gcRoots
   traceWrite (length r)
   forM_ r $ \c -> do
     traceWrite c
-    dereferenceClosureFromBlock c
+    dereferenceClosure c
 
 -- Use with large-thunk
 p24 e = do
-  run e $ request RequestPause
+  pause e
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     hg <- case rs of
       [] -> error "Empty roots"
-      (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+      (x:xs) -> multiBuildHeapGraph  Nothing (x :| xs)
     case retainerSize hg of
       rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
 
 p25 e = runTrace e $ precacheBlocks >>= traceWrite
 
 p26 e = do
-  run e $ request RequestPause
+  pause e
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     hg <- case rs of
       [] -> error "Empty roots"
-      (x:xs) -> multiBuildHeapGraph derefFuncM Nothing (x :| xs)
+      (x:xs) -> multiBuildHeapGraph  Nothing (x :| xs)
     traceWrite (heapGraphSize hg)
 
 p27 e = do
-  run e $ request RequestPause
+  pause e
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     traceFrom rs
 
 p28 e = do
   p27 e
-  run e $ request RequestResume
+  resume e
   threadDelay 1_000_000
   p28 e
 
 p29 e = do
-  run e $ request RequestPause
+  pause e
   r <- runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     traceWrite (length rs)
     censusClosureType rs
   printCensusByClosureType r
-  run e $ request RequestResume
+  resume e
   threadDelay 1_000_000
   p29 e
 
@@ -320,12 +293,12 @@ analyseFragmentation interval e = loop
     loop ::IO ()
     loop = do
       threadDelay interval
-      run e $ request RequestPause
+      pause e
       putStrLn "PAUSED"
       (mb_census, bs, rs) <- runTrace e $ do
         -- Get all known blocks
         bs <- precacheBlocks
-        rs <- request RequestRoots
+        rs <- gcRoots
         traceWrite ("ROOTS", length rs)
         mb_census <- censusPinnedBlocks bs rs
         let bads = findBadPtrs mb_census
@@ -335,21 +308,21 @@ analyseFragmentation interval e = loop
         -- each call to `doAnalysis` will perform a full heap traversal.
         as <- mapM (doAnalysis rs) ([(l, ptrs) | ((c, ptrs), l) <- take 5 (bads)])
         return (mb_census, bs, as)
-      run e $ request RequestResume
+      resume e
       summariseBlocks bs
       outBlockCensus (Map.map fst mb_census)
       displayRetainerStack rs
       putStrLn "------------------------"
       loop
 
-getSourceLoc c = request (RequestSourceInfo (tableId (info (noSize c))))
+getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
 
 -- Testing the snapshot
 p32 e = do
-  run e $ request RequestPause
+  pause e
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     traceFrom rs
     saveCache "/tmp/ghc-debug-cache"
     traceMsg "saved"
@@ -362,20 +335,20 @@ p33 e = forM_ [0..] $ \i -> do
   threadDelay 1_000_000
 
 p34 e = forM_ [0..] $ \i -> do
-  run e $ request RequestPause
+  pause e
   res <- runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     res <- sebAnalysis rs
     return res
-  run e $ request RequestResume
+  resume e
   print i
   top10 <- printResult res
   {-
   -- Use this code if we are returning ClosurePtr not SourceInformation
   (hg, _) <- run e $ case top10 of
     [] -> error "None"
-    (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
+    (c:cs) -> multiBuildHeapGraph  (Just 10) (c :| cs)
   let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
   mapM print (zip top10 cs)
   putStrLn $ ppHeapGraph show hg
@@ -386,18 +359,18 @@ p34 e = forM_ [0..] $ \i -> do
 p35 e = objectEquiv e
 
 p36 e = do
-  run e $ request RequestPause
+  pause e
   runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     traceFrom rs
     traceFrom rs
 
 p37 e = do
-  run e $ request RequestPause
+  pause e
   cs <- runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     count rs
   print cs
 
@@ -406,32 +379,32 @@ p38 e = do
   printCensusByClosureType u
 
 p39 e = do
-  run e $ request RequestPause
+  pause e
   (hg, rs) <- runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     (Biggest cp sc) <- bigBoyAnalysis rs
-    hg <- multiBuildHeapGraph derefFuncM (Just 10) (cp :| [])
+    hg <- multiBuildHeapGraph  (Just 10) (cp :| [])
     rs <- doAnalysis rs ("BIG", [cp])
     return (hg, rs)
   putStrLn $ ppHeapGraph show hg
   displayRetainerStack [rs]
 
 p40 e = forM_ [0..] $ \i -> do
-  run e $ request RequestPause
+  pause e
   res <- runTrace e $ do
     precacheBlocks
-    rs <- request RequestRoots
+    rs <- gcRoots
     res <- thunkAnalysis rs
     return res
-  run e $ request RequestResume
+  resume e
   print i
   top10 <- printResult res
   {-
   -- Use this code if we are returning ClosurePtr not SourceInformation
   (hg, _) <- run e $ case top10 of
     [] -> error "None"
-    (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
+    (c:cs) -> multiBuildHeapGraph  (Just 10) (c :| cs)
   let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
   mapM print (zip top10 cs)
   putStrLn $ ppHeapGraph show hg
@@ -477,7 +450,7 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
     -- closure, we still want to count it (because we are counting
     -- TyConApp really) so call `closAccum`
     visited cp = do
-      sc <- lift $ dereferenceClosureFromBlock cp
+      sc <- lift $ dereferenceClosure cp
       closAccum cp sc (return ())
 
     -- First time we have visited a closure
@@ -559,7 +532,7 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
 -- 2. Perform a census of everything they retain.
 unfoldingAnalysis :: DebugM CensusByClosureType
 unfoldingAnalysis = do
-  rroots <- request RequestRoots
+  rroots <- gcRoots
   precacheBlocks
   unfolding_ptrs <- findUnfoldings rroots
   traceWrite (length unfolding_ptrs)

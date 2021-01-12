@@ -103,7 +103,7 @@ initialTraversal e = run e $ do
     _ <- GD.precacheBlocks
     rs <- request RequestRoots
     let derefFuncM cPtr = do
-          c <- GD.dereferenceClosureFromBlock cPtr
+          c <- GD.dereferenceClosure cPtr
           quadtraverse GD.dereferencePapPayload GD.dereferenceConDesc GD.dereferenceStack pure c
     hg <- case rs of
       [] -> error "Empty roots"
@@ -222,7 +222,7 @@ toPtr (Stack sc _)   = SP sc
 data Ptr = CP ClosurePtr | SP StackCont
 
 dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr)
-dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceSizedClosure cp)
+dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceClosure cp)
 dereferencePtr dbg (SP sc) = run dbg (Stack <$> pure sc <*> GD.dereferenceStack sc)
 
 instance Quadtraversable DebugClosure where
@@ -272,7 +272,7 @@ closureReferences e (Closure _ closure) = run e $ do
   let refPtrs = closureReferencesAndLabels (unDCS closure)
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
-      refClosure' <- GD.dereferenceSizedClosure cPtr
+      refClosure' <- GD.dereferenceClosure cPtr
       return (label, Closure cPtr refClosure')
     Right sPtr -> do
       refStack' <- GD.dereferenceStack sPtr

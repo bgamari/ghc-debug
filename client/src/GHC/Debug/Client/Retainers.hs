@@ -3,8 +3,7 @@ module GHC.Debug.Client.Retainers where
 
 import GHC.Debug.Client
 import Control.Monad.State
-import           GHC.Debug.Types
-import           GHC.Debug.Client.Trace
+import GHC.Debug.Client.Trace
 
 import qualified Data.Set as Set
 import Control.Monad.RWS

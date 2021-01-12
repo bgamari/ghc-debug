@@ -12,6 +12,7 @@
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
     Debuggee
+  , DebugM
   , debuggeeRun
   , debuggeeConnect
   , debuggeeClose
@@ -20,59 +21,91 @@ module GHC.Debug.Client
   , socketDirectory
   , snapshotRun
 
+    -- * Running DebugM
+  , run
+  , runTrace
+
     -- * Pause/Resume
   , pause
+  , pauseThen
   , resume
   , pausePoll
   , withPause
 
-  -- * Types
-  , ConstrDesc(..)
-  , ConstrDescCont
-  , GenPapPayload(..)
-  , StackCont
-  , PayloadCont
-  , ClosurePtr
-  , HG.StackHI
-  , HG.PapHI
-  , HG.HeapGraphIndex
-    --
-    -- $dominatorTree
-
-    -- * All this stuff feels too low level to be exposed to the frontend, but
-    --   still could be used for tests.
-  , pauseThen -- This feels odd. Like we should just have a better choice of monad
-  , request
-  , Request(..)
-  , SourceInformation(..)
-  , getInfoTblPtr
-  , decodeClosure
-  , FieldValue(..)
-  , decodeInfoTable
-  , lookupInfoTable
-  , DebugClosure(..)
-  , dereferenceClosures
+  -- * Basic Requests
+  , gcRoots
+  , allBlocks
+  , getSourceInfo
+  , savedObjects
+  , precacheBlocks
   , dereferenceClosure
-  , dereferenceSizedClosure
-  , dereferenceClosureFromBlock
+  , dereferenceClosures
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
+
   , Quadtraversable(..)
-  , precacheBlocks
-  , traceFromM
   , makeSnapshot
-  , DebugEnv
-  , DebugM
+
+
+  -- * Building a Heap Graph
+  , HG.HeapGraph(..)
+  , HG.HeapGraphEntry(..)
+  , buildHeapGraph
+  , multiBuildHeapGraph
+
+  -- * Printing a heap graph
+  , HG.ppHeapGraph
+
+  -- * Tracing
+  , traceWrite
+  , traceMsg
+
+  -- * Caching
+  , saveCache
+  , loadCache
+
+  -- * Higher level functions
+  , traceFrom
+  , traceFromM
+
+  -- * Types
+  , module GHC.Debug.Types.Closures
+  , SourceInformation(..)
+  , RawBlock(..)
+  , BlockPtr
+  , StackPtr
+  , ClosurePtr
+  , InfoTablePtr
+  , HG.StackHI
+  , HG.PapHI
+  , HG.HeapGraphIndex
   ) where
 
-import           GHC.Debug.Types hiding (Closure, DebugClosure)
-import           GHC.Debug.Decode
+import           GHC.Debug.Types
+import           GHC.Debug.Types.Closures
 import           GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.Query
 import           GHC.Debug.Client.Snapshot
 import           GHC.Debug.Client.Trace
 import qualified GHC.Debug.Types.Graph as HG
+import Data.List.NonEmpty (NonEmpty)
 
+derefFuncM :: HG.DerefFunction DebugM Size
+derefFuncM c = do
+  c' <- dereferenceClosure c
+  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c'
 
+-- | Build a heap graph starting from the given root. The first argument
+-- controls how many levels to recurse. You nearly always want to set this
+-- to a small number ~ 10, as otherwise you can easily run out of memory.
+buildHeapGraph :: Maybe Int -> ClosurePtr -> DebugM (HG.HeapGraph Size)
+buildHeapGraph = HG.buildHeapGraph derefFuncM
+
+-- | Build a heap graph starting from multiple roots. The first argument
+-- controls how many levels to recurse. You nearly always want to set this
+-- value to a small number ~ 10 as otherwise you can easily run out of
+-- memory.
+multiBuildHeapGraph :: Maybe Int -> NonEmpty ClosurePtr -> DebugM (HG.HeapGraph Size)
+multiBuildHeapGraph = HG.multiBuildHeapGraph derefFuncM

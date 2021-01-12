@@ -16,12 +16,12 @@
 {-# LANGUAGE ViewPatterns #-}
 module GHC.Debug.Client.ObjectEquiv(objectEquiv) where
 
-import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
-import           GHC.Debug.Client
-import           GHC.Debug.Client.Trace
-import           GHC.Debug.Client.Profile
-import           GHC.Debug.Types.Graph
+import GHC.Debug.Client
+import GHC.Debug.Client.Trace
+import GHC.Debug.Client.Profile
+import GHC.Debug.Types.Graph (ppClosure)
+import GHC.Debug.Types(ClosurePtr(..))
 
 import Control.Monad.State
 import Data.List
@@ -30,11 +30,6 @@ import Debug.Trace
 import qualified Data.OrdPSQ as PS
 import qualified Data.IntMap.Strict as IM
 import Data.List.NonEmpty(NonEmpty(..))
-
-derefFuncM :: ClosurePtr -> DebugM PtrClosure
-derefFuncM c = do
-  c' <- dereferenceClosureFromBlock c
-  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c'
 
 type CensusByObjectEquiv = IM.IntMap CensusStats
 
@@ -174,7 +169,7 @@ objectEquiv e = do
   pause e
   r <- runTrace e $ do
         precacheBlocks
-        rs <- request RequestRoots
+        rs <- gcRoots
         traceWrite (length rs)
         r <- censusObjectEquiv rs
         return r
@@ -185,7 +180,7 @@ objectEquiv e = do
   -- Use this code if we are returning ClosurePtr not SourceInformation
   hg <- run e $ case cps of
     [] -> error "None"
-    (c:cs) -> multiBuildHeapGraph derefFuncM (Just 10) (c :| cs)
+    (c:cs) -> multiBuildHeapGraph (Just 10) (c :| cs)
 --  let cs = map (flip GHC.Debug.Types.Graph.lookupHeapGraph hg) top10
 --  mapM print (zip top10 cs)
   putStrLn $ ppHeapGraph show hg
