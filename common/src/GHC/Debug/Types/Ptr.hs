@@ -26,6 +26,8 @@ module GHC.Debug.Types.Ptr( InfoTablePtr(..)
                           , StackCont(..)
                           , RawStack(..)
                           , RawBlock(..)
+                          , PtrBitmap(..)
+                          , traversePtrBitmap
                           , isLargeBlock
                           , isPinnedBlock
                           , rawBlockAddr
@@ -73,6 +75,9 @@ import Data.Coerce
 import Data.Bits
 import GHC.Stack
 import Control.Applicative
+import qualified Data.Array.Unboxed as A
+import Control.Monad
+import qualified Data.Foldable as F
 
 prettyPrint :: BS.ByteString -> String
 prettyPrint = concatMap (flip showHex "") . BS.unpack
@@ -174,7 +179,21 @@ newtype RawInfoTable = RawInfoTable BS.ByteString
 
 newtype RawClosure = RawClosure BS.ByteString
                    deriving (Eq, Ord, Show)
-                   deriving newtype (Binary)
+
+getRawClosure :: Get RawClosure
+getRawClosure = do
+  len <- getWord32be
+  RawClosure <$!> getByteString (fromIntegral len)
+
+putRawClosure :: RawClosure -> Put
+putRawClosure (RawClosure rc) = do
+  let n = BS.length rc
+  putWord32be (fromIntegral n)
+  putByteString rc
+
+instance Binary RawClosure where
+  get = getRawClosure
+  put = putRawClosure
 
 newtype RawStack = RawStack BS.ByteString
                    deriving (Eq, Ord, Show)
@@ -273,3 +292,26 @@ untagClosurePtr (ClosurePtr w) = UntaggedClosurePtr (w .&. complement tAG_MASK)
 
 getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = runGet (isolate 8 get) (BSL.fromStrict bs)
+
+-- | A bitmap that records whether each field of a stack frame is a pointer.
+newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
+
+traversePtrBitmap :: Monad m => (Bool -> m a) -> PtrBitmap -> m [a]
+traversePtrBitmap f (PtrBitmap arr) = mapM f (A.elems arr)
+
+getPtrBitmap :: Get PtrBitmap
+getPtrBitmap = do
+  len <- getWord32be
+  bits <- replicateM (fromIntegral len) getWord8
+  let arr = A.listArray (0, fromIntegral len-1) (map (==1) bits)
+  return $ PtrBitmap arr
+
+putPtrBitmap :: PtrBitmap -> Put
+putPtrBitmap (PtrBitmap pbm) = do
+  let n = F.length pbm
+  putWord32be (fromIntegral n)
+  F.traverse_ (\b -> if b then putWord8 1 else putWord8 0) pbm
+
+instance Binary PtrBitmap where
+  get = getPtrBitmap
+  put = putPtrBitmap

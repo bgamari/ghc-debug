@@ -9,7 +9,26 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 
-module GHC.Debug.Types(module T, module GHC.Debug.Types, ClosureType(..)) where
+module GHC.Debug.Types(module T
+                      , Request(..)
+                      , requestCommandId
+                      , doRequest
+                      , isWriteRequest
+                      , withWriteRequest
+                      , isImmutableRequest
+                      , AnyReq(..)
+                      , AnyResp(..)
+                      , CommandId(..)
+                      , SourceInformation(..)
+                      , ClosureType(..)
+
+                      -- * Serialisation functions
+                      , getIPE
+                      , putIPE
+                      , getInfoTable
+                      , putInfoTable
+                      , putRequest
+                      , getRequest ) where
 
 import Control.Applicative
 import Control.Exception
@@ -152,11 +171,6 @@ instance Hashable (Request a) where
     RequestBlock cp        -> s `hashWithSalt` cmdRequestBlock `hashWithSalt` cp
 
 
--- | A bitmap that records whether each field of a stack frame is a pointer.
-newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
-
-traversePtrBitmap :: Monad m => (Bool -> m a) -> PtrBitmap -> m [a]
-traversePtrBitmap f (PtrBitmap arr) = mapM f (A.elems arr)
 
 newtype CommandId = CommandId Word32
                   deriving (Eq, Ord, Show)
@@ -318,12 +332,12 @@ getResponse RequestVersion       = getWord32be
 getResponse RequestPause         = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
-getResponse (RequestClosure {}) = getRawClosure
+getResponse (RequestClosure {}) = get
 getResponse (RequestInfoTable itbp) = (\(it, r) -> (StgInfoTableWithPtr itbp it, r)) <$> getInfoTable
 --    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
 --      <$> replicateM (length itps) getInfoTable
-getResponse (RequestStackBitmap {}) = getPtrBitmap
-getResponse (RequestFunBitmap {}) = getPtrBitmap
+getResponse (RequestStackBitmap {}) = get
+getResponse (RequestFunBitmap {}) = get
 getResponse (RequestConstrDesc _)  = getConstrDesc
 getResponse RequestPoll          = get
 getResponse RequestSavedObjects  = many get
@@ -373,37 +387,11 @@ putIPE (Just (SourceInformation a ty b c d e)) = do
 
 
 
-getPtrBitmap :: Get PtrBitmap
-getPtrBitmap = do
-  len <- getWord32be
-  bits <- replicateM (fromIntegral len) getWord8
-  let arr = A.listArray (0, fromIntegral len-1) (map (==1) bits)
-  return $ PtrBitmap arr
-
-putPtrBitmap :: PtrBitmap -> Put
-putPtrBitmap (PtrBitmap pbm) = do
-  let n = F.length pbm
-  putWord32be (fromIntegral n)
-  F.traverse_ (\b -> if b then putWord8 1 else putWord8 0) pbm
-
-getRawClosure :: Get RawClosure
-getRawClosure = do
-  len <- getWord32be
-  -- The copy here is key to ensure alignment, we do some dodgy things by
-  -- just passing around the Addr# which assume it.
-  RawClosure . C8.copy <$!> getByteString (fromIntegral len)
-
-putRawClosure :: RawClosure -> Put
-putRawClosure (RawClosure rc) = do
-  let n = BS.length rc
-  putWord32be (fromIntegral n)
-  putByteString rc
-
 
 getInfoTable :: Get (StgInfoTable, RawInfoTable)
 getInfoTable = do
   !len <- getInt32be
-  !r <- RawInfoTable . C8.copy <$> getByteString (fromIntegral len)
+  !r <- RawInfoTable <$> getByteString (fromIntegral len)
   let !it = decodeInfoTable r
   return (it, r)
 
