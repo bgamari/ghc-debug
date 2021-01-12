@@ -1,15 +1,16 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Functions for analysing memory fragmentation
 module GHC.Debug.Fragmentation (summariseBlocks
                                      , censusByMBlock
-                                      , outMBlockCensus
+                                      , printMBlockCensus
                                       , censusByBlock
-                                      , outBlockCensus
+                                      , printBlockCensus
                                       , censusPinnedBlocks
+                                      , PinnedCensusStats(..)
 
                                       , findBadPtrs
-                                      , displayArrWords
                                       ) where
 
 import GHC.Debug.Profile
@@ -22,7 +23,6 @@ import qualified Data.Set as Set
 import Data.List
 import Data.Ord
 import Data.Text (pack, Text)
-import Data.Semigroup
 import Data.Word
 
 -- | Print a summary of the given raw blocks
@@ -31,20 +31,21 @@ import Data.Word
 summariseBlocks :: [RawBlock] -> IO ()
 summariseBlocks bs = do
   print ("MBLOCK:", length mblocks)
-  print ("PINNED:", (length $ filter isPinnedBlock bs))
-  print ("TOTAL:", length bs)
+  print ("PINNED BLOCKS:", (length $ filter isPinnedBlock bs))
+  print ("TOTAL BLOCKS:", length bs)
   where
     mblocks = map (\mbs@(g:_) -> (g, length mbs)) (group (sort (map fst bs')))
     bs' = map go bs
     go b = (blockMBlock (rawBlockAddr b), isPinnedBlock b)
 
+-- | Perform a heap census by which MBlock each closure lives in
 censusByMBlock :: [ClosurePtr] -> DebugM (Map.Map BlockPtr CensusStats)
 censusByMBlock = closureCensusBy go
   where
     go cp d =
       let s :: Size
           s = dcSize d
-          v =  CS (Count 1) s (Max s)
+          v =  mkCS s
 
           k :: BlockPtr
           k = applyMBlockMask cp
@@ -53,6 +54,7 @@ censusByMBlock = closureCensusBy go
            -- Ignore static things
            else Nothing
 
+-- | Perform a census based on which block each closure resides in.
 censusByBlock :: [ClosurePtr] -> DebugM CensusByClosureType
 censusByBlock = closureCensusBy go
   where
@@ -68,16 +70,20 @@ censusByBlock = closureCensusBy go
            -- Ignore static things
            else Nothing
 
--- Only census the given (pinned) blocks
+newtype PinnedCensusStats =
+          PinnedCensusStats (CensusStats, [(ClosurePtr, DebugClosureWithSize () () () ())])
+          deriving (Semigroup)
+
+-- | Only census the given (pinned) blocks
 censusPinnedBlocks :: [RawBlock]
                    -> [ClosurePtr]
-                   -> DebugM (Map.Map BlockPtr (CensusStats, [(ClosurePtr, DebugClosureWithSize () () () ())]))
+                   -> DebugM (Map.Map BlockPtr PinnedCensusStats)
 censusPinnedBlocks bs = closureCensusBy go
   where
     pbs = Set.fromList (map rawBlockAddr (filter isPinnedBlock bs))
     go :: forall a b c string . ClosurePtr
           -> DebugClosureWithSize a string b c
-          -> Maybe (BlockPtr, (CensusStats, [(ClosurePtr, DebugClosureWithSize () () () ())]))
+          -> Maybe (BlockPtr, PinnedCensusStats)
     go cp d =
       let s :: Size
           s = dcSize d
@@ -88,7 +94,7 @@ censusPinnedBlocks bs = closureCensusBy go
           neut :: DebugClosureWithSize a string b c -> DebugClosureWithSize () () () ()
           neut = quadmap f f f f
       in if heapAlloced cp && bp `Set.member` pbs
-           then Just (bp, (v, [(cp, neut d)]))
+           then Just (bp, PinnedCensusStats (v, [(cp, neut d)]))
            -- Ignore static things
            else Nothing
 
@@ -96,12 +102,12 @@ censusPinnedBlocks bs = closureCensusBy go
 -- | Given a pinned block census, find the ARR_WORDS objects which are in the
 -- blocks which are < 10 % utilised. The return list is sorted by how many
 -- times each distinct ARR_WORDS appears on the heap.
-findBadPtrs :: Map.Map k (CensusStats, [(ClosurePtr, DebugClosureWithSize () () () ())])
+findBadPtrs :: Map.Map k PinnedCensusStats
             -> [((Count, [ClosurePtr]), String)]
 findBadPtrs mb_census  =
-      let fragged_blocks = Map.filter (\((CS _ (Size s) _), _) -> fromIntegral s / fromIntegral blockMaxSize <= (0.1 :: Double))  mb_census
+      let fragged_blocks = Map.filter (\(PinnedCensusStats ((CS _ (Size s) _), _)) -> fromIntegral s / fromIntegral blockMaxSize <= (0.1 :: Double))  mb_census
           all_arr_words :: [(String, (Count, [ClosurePtr]))]
-          all_arr_words = concatMap (\(_, i) -> map (\(c,d) -> (displayArrWords d, (Count 1, [c]))) i) (Map.elems fragged_blocks)
+          all_arr_words = concatMap (\(PinnedCensusStats (_, i)) -> map (\(c,d) -> (displayArrWords d, (Count 1, [c]))) i) (Map.elems fragged_blocks)
           swap (a, b) = (b, a)
           dups = map swap (reverse $ sortBy (comparing snd) (Map.toList (Map.fromListWith (<>) all_arr_words)))
       in dups
@@ -112,14 +118,14 @@ displayArrWords d =
       ArrWordsClosure { arrWords } -> show (arrWordsBS arrWords)
       _ -> error "Not ARR_WORDS"
 
-outMBlockCensus, outBlockCensus ::  Map.Map BlockPtr CensusStats -> IO ()
-outMBlockCensus = printBlockCensus mblockMaxSize
+printMBlockCensus, printBlockCensus ::  Map.Map BlockPtr CensusStats -> IO ()
+printMBlockCensus = printXBlockCensus mblockMaxSize
 -- | Print out a block census
-outBlockCensus = printBlockCensus blockMaxSize
+printBlockCensus = printXBlockCensus blockMaxSize
 
 -- | Print either a MBlock or Block census as a histogram
-printBlockCensus :: Word64 -> Map.Map BlockPtr CensusStats -> IO ()
-printBlockCensus maxSize m =
+printXBlockCensus :: Word64 -> Map.Map BlockPtr CensusStats -> IO ()
+printXBlockCensus maxSize m =
   mapM_ (putStrLn . displayLine) (bin 0 (map calcPercentage (sortBy (comparing (cssize . snd)) (Map.toList m))))
   where
     calcPercentage (k, (CS _ (Size tot) _)) =

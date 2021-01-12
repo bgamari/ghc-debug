@@ -538,7 +538,7 @@ unfoldingAnalysis = do
   traceWrite (length unfolding_ptrs)
   count rroots >>= traceWrite
   count unfolding_ptrs >>= traceWrite
-  censusClosureType unfolding_ptrs
+  census2LevelClosureType unfolding_ptrs
 
 
 
