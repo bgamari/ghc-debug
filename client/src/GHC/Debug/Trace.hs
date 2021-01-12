@@ -1,5 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE BangPatterns #-}
 -- | Functions to support the constant space traversal of a heap.
 module GHC.Debug.Trace ( traceFromM, TraceFunctions(..) ) where
 
@@ -12,10 +14,11 @@ import Data.Array.BitArray.IO
 import Control.Monad.Reader
 import Data.IORef
 import Data.Word
+import System.IO
 
 newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word16))
 
-newtype TraceState = TraceState { visited :: VisitedSet }
+data TraceState = TraceState { visited :: !VisitedSet, n :: !Int }
 
 
 getKeyPair :: ClosurePtr -> (Int, Word16)
@@ -29,12 +32,14 @@ checkVisit :: ClosurePtr -> IORef TraceState -> IO Bool
 checkVisit cp mref = do
   st <- readIORef mref
   let VisitedSet v = visited st
+      num_visited = n st
       (bk, offset) = getKeyPair cp
   case IM.lookup bk v of
     Nothing -> do
       na <- newArray (0, fromIntegral (blockMask `div` 8)) False
       writeArray na offset True
-      writeIORef mref (TraceState (VisitedSet (IM.insert bk na v)))
+      writeIORef mref (TraceState (VisitedSet (IM.insert bk na v)) (num_visited + 1))
+      when (num_visited `mod` 10_000 == 0) $ hPutStrLn stderr ("Traced: " ++ show num_visited)
       return False
     Just bm -> do
       res <- readArray bm offset
@@ -44,12 +49,14 @@ checkVisit cp mref = do
 
 
 data TraceFunctions m =
-      TraceFunctions { papTrace :: GenPapPayload ClosurePtr -> m DebugM ()
-      , stackTrace :: GenStackFrames ClosurePtr -> m DebugM ()
-      , closTrace :: ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ()
-      , visitedVal :: ClosurePtr -> (m DebugM) ()
-      , conDescTrace :: ConstrDesc -> m DebugM ()
+      TraceFunctions { papTrace :: !(GenPapPayload ClosurePtr -> m DebugM ())
+      , stackTrace :: !(GenStackFrames ClosurePtr -> m DebugM ())
+      , closTrace :: !(ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ())
+      , visitedVal :: !(ClosurePtr -> (m DebugM) ())
+      , conDescTrace :: !(ConstrDesc -> m DebugM ())
       }
+
+
 
 
 type C m = (MonadTrans m, Monad (m DebugM))
@@ -58,21 +65,18 @@ type C m = (MonadTrans m, Monad (m DebugM))
 -- memory linear in the heap size. Using this function with appropiate
 -- accumulation functions you should be able to traverse quite big heaps in
 -- not a huge amount of memory.
-traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
+traceFromM :: C m => TraceFunctions m-> [ClosurePtr] -> m DebugM ()
 traceFromM k cps = do
-  st <- lift (unsafeLiftIO (newIORef (TraceState (VisitedSet IM.empty))))
+  st <- lift (unsafeLiftIO (newIORef (TraceState (VisitedSet IM.empty) 0)))
   runReaderT (mapM_ (traceClosureFromM k) cps) st
 {-# INLINE traceFromM #-}
 {-# INLINE traceClosureFromM #-}
-{-# INLINE traceStackFromM #-}
-{-# INLINE traceConstrDescM #-}
-{-# INLINE tracePapPayloadM #-}
 
 traceClosureFromM :: C m
                   => TraceFunctions m
                   -> ClosurePtr
                   -> ReaderT (IORef TraceState) (m DebugM) ()
-traceClosureFromM k = go
+traceClosureFromM !k = go
   where
     go cp = do
       mref <- ask
@@ -82,33 +86,19 @@ traceClosureFromM k = go
         else do
         sc <- lift $ lift $ dereferenceClosure cp
         ReaderT $ \st -> closTrace k cp sc
-         (runReaderT (() <$ quadtraverse (tracePapPayloadM k) (traceConstrDescM k) (traceStackFromM k) (traceClosureFromM k) sc) st)
+         (runReaderT (() <$ quadtraverse gop gocd gos go sc) st)
 
-traceStackFromM :: C m
-                => TraceFunctions m
-                -> StackCont -> ReaderT (IORef TraceState) (m DebugM) ()
-traceStackFromM f = go
-  where
-    go st = do
+
+    gos st = do
       st' <- lift $ lift $ dereferenceStack st
-      lift $ stackTrace f st'
-      () <$ traverse (traceClosureFromM f) st'
+      lift $ stackTrace k st'
+      () <$ traverse go st'
 
-traceConstrDescM :: (C m)
-                 => TraceFunctions m -> ConstrDescCont -> ReaderT s (m DebugM) ()
-traceConstrDescM f = go
-  where
-    go d = do
+    gocd d = do
       cd <- lift $ lift $ dereferenceConDesc d
-      lift $ conDescTrace f cd
+      lift $ conDescTrace k cd
 
-tracePapPayloadM :: C m
-                 => TraceFunctions m
-                 -> PayloadCont
-                 -> ReaderT (IORef TraceState) (m DebugM) ()
-tracePapPayloadM f = go
-  where
-    go p = do
+    gop p = do
       p' <- lift $ lift $ dereferencePapPayload p
-      lift $ papTrace f p'
-      () <$ traverse (traceClosureFromM f) p'
+      lift $ papTrace k p'
+      () <$ traverse go p'
