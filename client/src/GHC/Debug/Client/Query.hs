@@ -27,6 +27,7 @@ module GHC.Debug.Client.Query
   -- * Dereferencing functions
   , dereferenceClosures
   , dereferenceClosure
+  , dereferenceClosureDirect
   , dereferenceClosureC
   , dereferenceStack
   , dereferencePapPayload
@@ -43,8 +44,6 @@ import           GHC.Debug.Client.BlockCache
 import Control.Monad.State
 
 import Debug.Trace
-
-
 
 -- | Pause the debuggee
 pause :: Debuggee -> IO ()
@@ -83,15 +82,17 @@ dereferenceClosureC cp = do
   quadtraverse pure dereferenceConDesc pure pure c
 
 -- | Decode a closure corresponding to the given 'ClosurePtr'
-dereferenceClosure :: ClosurePtr -> DebugM SizedClosure
-dereferenceClosure c = do
+-- You should not use this function directly unless you know what you are
+-- doing. 'dereferenceClosure' will be much faster in general.
+dereferenceClosureDirect :: ClosurePtr -> DebugM SizedClosure
+dereferenceClosureDirect c = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
     raw_it <- request (RequestInfoTable it)
     return $ decodeClosure raw_it (c, raw_c)
 
 dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
-dereferenceClosures cs = mapM dereferenceClosureFromBlock cs
+dereferenceClosures cs = mapM dereferenceClosure cs
 
 -- | Deference some StackFrames from a given 'StackCont'
 dereferenceStack :: StackCont -> DebugM StackFrames
@@ -144,9 +145,9 @@ traceProfile e = do
 -- | Consult the BlockCache for the block which contains a specific
 -- closure, if it's not there then try to fetch the right block, if that
 -- fails, call 'dereferenceClosure'
-dereferenceClosureFromBlock :: ClosurePtr -> DebugM SizedClosure
-dereferenceClosureFromBlock cp
-  | not (heapAlloced cp) = dereferenceClosure cp
+dereferenceClosure :: ClosurePtr -> DebugM SizedClosure
+dereferenceClosure cp
+  | not (heapAlloced cp) = dereferenceClosureDirect cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)
       let it = getInfoTblPtr rc
