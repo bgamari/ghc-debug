@@ -1,8 +1,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
 -- | Functions for analysing memory fragmentation
-module GHC.Debug.Client.Fragmentation (summariseBlocks
-                                      , censusByMBlock
+module GHC.Debug.Fragmentation (summariseBlocks
+                                     , censusByMBlock
                                       , outMBlockCensus
                                       , censusByBlock
                                       , outBlockCensus
@@ -12,7 +12,7 @@ module GHC.Debug.Client.Fragmentation (summariseBlocks
                                       , displayArrWords
                                       ) where
 
-import GHC.Debug.Client.Profile
+import GHC.Debug.Profile
 import GHC.Debug.Client
 import GHC.Debug.Types
 --import GHC.Debug.Client.Monad

@@ -21,6 +21,7 @@ module GHC.Debug.Client.Query
   , DebugClosure(..)
   , dereferenceClosures
   , dereferenceClosure
+  , dereferenceClosureC
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
@@ -73,6 +74,12 @@ lookupInfoTable rc = do
 pauseThen :: Debuggee -> DebugM b -> IO b
 pauseThen e d =
   pause e >> run e d
+
+
+dereferenceClosureC :: ClosurePtr -> DebugM SizedClosureC
+dereferenceClosureC cp = do
+  c <- dereferenceClosure cp
+  quadtraverse pure dereferenceConDesc pure pure c
 
 -- | Decode a closure corresponding to the given 'ClosurePtr'
 dereferenceClosure :: ClosurePtr -> DebugM SizedClosure

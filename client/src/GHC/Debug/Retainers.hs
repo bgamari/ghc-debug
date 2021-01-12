@@ -1,9 +1,9 @@
 -- | Functions for computing retainers
-module GHC.Debug.Client.Retainers where
+module GHC.Debug.Retainers where
 
 import GHC.Debug.Client
 import Control.Monad.State
-import GHC.Debug.Client.Trace
+import GHC.Debug.Trace
 
 import qualified Data.Set as Set
 import Control.Monad.RWS

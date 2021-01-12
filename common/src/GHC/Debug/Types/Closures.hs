@@ -21,6 +21,7 @@ module GHC.Debug.Types.Closures (
     -- * Closure Representation
       Closure
     , SizedClosure
+    , SizedClosureC
     , DebugClosure(..)
     , TRecEntry(..)
     -- * Wrappers
@@ -83,6 +84,7 @@ import Data.Monoid
 
 type Closure = DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr
 type SizedClosure = DebugClosureWithSize PayloadCont ConstrDescCont StackCont ClosurePtr
+type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
 
 -- | Information needed to decode a 'ConstrDesc'
 type ConstrDescCont = InfoTablePtr

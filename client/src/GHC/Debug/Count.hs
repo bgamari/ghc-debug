@@ -1,9 +1,9 @@
-module GHC.Debug.Client.Count where
+module GHC.Debug.Count where
 
 import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
-import           GHC.Debug.Client.Profile
-import           GHC.Debug.Client.Trace
+import           GHC.Debug.Profile
+import           GHC.Debug.Trace
 import Control.Monad.State
 
 -- | Simple statistics about a heap, total objects, size and maximum object

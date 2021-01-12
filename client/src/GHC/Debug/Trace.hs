@@ -1,7 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 -- | Functions to support the constant space traversal of a heap.
-module GHC.Debug.Client.Trace where
+module GHC.Debug.Trace ( traceFromM, TraceFunctions(..), traceFrom ) where
 
 import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
@@ -41,9 +41,6 @@ checkVisit cp mref = do
       res <- readArray bm offset
       unless res (writeArray bm offset True)
       return res
-
-
-type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
 
 
 -- Traverse the tree from GC roots, to populate the caches

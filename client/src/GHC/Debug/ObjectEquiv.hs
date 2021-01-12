@@ -14,12 +14,12 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ViewPatterns #-}
-module GHC.Debug.Client.ObjectEquiv(objectEquiv) where
+module GHC.Debug.ObjectEquiv(objectEquiv) where
 
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client
-import GHC.Debug.Client.Trace
-import GHC.Debug.Client.Profile
+import GHC.Debug.Trace
+import GHC.Debug.Profile
 import GHC.Debug.Types.Graph (ppClosure)
 import GHC.Debug.Types(ClosurePtr(..))
 

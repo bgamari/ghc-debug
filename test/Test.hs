@@ -7,15 +7,15 @@
 module Main where
 
 import GHC.Debug.Client
-import GHC.Debug.Client.Retainers
-import GHC.Debug.Client.Fragmentation
-import GHC.Debug.Client.Profile
-import GHC.Debug.Client.Dominators
-import GHC.Debug.Client.Count
+import GHC.Debug.Retainers
+import GHC.Debug.Fragmentation
+import GHC.Debug.Profile
+import GHC.Debug.Dominators
+import GHC.Debug.Count
 import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
 --import GHC.Debug.Types.Closures
-import GHC.Debug.Client.Trace
-import GHC.Debug.Client.ObjectEquiv
+import GHC.Debug.Trace
+import GHC.Debug.ObjectEquiv
 import Control.Monad.RWS
 import Control.Monad.Writer
 import qualified Data.Text as T

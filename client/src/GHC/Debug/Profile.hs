@@ -12,11 +12,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-module GHC.Debug.Client.Profile where
+module GHC.Debug.Profile where
 
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client
-import GHC.Debug.Client.Trace
+import GHC.Debug.Trace
 
 import qualified Data.Map.Strict as Map
 import Control.Monad.State

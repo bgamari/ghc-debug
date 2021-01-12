@@ -1,7 +1,7 @@
 -- | Functions for creating and running a snapshot.
-module GHC.Debug.Client.Snapshot ( makeSnapshot, snapshotRun ) where
+module GHC.Debug.Snapshot ( makeSnapshot, snapshotRun ) where
 
-import GHC.Debug.Client.Trace
+import GHC.Debug.Trace
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client.Query
 

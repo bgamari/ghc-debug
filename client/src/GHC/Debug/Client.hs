@@ -65,10 +65,6 @@ module GHC.Debug.Client
   , saveCache
   , loadCache
 
-  -- * Higher level functions
-  , traceFrom
-  , traceFromM
-
   -- * Types
   , module GHC.Debug.Types.Closures
   , SourceInformation(..)
@@ -87,8 +83,7 @@ import           GHC.Debug.Types.Closures
 import           GHC.Debug.Convention (socketDirectory)
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.Query
-import           GHC.Debug.Client.Snapshot
-import           GHC.Debug.Client.Trace
+import           GHC.Debug.Snapshot
 import qualified GHC.Debug.Types.Graph as HG
 import Data.List.NonEmpty (NonEmpty)
 

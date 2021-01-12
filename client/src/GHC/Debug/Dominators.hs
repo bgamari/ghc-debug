@@ -5,7 +5,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module GHC.Debug.Client.Dominators (computeDominators
+module GHC.Debug.Dominators (computeDominators
                                    , retainerSize
                                    , convertToHeapGraph
                                    , annotateWithRetainerSize ) where
