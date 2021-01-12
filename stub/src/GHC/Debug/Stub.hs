@@ -1,7 +1,20 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
-module GHC.Debug.Stub (pause, resume, withGhcDebug, saveClosures, Box(..)) where
+{-|
+This module provides the functions you need to use to instrument your application
+so it can be debugged using ghc-debug. Usually all you need to do is to
+wrap the main function with the 'withGhcDebug' wrapper.
+
+@
+    main = withGhcDebug $ do ...
+@
+
+Then when you application starts, a socket will be created which the debugger
+can be attached to. The location of the socket is controlled by the @GHC_DEBUG_SOCKET@
+environment variable.
+-}
+module GHC.Debug.Stub (withGhcDebug, saveClosures, Box(..), pause, resume) where
 
 import Control.Applicative
 import Control.Concurrent
@@ -32,6 +45,9 @@ foreign import ccall safe "unistd.h getpid"
 -- | Start listening for remote debugging. You should wrap your main thread
 -- in this as it performs some cleanup on exit. If not used on the Main thread,
 -- user interupt (Ctrl-C) may skip the cleanup step.
+--
+-- The socket created can also be controlled using the @GHC_DEBUG_SOCKET@
+-- environment variable.
 withGhcDebug :: IO a -> IO a
 withGhcDebug main = do
     -- Pick a socket file path.
@@ -78,7 +94,10 @@ data Box = forall a . Box a
 unbox :: (forall a . a -> b) -> Box -> b
 unbox f (Box a) = f a
 
-
+-- | Mark a set of closures to be saved, they can then be retrieved from
+-- the debugger using the 'RequestSavedClosures' requests. This can be
+-- useful to transmit specific closures you care about (such as a cache or
+-- large map).
 saveClosures :: [Box] -> IO ()
 saveClosures xs = do
   sps   <- mapM (\(Box x) -> castStablePtrToPtr <$> newStablePtr x) xs
