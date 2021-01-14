@@ -20,7 +20,7 @@ module GHC.Debug.Types.Ptr( -- * InfoTables
                           -- we can maintain the invariant that all
                           -- ClosurePtr are untagged
                           -- * Closures
-                          , ClosurePtr(ClosurePtr)
+                          , ClosurePtr(..,ClosurePtr)
                           , mkClosurePtr
                           , RawClosure(..)
                           , rawClosureSize

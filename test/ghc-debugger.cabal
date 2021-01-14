@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 
 executable debugger
   main-is:             Test.hs
-  ghc-options:         -threaded -rtsopts -eventlog
+  ghc-options:         -threaded -rtsopts -eventlog "-with-rtsopts=-N -qn1"
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common

@@ -13,9 +13,11 @@ import GHC.Debug.Profile
 import GHC.Debug.Dominators
 import GHC.Debug.Snapshot
 import GHC.Debug.Count
+import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
 --import GHC.Debug.Types.Closures
 import GHC.Debug.Trace
+import GHC.Debug.ParTrace(tracePar, parCensus)
 import GHC.Debug.ObjectEquiv
 import Control.Monad.RWS
 import Control.Monad.Writer
@@ -59,9 +61,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\(Debuggee e) -> p40 e  >> outputRequestLog e)
+--main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p33 e) --  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" p39
+main = snapshotRun "/tmp/ghc-debug-cache" p44
 {-
 main = do
   -- Get the path to the "debug-test" executable

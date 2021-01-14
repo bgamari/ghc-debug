@@ -12,7 +12,8 @@
 -- network latency is not an issue.
 module GHC.Debug.Client.Monad.Simple
   ( Debuggee
-  , DebugM
+  , DebugM(..)
+  , runSimple
   ) where
 
 import Control.Concurrent
