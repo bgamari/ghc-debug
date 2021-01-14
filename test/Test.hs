@@ -361,9 +361,9 @@ p34 e = forM_ [0..] $ \i -> do
 
 
 p35 e = do
-  rs <- objectEquiv e
-  stacks <- run e $ traverse addLocationToStack rs
-  displayRetainerStack (("one",) <$> stacks)
+  objectEquiv e
+  --stacks <- run e $ traverse addLocationToStack rs
+  --displayRetainerStack (("one",) <$> stacks)
 
 p36 e = do
   pause e
