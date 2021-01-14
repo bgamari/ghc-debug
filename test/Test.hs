@@ -268,7 +268,7 @@ p31 e = analyseFragmentation 1_000_000 e
 
 -- Given the roots and bad closures, find out why they are being retained
 doAnalysis rs (l, ptrs) = do
-  rs <- findRetainers (Just 10) rs ptrs
+  rs <- findRetainersOf (Just 1) rs ptrs
   stack <- case rs of
     [] -> traceWrite "EMPTY RETAINERS" >> return Nothing
     (r:_) -> do
@@ -278,7 +278,7 @@ doAnalysis rs (l, ptrs) = do
       return $ Just (zip cs' locs)
   return ((l,) <$> stack)
 
-displayRetainerStack :: _
+displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
 displayRetainerStack rs = do
       let disp (d, l) =
             maybe "nl" infoModule l ++ ":" ++ (ppClosure (maybe "" tdisplay l)  (\_ -> show) 0 . noSize $ d)
@@ -288,7 +288,7 @@ displayRetainerStack rs = do
             putStrLn (show k ++ "-------------------------------------")
             print l
             mapM (putStrLn . disp) stack
-      zipWithM_ do_one [0..] (catMaybes rs)
+      zipWithM_ do_one [0..] rs
 
 analyseFragmentation :: Int -> Debuggee -> IO ()
 analyseFragmentation interval e = loop
@@ -315,7 +315,7 @@ analyseFragmentation interval e = loop
       summariseBlocks bs
       let go (PinnedCensusStats (m, _)) = m
       printBlockCensus (Map.map go mb_census)
-      displayRetainerStack rs
+      displayRetainerStack (catMaybes rs)
       putStrLn "------------------------"
       loop
 
@@ -360,7 +360,10 @@ p34 e = forM_ [0..] $ \i -> do
   threadDelay 10_000_000
 
 
-p35 e = objectEquiv e
+p35 e = do
+  rs <- objectEquiv e
+  stacks <- run e $ traverse addLocationToStack rs
+  displayRetainerStack (("one",) <$> stacks)
 
 p36 e = do
   pause e
@@ -391,8 +394,9 @@ p39 e = do
     hg <- multiBuildHeapGraph  (Just 10) (cp :| [])
     rs <- doAnalysis rs ("BIG", [cp])
     return (hg, rs)
-  putStrLn $ ppHeapGraph show hg
-  displayRetainerStack [rs]
+  putStrLn $ ppHeapGraph (show . getSize) hg
+  displayRetainerStack (catMaybes [rs])
+
 
 p40 e = forM_ [0..] $ \i -> do
   pause e
@@ -571,6 +575,7 @@ findUnfoldings rroots = execStateT (traceFromM funcs rroots) []
 
 data Biggest = Biggest ClosurePtr SizedClosure | NoBiggest
 
+
 instance Monoid Biggest where
     mempty = NoBiggest
 
@@ -600,4 +605,97 @@ bigBoyAnalysis rroots = execStateT (traceFromM funcs rroots) NoBiggest
     closAccum cp sc k = do
       modify' (Biggest cp sc <>)
       k
+
+
+addLocationToStack r = do
+  cs <- dereferenceClosures r
+  cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+  locs <- mapM getSourceLoc cs'
+  return $ (zip cs' locs)
+
+p41 e = do
+  pause e
+  stacks <- runTrace e $ do
+    precacheBlocks
+    roots <- gcRoots
+    rs <- splitEnv roots
+    traverse addLocationToStack rs
+  displayRetainerStack (("one",) <$> stacks)
+
+p42 e = do
+  pause e
+  (res, hg) <- runTrace e $ do
+    precacheBlocks
+    roots <- gcRoots
+    rs <- findTcModResult roots
+    res <- thunkAnalysis rs
+    hg <- case rs of
+      [] -> error "none"
+      (r:rs) -> multiBuildHeapGraph  (Just 7) (r :| rs)
+    return (res, hg)
+
+  resume e
+  printResult res
+  putStrLn $ ppHeapGraph (show . getSize) hg
+
+p43 e = do
+  pause e
+  runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    tracePar bs rs
+
+p44 e = do
+  pause e
+  c <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    parCensus bs rs
+  printCensusByClosureType c
+
+
+tcModResult rroots = findRetainers (Just 10) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "TcModuleResult"
+        _ -> return $ False
+
+splitEnv rroots = findRetainers (Just 10) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "MkSplitUniqSupply"
+        _ -> return $ False
+
+findTcModResult rroots = execStateT (traceFromM funcs rroots) []
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> StateT [ClosurePtr] DebugM ()
+               -> StateT [ClosurePtr] DebugM ()
+    closAccum cp sc k = do
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _ _  cname <- lift $ dereferenceConDesc cd
+          if (cname == "TcModuleResult")
+            then modify' (cp :) >> k
+            else k
+        _ -> k
+
+
+
 
