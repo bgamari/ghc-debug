@@ -175,7 +175,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
     bindings = boundMultipleTimes (HeapGraph (heapGraphRoot :| rs) m) [heapGraphRoot]
 
     roots = unlines [
-              "r" ++ show n ++ ": " ++ ppRef 0 (Just r)
+              "r" ++ show n ++ ": " ++ ppRef 0 (Just r) ++ "\n"
               | (n, r) <- zip [0 :: Int ..] (heapGraphRoot : rs) ]
 
     letWrapper =
@@ -242,7 +242,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
 -- | In the given HeapMap, list all indices that are used more than once. The
 -- second parameter adds external references, commonly @[heapGraphRoot]@.
 boundMultipleTimes :: HeapGraph a -> [HeapGraphIndex] -> [HeapGraphIndex]
-boundMultipleTimes (HeapGraph _rs m) roots = map head $ filter (not.null) $ map tail $ group $ sort $
+boundMultipleTimes (HeapGraph _rs m) roots = map head $ filter (not.null) $ group $ sort $
      roots ++ concatMap (catMaybes . allClosures . hgeClosure) (IM.elems m)
 
 -- Utilities
@@ -311,7 +311,7 @@ ppClosure herald showBox prec c = case c of
     BCOClosure {..} -> app
         ["_bco", showBox 10 bcoptrs]
     ArrWordsClosure {..} -> app
-        ["toArray", "("++show (length arrWords) ++ " words)", ((show $ arrWordsBS arrWords)) ]
+        ["toArray", "("++show bytes ++ " bytes)", ((show $ arrWordsBS arrWords)) ]
     MutArrClosure {..} -> app
         --["toMutArray", "("++show (length mccPayload) ++ " ptrs)",  intercalate "," (shorten (map (showBox 10) mccPayload))]
         ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]
