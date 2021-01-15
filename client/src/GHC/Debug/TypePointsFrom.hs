@@ -38,10 +38,8 @@ import Control.Monad.Identity
 import Control.Concurrent
 import Data.List
 import Data.Ord
-import Debug.Trace
 import Language.Dot
 import qualified Data.Set as S
-import Data.Monoid
 
 
 type Key = InfoTablePtr
@@ -134,7 +132,10 @@ detectLeaks interval e = loop Nothing (M.empty, M.empty) 0
         gs <- mapM (findSlice (snd new_rmaps)) (take 10 cands)
         return (gs, res, new_rmaps)
       resume e
-      zipWithM_ (\n g -> writeFile ("slices/" ++ show i ++ "-" ++ show n ++ ".dot") (renderDot g)) [0..] gs
+      zipWithM_ (\n g -> writeFile ("slices/"
+                                      ++ show @Int i ++ "-"
+                                      ++ show n ++ ".dot")
+                                   (renderDot g)) [0..] gs
       loop (Just r) new_rmaps (i + 1)
 
 
