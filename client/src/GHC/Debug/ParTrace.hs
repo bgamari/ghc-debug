@@ -150,6 +150,16 @@ data TraceFunctionsIO a s =
 -- memory linear in the heap size. Using this function with appropiate
 -- accumulation functions you should be able to traverse quite big heaps in
 -- not a huge amount of memory.
+--
+-- The performance of this parralel version depends on how much contention
+-- the functions given in 'TraceFunctionsIO' content for the handle
+-- connecting for the debuggee (which is protected by an 'MVar'). With no
+-- contention, and precached blocks, the workload can be very evenly
+-- distributed leading to high core utilisation.
+--
+-- As performance depends highly on contention, snapshot mode is much more
+-- amenable to parrelisation where the time taken for requests is much
+-- lower.
 traceParFromM :: Monoid s => [RawBlock] -> TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 traceParFromM bs k cps = do
   let bs' = nub $ (map (blockMBlock . rawBlockAddr) bs)
