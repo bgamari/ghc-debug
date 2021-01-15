@@ -8,6 +8,7 @@ module GHC.Debug.Snapshot ( -- * Generating snapshots
                           , traceFrom ) where
 
 import GHC.Debug.Trace
+import GHC.Debug.ParTrace
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client
 import Control.Monad.Identity
@@ -16,9 +17,9 @@ import Control.Monad.Trans
 -- | Make a snapshot of the current heap and save it to the given file.
 snapshot :: FilePath -> DebugM ()
 snapshot fp = do
-  precacheBlocks
+  bs <- precacheBlocks
   rs <- gcRoots
-  traceFrom rs
+  tracePar bs rs
   saveCache fp
 
 -- | Traverse the tree from GC roots, to populate the caches

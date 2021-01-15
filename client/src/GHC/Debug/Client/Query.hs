@@ -32,6 +32,7 @@ module GHC.Debug.Client.Query
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
+  , dereferenceInfoTable
 
   ) where
 
@@ -174,4 +175,7 @@ getSourceInfo = request . RequestSourceInfo
 -- | Query the debuggee for the list of saved objects.
 savedObjects :: DebugM [ClosurePtr]
 savedObjects = request RequestSavedObjects
+
+dereferenceInfoTable :: InfoTablePtr -> DebugM StgInfoTable
+dereferenceInfoTable it = decodedTable . fst <$> request (RequestInfoTable it)
 

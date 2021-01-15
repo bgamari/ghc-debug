@@ -35,6 +35,7 @@ module GHC.Debug.Types.Closures (
     , allClosures
     -- * Info Table Representation
     , StgInfoTable(..)
+    , GHC.ClosureType(..)
     , StgInfoTableWithPtr(..)
     -- * Stack Frame Representation
     , DebugStackFrame(..)

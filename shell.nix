@@ -75,6 +75,7 @@ in
                                np2.git
                                np2.numactl
                                np2.pkg-config
+                               np2.graphviz
 
                                np2.gmp
                                np2.gmp.dev

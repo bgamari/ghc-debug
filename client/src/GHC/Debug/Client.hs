@@ -44,6 +44,7 @@ module GHC.Debug.Client
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
+  , dereferenceInfoTable
 
   , Quadtraversable(..)
 

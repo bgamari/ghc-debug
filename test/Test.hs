@@ -13,6 +13,7 @@ import GHC.Debug.Profile
 import GHC.Debug.Dominators
 import GHC.Debug.Snapshot
 import GHC.Debug.Count
+import GHC.Debug.TypePointsFrom
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
 --import GHC.Debug.Types.Closures
@@ -61,9 +62,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p33 e) --  >> outputRequestLog e)
+main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p46 e) --  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" p44
+--main = snapshotRun "/tmp/ghc-debug-cache" p46
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -104,6 +105,11 @@ p37 :: Debuggee -> IO ()
 p38 :: Debuggee -> IO ()
 p39 :: Debuggee -> IO ()
 p40 :: Debuggee -> IO ()
+p41 :: Debuggee -> IO ()
+p42 :: Debuggee -> IO ()
+p43 :: Debuggee -> IO ()
+p44 :: Debuggee -> IO ()
+p45 :: Debuggee -> IO ()
 
 
 -- Testing get roots
@@ -652,6 +658,19 @@ p44 e = do
     rs <- gcRoots
     parCensus bs rs
   printCensusByClosureType c
+
+p45 e = do
+  pause e
+  t <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    typePointsFrom bs rs
+  --printCensusByClosureType (getNodes t)
+  print (Map.size (getNodes t))
+  print (Map.size (getEdges t))
+  mapM_ print (take 10 (reverse $ sortBy (comparing (cssize . snd)) (Map.assocs (getEdges t))))
+
+p46 e = detectLeaks 1 e
 
 
 tcModResult rroots = findRetainers (Just 10) rroots go

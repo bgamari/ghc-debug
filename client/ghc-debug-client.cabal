@@ -23,6 +23,7 @@ library
                        GHC.Debug.Trace,
                        GHC.Debug.ParTrace,
                        GHC.Debug.Count,
+                       GHC.Debug.TypePointsFrom,
                        GHC.Debug.Snapshot
                        GHC.Debug.Dominators
                        GHC.Debug.Client.Query
@@ -40,7 +41,7 @@ library
                        ghc-debug-common, ghc-debug-convention,
                        text, process, filepath, directory, bitwise,
                        haxl, hashable, mtl, eventlog2html >= 0.8.3, binary, psqueues,
-                       dom-lt, unagi-chan, primitive, async, monoidal-containers
+                       dom-lt, unagi-chan, primitive, async, monoidal-containers, language-dot
 
   hs-source-dirs:      src
   default-language:    Haskell2010
