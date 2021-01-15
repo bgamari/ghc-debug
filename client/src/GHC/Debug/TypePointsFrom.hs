@@ -14,7 +14,9 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ViewPatterns #-}
 {- | Type Points From analysis in the style of
-- Cork: Dynamic Memory Leak Detectionfor Garbage-Collected Languages -}
+- Cork: Dynamic Memory Leak Detectionfor Garbage-Collected Languages
+- https://dl.acm.org/doi/10.1145/1190216.1190224
+- -}
 module GHC.Debug.TypePointsFrom( typePointsFrom
                                , TypePointsFrom(..)
                                , getNodes
