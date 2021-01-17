@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecursiveDo #-}
 module GHC.Debug.Types.Graph( -- * Types
                               HeapGraph(..)
                             , HeapGraphEntry(..)
@@ -43,6 +44,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Class
 import GHC.Debug.Types.Ptr
@@ -100,7 +102,7 @@ heapGraphSize (HeapGraph _ g) = IM.size g
 -- | Creates a 'HeapGraph' for the value in the box, but not recursing further
 -- than the given limit.
 buildHeapGraph
-   :: (Monad m)
+   :: (MonadFix m)
    => DerefFunction m a
    -> Maybe Int
    -> ClosurePtr -- ^ The value to start with
@@ -117,7 +119,7 @@ type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a PapPayload Con
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
 multiBuildHeapGraph
-    :: (Monad m)
+    :: (MonadFix m)
     => DerefFunction m a
     -> Maybe Int
     -> NonEmpty ClosurePtr -- ^ Starting values with associated data entry
@@ -135,7 +137,7 @@ annotateHeapGraph f i hg = updateHeapGraph go i hg
 
 {-# INLINE generalBuildHeapGraph #-}
 generalBuildHeapGraph
-    :: forall m a .  (Monad m)
+    :: forall m a .  (MonadFix m)
     => DerefFunction m a
     -> Maybe Int
     -> HeapGraph a
@@ -153,13 +155,17 @@ generalBuildHeapGraph deref limit hg addBoxes = do
         hm <- get
         case lookupHeapGraph cp hm of
             Just {} -> return (Just cp)
-            Nothing -> do
+            -- FIXME GHC BUG: change `mdo` to `do` below:
+            --       "GHC internal error: ‘c’ is not in scope during type checking, but it passed the renamer" 
+            Nothing -> mdo
                 -- Look up the closure
                 c <- lift $ deref cp
                 let new_add = add (subtract 1 <$> n)
-                DCS e c' <- quadtraverse (traverse new_add) pure (traverse new_add) new_add c
-                -- Add add the resulting closure to the map
-                modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
+                -- NOTE: We tie-the-knot here with RecursiveDo so that we don't
+                -- get into an infinite loop with cycles in the heap.
+                rec modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
+                    -- Add the resulting closure below to the map (above):
+                    DCS e c' <- quadtraverse (traverse new_add) pure (traverse new_add) new_add c
                 return (Just cp)
 
 -- | Pretty-prints a HeapGraph. The resulting string contains newlines. Example

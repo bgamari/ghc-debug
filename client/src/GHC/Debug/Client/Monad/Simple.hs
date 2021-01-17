@@ -28,6 +28,7 @@ import GHC.Debug.Client.BlockCache
 import GHC.Debug.Client.RequestCache
 import GHC.Debug.Client.Monad.Class
 
+import Control.Monad.Fix
 import Control.Monad.Reader
 import Data.Binary
 --import Debug.Trace
@@ -182,6 +183,6 @@ blockReq req = DebugM $ do
 
 newtype DebugM a = DebugM (ReaderT Debuggee IO a)
                    -- Only derive the instances that DebugMonad needs
-                    deriving (MonadFail, Functor, Applicative, Monad)
+                    deriving (MonadFail, Functor, Applicative, Monad, MonadFix)
 
 
