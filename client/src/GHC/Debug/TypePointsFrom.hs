@@ -135,7 +135,7 @@ detectLeaks interval e = loop Nothing (M.empty, M.empty) 0
       resume e
       zipWithM_ (\n g -> writeFile ("slices/"
                                       ++ show @Int i ++ "-"
-                                      ++ show n ++ ".dot")
+                                      ++ show @Int n ++ ".dot")
                                    (renderDot g)) [0..] gs
       loop (Just r) new_rmaps (i + 1)
 

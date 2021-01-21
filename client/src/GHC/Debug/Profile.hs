@@ -35,7 +35,6 @@ import GHC.Debug.Profile.Types
 
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
-import Control.Monad.RWS
 import Data.List
 import Data.Ord
 import Control.Concurrent
@@ -61,9 +60,9 @@ censusClosureType = closureCensusBy go
        -> DebugM (Maybe (Text, CensusStats))
     go _ s = do
       d <- quadtraverse pure dereferenceConDesc pure pure s
-      let s :: Size
-          s = dcSize d
-          v =  CS (Count 1) s (Max s)
+      let siz :: Size
+          siz = dcSize d
+          v =  mkCS siz
       return $ Just (closureToKey (noSize d), v)
 
 
@@ -96,7 +95,7 @@ closureCensusBy f cps = do
     closAccum  :: ClosurePtr
                -> SizedClosure
                -> ()
-               -> DebugM ((), MMap.MonoidalMap k v, _)
+               -> DebugM ((), MMap.MonoidalMap k v, a -> a)
     closAccum cp s () = do
       r <- f cp s
       return . (\s' -> ((), s', id)) $ case r of
