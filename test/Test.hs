@@ -62,9 +62,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
-main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p46 e) --  >> outputRequestLog e)
+--main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p31 e) --  >> outputRequestLog e)
 
---main = snapshotRun "/tmp/ghc-debug-cache" p46
+main = snapshotRun "/tmp/ghc-debug-cache" p31
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -221,14 +221,16 @@ p21 e = pauseThen e $ do
 -- Use with large-thunk
 p24 e = do
   pause e
-  runTrace e $ do
+  hg <- runTrace e $ do
     precacheBlocks
     rs <- gcRoots
     hg <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> multiBuildHeapGraph  Nothing (x :| xs)
-    case retainerSize hg of
-      rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
+    return hg
+  putStrLn $ ppHeapGraph show hg
+--    case retainerSize hg of
+--      rs -> forM_ rs $ \r -> case r of Node n _ -> traceWrite n
 
 p25 e = runTrace e $ precacheBlocks >>= traceWrite
 
@@ -656,7 +658,7 @@ p44 e = do
   c <- runTrace e $ do
     bs <- precacheBlocks
     rs <- gcRoots
-    parCensus bs rs
+    censusClosureType rs
   printCensusByClosureType c
 
 p45 e = do
