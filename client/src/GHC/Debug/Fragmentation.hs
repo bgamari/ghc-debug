@@ -30,13 +30,12 @@ import Data.Word
 -- are.
 summariseBlocks :: [RawBlock] -> IO ()
 summariseBlocks bs = do
-  print ("MBLOCK:", length mblocks)
-  print ("PINNED BLOCKS:", (length $ filter isPinnedBlock bs))
-  print ("TOTAL BLOCKS:", length bs)
+  putStrLn ("TOTAL BLOCKS: " ++ show (length bs))
+  putStrLn ("PINNED BLOCKS: " ++ show (length $ filter isPinnedBlock bs))
+  putStrLn ("MBLOCK: " ++ show n_mblocks)
   where
-    mblocks = map (\mbs@(g:_) -> (g, length mbs)) (group (sort (map fst bs')))
-    bs' = map go bs
-    go b = (blockMBlock (rawBlockAddr b), isPinnedBlock b)
+    n_mblocks :: Int
+    n_mblocks = length (nub (map (blockMBlock . rawBlockAddr) bs))
 
 -- | Perform a heap census by which MBlock each closure lives in
 censusByMBlock :: [ClosurePtr] -> DebugM (Map.Map BlockPtr CensusStats)
@@ -50,9 +49,9 @@ censusByMBlock = closureCensusBy go
           k :: BlockPtr
           k = applyMBlockMask cp
       in if heapAlloced cp
-           then Just (k, v)
+           then return $ Just (k, v)
            -- Ignore static things
-           else Nothing
+           else return $ Nothing
 
 -- | Perform a census based on which block each closure resides in.
 censusByBlock :: [ClosurePtr] -> DebugM CensusByClosureType
@@ -66,12 +65,12 @@ censusByBlock = closureCensusBy go
           k :: Text
           k = pack (show (applyBlockMask cp))
       in if heapAlloced cp
-           then Just (k, v)
+           then return $ Just (k, v)
            -- Ignore static things
-           else Nothing
+           else return $ Nothing
 
 newtype PinnedCensusStats =
-          PinnedCensusStats (CensusStats, [(ClosurePtr, DebugClosureWithSize () () () ())])
+          PinnedCensusStats (CensusStats, [(ClosurePtr, SizedClosure)])
           deriving (Semigroup)
 
 -- | Only census the given (pinned) blocks
@@ -81,20 +80,16 @@ censusPinnedBlocks :: [RawBlock]
 censusPinnedBlocks bs = closureCensusBy go
   where
     pbs = Set.fromList (map rawBlockAddr (filter isPinnedBlock bs))
-    go :: forall a b c string . ClosurePtr
-          -> DebugClosureWithSize a string b c
-          -> Maybe (BlockPtr, PinnedCensusStats)
+    go :: ClosurePtr -> SizedClosure
+          -> DebugM (Maybe (BlockPtr, PinnedCensusStats))
     go cp d =
-      let s :: Size
-          s = dcSize d
-          v =  mkCS s
+      let v :: CensusStats
+          v = mkCS (dcSize d)
+
           bp = applyBlockMask cp
 
-          f _ = ()
-          neut :: DebugClosureWithSize a string b c -> DebugClosureWithSize () () () ()
-          neut = quadmap f f f f
-      in if heapAlloced cp && bp `Set.member` pbs
-           then Just (bp, PinnedCensusStats (v, [(cp, neut d)]))
+      in return $ if bp `Set.member` pbs
+           then Just (bp, PinnedCensusStats (v, [(cp, d)]))
            -- Ignore static things
            else Nothing
 
@@ -112,7 +107,7 @@ findBadPtrs mb_census  =
           dups = map swap (reverse $ sortBy (comparing snd) (Map.toList (Map.fromListWith (<>) all_arr_words)))
       in dups
 
-displayArrWords :: DebugClosureWithSize () () () () -> String
+displayArrWords :: SizedClosure -> String
 displayArrWords d =
     case noSize d of
       ArrWordsClosure { arrWords } -> show (arrWordsBS arrWords)

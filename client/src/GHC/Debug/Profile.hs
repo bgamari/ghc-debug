@@ -13,6 +13,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE TupleSections #-}
 {- | Functions for performing whole heap census in the style of the normal
 - heap profiling -}
 module GHC.Debug.Profile( profile
@@ -29,6 +30,8 @@ module GHC.Debug.Profile( profile
 import GHC.Debug.Client.Monad
 import GHC.Debug.Client
 import GHC.Debug.Trace
+import GHC.Debug.ParTrace
+import GHC.Debug.Profile.Types
 
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
@@ -44,19 +47,9 @@ import Eventlog.Args (defaultArgs)
 import Data.Text (pack, Text, unpack)
 import Data.Semigroup
 import qualified Data.Text as T
+import qualified Data.Map.Monoidal.Strict as MMap
 
 
-newtype Count = Count Int
-                deriving (Semigroup, Monoid, Num) via Sum Int
-                deriving (Show, Ord, Eq)
-
-data CensusStats = CS { n :: !Count, cssize :: !Size, csmax :: !(Max Size) } deriving Show
-
-mkCS :: Size -> CensusStats
-mkCS i = CS (Count 1) i (Max i)
-
-instance Semigroup CensusStats where
-  (CS a b c) <> (CS a1 b1 c1) = CS (a <> a1) (b <> b1) (c <> c1)
 
 type CensusByClosureType = Map.Map Text CensusStats
 
@@ -64,13 +57,14 @@ type CensusByClosureType = Map.Map Text CensusStats
 censusClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
 censusClosureType = closureCensusBy go
   where
-    go :: ClosurePtr -> DebugClosureWithSize a ConstrDesc b c
-       -> Maybe (Text, CensusStats)
-    go _ d =
+    go :: ClosurePtr -> SizedClosure
+       -> DebugM (Maybe (Text, CensusStats))
+    go _ s = do
+      d <- quadtraverse pure dereferenceConDesc pure pure s
       let s :: Size
           s = dcSize d
           v =  CS (Count 1) s (Max s)
-      in Just (closureToKey (noSize d), v)
+      return $ Just (closureToKey (noSize d), v)
 
 
 
@@ -84,32 +78,30 @@ closureToKey d =
 
 -- | General function for performing a heap census in constant memory
 closureCensusBy :: forall k v . (Semigroup v, Ord k)
-                => (ClosurePtr -> SizedClosureC -> Maybe (k, v))
+                => (ClosurePtr -> SizedClosure -> DebugM (Maybe (k, v)))
                 -> [ClosurePtr] -> DebugM (Map.Map k v)
-closureCensusBy f cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
+closureCensusBy f cps = do
+  bs <- precacheBlocks
+  MMap.getMonoidalMap <$> traceParFromM bs funcs (map (ClosurePtrWithInfo ()) cps)
   where
-    funcs = TraceFunctions {
+    funcs = TraceFunctionsIO {
                papTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
-              , visitedVal = const (return ())
+              , visitedVal = const (const (return (MMap.empty)))
               , conDescTrace = const (return ())
 
             }
     -- Add cos
     closAccum  :: ClosurePtr
                -> SizedClosure
-               ->  (StateT (Map.Map k v) DebugM) ()
-               ->  (StateT (Map.Map k v) DebugM) ()
-    closAccum cp s k = do
-      s' <- lift $ quadtraverse pure dereferenceConDesc pure pure s
-      modify' (go cp s')
-      k
-
-    go :: ClosurePtr -> SizedClosureC -> Map.Map k v -> Map.Map k v
-    go cp d = case f cp d of
-                Just (k, v) -> Map.insertWith (<>) k v
-                Nothing -> id
+               -> ()
+               -> DebugM ((), MMap.MonoidalMap k v, _)
+    closAccum cp s () = do
+      r <- f cp s
+      return . (\s' -> ((), s', id)) $ case r of
+        Just (k, v) -> MMap.singleton k v
+        Nothing -> MMap.empty
 
 -- | Perform a 2-level census where the keys are the type of the closure
 -- in addition to the type of ptrs of the closure. This can be used to
@@ -145,6 +137,26 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
           final_k :: Text
           final_k = k <> "[" <> T.intercalate "," kargs <> "]"
       in Map.insertWith (<>) final_k (mkCS (dcSize d))
+
+{-
+-- | Parallel heap census
+parCensus :: [RawBlock] -> [ClosurePtr] -> DebugM (Map.Map Text CensusStats)
+parCensus bs cs =  do
+  MMap.getMonoidalMap <$> (traceParFromM bs funcs (map (ClosurePtrWithInfo ()) cs))
+
+  where
+    nop = const (return ())
+    funcs = TraceFunctionsIO nop nop clos  (const (const (return mempty))) nop
+
+    clos :: ClosurePtr -> SizedClosure -> ()
+              -> DebugM ((), MMap.MonoidalMap Text CensusStats, DebugM () -> DebugM ())
+    clos _cp sc () = do
+      d <- quadtraverse pure dereferenceConDesc pure pure sc
+      let s :: Size
+          s = dcSize sc
+          v =  mkCS s
+      return $ ((), MMap.singleton (closureToKey (noSize d)) v, id)
+      -}
 
 
 printCensusByClosureType :: CensusByClosureType -> IO ()

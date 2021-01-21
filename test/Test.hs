@@ -18,7 +18,7 @@ import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
 --import GHC.Debug.Types.Closures
 import GHC.Debug.Trace
-import GHC.Debug.ParTrace(tracePar, parCensus)
+import GHC.Debug.ParTrace(tracePar)
 import GHC.Debug.ObjectEquiv
 import Control.Monad.RWS
 import Control.Monad.Writer

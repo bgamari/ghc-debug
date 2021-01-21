@@ -73,9 +73,9 @@ withDebuggeeRun exeName socketName action = do
 -- | Bracketed version of @debuggeeConnect@. Connects to a debuggee, runs the
 -- action, then closes the debuggee.
 withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
-                   -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
-                   -> (Debuggee -> IO a)
-                   -> IO a
+                    -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+                    -> (Debuggee -> IO a)
+                    -> IO a
 withDebuggeeConnect exeName socketName action = do
     new_env <- debuggeeConnect  exeName socketName
     action new_env

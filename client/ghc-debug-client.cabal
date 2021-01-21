@@ -20,6 +20,7 @@ library
                        GHC.Debug.ObjectEquiv,
                        GHC.Debug.Client.Search,
                        GHC.Debug.Profile,
+                       GHC.Debug.Profile.Types,
                        GHC.Debug.Trace,
                        GHC.Debug.ParTrace,
                        GHC.Debug.Count,

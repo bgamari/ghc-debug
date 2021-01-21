@@ -14,11 +14,11 @@
 -- The tracing functions create a thread for each MBlock which we
 -- traverse, closures are then sent to the relevant threads to be
 -- dereferenced and thread-local storage is accumulated.
-module GHC.Debug.ParTrace ( traceParFromM, tracePar, TraceFunctionsIO(..), ClosurePtrWithInfo(..), parCensus ) where
+module GHC.Debug.ParTrace ( traceParFromM, tracePar, TraceFunctionsIO(..), ClosurePtrWithInfo(..) ) where
 
 import           GHC.Debug.Types
 import           GHC.Debug.Client.Query
-import           GHC.Debug.Profile
+import           GHC.Debug.Profile.Types
 
 import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO hiding (map)
@@ -189,22 +189,4 @@ tracePar bs = traceParFromM bs funcs . map (ClosurePtrWithInfo ())
       _traced <- getSourceInfo (tableId itb)
       return $ ((), (), id)
 
--- | Parallel heap census
-parCensus :: [RawBlock] -> [ClosurePtr] -> DebugM (Map.Map Text CensusStats)
-parCensus bs cs = DebugM $ do
-  d <- ask
-  MMap.getMonoidalMap <$> (liftIO $ runSimple d $ traceParFromM bs funcs (map (ClosurePtrWithInfo ()) cs))
-
-  where
-    nop = const (return ())
-    funcs = TraceFunctionsIO nop nop clos  (const (const (return mempty))) nop
-
-    clos :: ClosurePtr -> SizedClosure -> ()
-              -> DebugM ((), MMap.MonoidalMap Text CensusStats, DebugM () -> DebugM ())
-    clos _cp sc () = do
-      d <- quadtraverse pure dereferenceConDesc pure pure sc
-      let s :: Size
-          s = dcSize sc
-          v =  mkCS s
-      return $ ((), MMap.singleton (closureToKey (noSize d)) v, id)
 

@@ -18,11 +18,12 @@
 - https://dl.acm.org/doi/10.1145/1190216.1190224
 - -}
 module GHC.Debug.TypePointsFrom( typePointsFrom
+                               , detectLeaks
                                , TypePointsFrom(..)
                                , getNodes
                                , getEdges
+                               , Key
                                , Edge(..)
-                               , detectLeaks
                                ) where
 
 import GHC.Debug.Client.Monad
@@ -70,7 +71,7 @@ singletonTPF :: Key -> CensusStats -> [(Edge, CensusStats)] -> TypePointsFrom
 singletonTPF k s es = TypePointsFrom (Map.singleton k s)
                                   (Map.fromList es)
 
--- | Parallel heap census
+-- | Perform a "type points from" heap census
 typePointsFrom :: [RawBlock] -> [ClosurePtr] -> DebugM TypePointsFrom
 typePointsFrom bs cs = traceParFromM bs funcs (map (ClosurePtrWithInfo Root) cs)
 
