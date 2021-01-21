@@ -34,6 +34,7 @@ module GHC.Debug.Client
   , withPause
 
   -- * Basic Requests
+  , version
   , gcRoots
   , allBlocks
   , getSourceInfo

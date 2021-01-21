@@ -23,6 +23,7 @@ module GHC.Debug.Client.Query
   , allBlocks
   , getSourceInfo
   , savedObjects
+  , version
 
   -- * Dereferencing functions
   , dereferenceClosures
@@ -43,6 +44,7 @@ import           GHC.Debug.Decode.Stack
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.BlockCache
 import Control.Monad.State
+import Data.Word
 
 import Debug.Trace
 
@@ -175,6 +177,10 @@ getSourceInfo = request . RequestSourceInfo
 -- | Query the debuggee for the list of saved objects.
 savedObjects :: DebugM [ClosurePtr]
 savedObjects = request RequestSavedObjects
+
+-- | Query the debuggee for the protocol version
+version :: DebugM Word32
+version = request RequestVersion
 
 dereferenceInfoTable :: InfoTablePtr -> DebugM StgInfoTable
 dereferenceInfoTable it = decodedTable . fst <$> request (RequestInfoTable it)
