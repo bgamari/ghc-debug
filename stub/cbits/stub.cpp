@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
 
 
@@ -184,20 +185,41 @@ static Response * r_poll_pause_resp = NULL;
 
 static StgStablePtr rts_saved_closure = NULL;
 
+// Whether to fork on pause or not.
+static bool use_fork = false;
+
 extern "C"
 void pause_mutator() {
-  r_paused = rts_pause();
-  if (r_poll_pause_resp != NULL){
-      r_poll_pause_resp->finish(RESP_OKAY);
+  pid_t pid;
+  if (use_fork){
+    pid = fork();
+  } else {
+    pid = 0;
   }
-  paused = true;
+  // Only pause the child process, the parent blocks until the child has finished.
+  if (pid == 0){
+    r_paused = rts_pause();
+    if (r_poll_pause_resp != NULL){
+        r_poll_pause_resp->finish(RESP_OKAY);
+    }
+    paused = true;
+  }
+  else {
+    int status = 0;
+    wait(&status);
+  }
 }
 
 extern "C"
 void resume_mutator() {
   //trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
-  rts_resume(r_paused);
-  paused = false;
+  if (use_fork){
+    // Exit, the parent is blocked until we are finished.
+    exit(0);
+  } else {
+    rts_resume(r_paused);
+    paused = false;
+  }
 }
 
 
