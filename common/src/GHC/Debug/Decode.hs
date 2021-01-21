@@ -100,8 +100,8 @@ allocateByPtr (BSI.PS fp o _l) action =
 
 skipClosureHeader :: Get ()
 skipClosureHeader
-  | profiling = () <$ skip 24
-  | otherwise = () <$ skip 8
+  | profiling = () <$ skip (8 * 3)
+  | otherwise = () <$ skip (8 * 1)
 
 decodePAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodePAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
