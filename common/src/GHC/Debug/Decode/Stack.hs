@@ -39,6 +39,10 @@ getFrame st_bitmap itbl =
     case tipe (decodedTable itbl) of
       RET_BCO ->
         -- TODO: In the case of a RET_BCO frame we must decode the frame as a BCO
+        -- MP: If you trigger this case, then the decoding logic might
+        -- already work but I have never encountered a stack frame with
+        -- this type to test it. You might also need to modify `stub.cpp`
+        -- but that should be straightforward.
         error "getStack: RET_BCO"
       ty -> do
         -- In all other cases we request the pointer bitmap from the debuggee
