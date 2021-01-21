@@ -34,6 +34,7 @@ import System.IO
 import System.Process
 import System.Environment
 import GHC.Debug.Client.Monad.Class
+import GHC.Debug.Types (Request(..))
 import qualified GHC.Debug.Client.Monad.Haxl as H
 import qualified GHC.Debug.Client.Monad.Simple as S
 import System.IO
@@ -115,7 +116,7 @@ snapshotRun fp k = do
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()
-debuggeeClose _ = hPutStr stderr "TODO: debuggeeClose: cleanly disconnect from debuggee"
+debuggeeClose d = run d $ request RequestResume
 
 debuggeeProcess :: FilePath -> FilePath -> IO CreateProcess
 debuggeeProcess exe sockName = do
