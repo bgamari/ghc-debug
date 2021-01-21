@@ -32,6 +32,7 @@ import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import GHC.ForeignPtr
 import Data.Binary.Get as B
+import Data.Binary
 import Control.Monad
 import Data.Void
 import Control.DeepSeq
@@ -44,11 +45,6 @@ foreign import prim "unpackClosurePtrzh" unpackClosurePtr# ::
 
 foreign import prim "closureSizezh" closureSize# ::
               Addr# -> (# Word# #)
-
-data AllocStrategy = AllocByPtr | AllocByCopy
-
-allocStrategy :: AllocStrategy
-allocStrategy = AllocByCopy
 
 getClosureRaw :: StgInfoTable -> Ptr a -> BSI.ByteString -> IO (GenClosure Word, Size)
 getClosureRaw itb (Ptr closurePtr) datString = do
@@ -67,13 +63,7 @@ getClosureRaw itb (Ptr closurePtr) datString = do
 
 -- | Allow access directly to the chunk of memory used by a bytestring
 allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
-allocate = case allocStrategy of
-            AllocByPtr  -> allocateByPtr
-            AllocByCopy -> allocateByCopy
-
--- MP: It was thought that allocateByPtr would be quite a bit faster but
--- this turns out to not be true on some simple benchmarks. In future we
--- might try to remove all copying from the pipeline.
+allocate = allocateByCopy
 
 
 -- | Allocate a bytestring directly into memory and return a pointer to the
@@ -85,18 +75,6 @@ allocateByCopy (BSI.PS fp o l) action =
      --print (fp, o, l)
      BSI.memcpy buf (p `plusPtr` o) (fromIntegral l)
      action (castPtr buf)
-
--- allocate' will not work to allocate a closure pointer unless the offset
--- is a multiple of word size, so the closure is word-aligned.
--- This is currently ensured by using `BS.copy` when the RawClosure is
--- constructed.
-allocateByPtr :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
--- DEBUG: Check for alignment
---allocate' (BSI.PS fp o l) _ | o `mod` 8 /= 0 = error (show ("NOT ALIGNED", fp, o, l))
-allocateByPtr (BSI.PS fp o _l) action =
-  withForeignPtr (fp `plusForeignPtr` o) $ \p -> do
-    --print (fp, p, o, l)
-    action (castPtr p)
 
 skipClosureHeader :: Get ()
 skipClosureHeader
@@ -133,7 +111,7 @@ decodeTVarClosure (infot, _) (_, rc) = decodeFromBS rc $ do
   return $ (TVarClosure infot ptr watch_queue (fromIntegral updates))
 
 getClosurePtr :: Get ClosurePtr
-getClosurePtr = mkClosurePtr <$> getWord64le
+getClosurePtr = get
 
 getWord :: Get Word64
 getWord = getWord64le
@@ -154,7 +132,6 @@ decodeTrecChunk (infot, _) (_, rc) = decodeFromBS rc $ do
   clos_next_idx <- getWord64le
   chunks <- replicateM (fromIntegral clos_next_idx) getChunk
   return $ (TRecChunkClosure infot prev (fromIntegral clos_next_idx) chunks)
-
   where
     getChunk = do
       TRecEntry <$> getClosurePtr
@@ -186,12 +163,12 @@ decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
    skip 2
    st_sp <- StackPtr <$> getWord
    stackHeaderSize <- bytesRead
-   let k = fromIntegral (subtractStackPtr st_sp cp)
+   let stack_offset = fromIntegral (subtractStackPtr st_sp cp)
              -- -stackHeaderSize for the bytes already read
              - fromIntegral stackHeaderSize
        len = calculateStackLen st_size (fromIntegral stackHeaderSize) cp st_sp
    -- Skip to start of stack frames
-   skip k
+   skip stack_offset
    -- Read the raw frames, we can't decode them yet because we
    -- need to query the debuggee for the bitmaps
    raw_stack <- RawStack <$> getByteString (fromIntegral len)
@@ -273,9 +250,6 @@ decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $
         -- Info table is two words long which is why we subtract 16 from
         -- the pointer
         --print (itblPtr, closPtr)
-        -- Save the old value of itbl_ptr so we can put it back if we're in
-        -- the no copying mode (allocateByPtr)
-        old_itbl <- peek ptr_to_itbl_ptr
         poke ptr_to_itbl_ptr (fixTNTC itblPtr)
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
@@ -289,15 +263,11 @@ decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
         --
-        poke ptr_to_itbl_ptr old_itbl
         return $ DCS s . quadmap absurd
                         id
                         absurd
                         mkClosurePtr . convertClosure itb
           $ fmap (\(W# w) -> (W64# w)) r
-  where
---    stackCont :: (Word32, StackPtr) -> StackCont
---    stackCont (n,sp) = StackCont sp (getRawStack (n,sp) ptr rc)
 
 
 fixTNTC :: Ptr a -> Ptr StgInfoTable
