@@ -6,6 +6,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module GHC.Debug.Types.Graph( -- * Types
                               HeapGraph(..)
                             , HeapGraphEntry(..)
@@ -156,7 +157,7 @@ generalBuildHeapGraph deref limit hg addBoxes = do
         case lookupHeapGraph cp hm of
             Just {} -> return (Just cp)
             -- FIXME GHC BUG: change `mdo` to `do` below:
-            --       "GHC internal error: ‘c’ is not in scope during type checking, but it passed the renamer" 
+            --       "GHC internal error: ‘c’ is not in scope during type checking, but it passed the renamer"
             Nothing -> mdo
                 -- Look up the closure
                 c <- lift $ deref cp
@@ -338,8 +339,7 @@ ppClosure herald showBox prec c = case c of
     WeakClosure {} -> "_wk" -- TODO
     TVarClosure {} -> "_tvar" -- TODO
     MutPrimClosure {} -> "_mutPrim" -- TODO
-    UnsupportedClosure {} ->
-        "_unsupported"
+    UnsupportedClosure {info} -> (show info)
 
 
   where
