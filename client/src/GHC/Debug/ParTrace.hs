@@ -33,14 +33,18 @@ import Control.Exception.Base
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
 import GHC.Conc
+import Debug.Trace
 
 type InChan = TChan
 type OutChan = TChan
 
+threads :: Int
+threads = 16
+
 unsafeLiftIO :: IO a -> DebugM a
 unsafeLiftIO = DebugM . liftIO
 -- | State local to a thread
-data ThreadState s = ThreadState (IM.IntMap (IOBitArray Word16)) (IORef s)
+data ThreadState s = ThreadState (IM.IntMap (IM.IntMap (IOBitArray Word16))) (IORef s)
 
 data ThreadInfo a = ThreadInfo !(InChan (ClosurePtrWithInfo a))
 
@@ -53,17 +57,19 @@ type ThreadMap a = IM.IntMap (ThreadInfo a)
 data TraceState a = TraceState { visited :: !(ThreadMap a) }
 
 
-getKeyPair :: ClosurePtr -> (Int, Word16)
-getKeyPair cp =
+getKeyTriple :: ClosurePtr -> (Int, Int, Word16)
+getKeyTriple cp =
   let BlockPtr raw_bk = applyBlockMask cp
       bk = fromIntegral raw_bk `div` 8
       offset = (getBlockOffset cp) `div` 8
-  in (bk, fromIntegral offset)
+      BlockPtr raw_mbk = applyMBlockMask cp
+      mbk = fromIntegral raw_mbk `div` 8
+  in (mbk, bk, fromIntegral offset)
 
 getMBlockKey :: ClosurePtr -> Int
 getMBlockKey cp =
   let BlockPtr raw_bk = applyMBlockMask cp
-  in fromIntegral raw_bk
+  in (fromIntegral raw_bk `div` fromIntegral mblockMask) `mod` threads
 
 sendToChan :: ThreadInfo a -> TraceState a -> ClosurePtrWithInfo a -> DebugM ()
 sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ ask >>= \_ -> liftIO $ do
@@ -126,19 +132,31 @@ workerThread k ref go oc = DebugM $ do
       () <$ traverse (go . ClosurePtrWithInfo a) p'
 
 
-checkVisit :: ClosurePtr -> ThreadState s -> IO (ThreadState s, Bool)
-checkVisit cp st = do
-  let (bk, offset) = getKeyPair cp
-      ThreadState v ref = st
-  case IM.lookup bk v of
+handleBlockLevel bk offset m = do
+  case IM.lookup bk m of
     Nothing -> do
       na <- newArray (0, fromIntegral (blockMask `div` 8)) False
       writeArray na offset True
-      return (ThreadState (IM.insert bk na v) ref, False)
+      return (IM.insert bk na m, False)
     Just bm -> do
       res <- readArray bm offset
       unless res (writeArray bm offset True)
-      return (st, res)
+      return (m, res)
+
+checkVisit :: ClosurePtr -> ThreadState s -> IO (ThreadState s, Bool)
+checkVisit cp st = do
+  let (mbk, bk, offset) = getKeyTriple cp
+      ThreadState v ref = st
+  case IM.lookup mbk v of
+    Nothing -> do
+      (st', res) <- handleBlockLevel bk offset IM.empty
+      return (ThreadState (IM.insert mbk st' v) ref, res)
+    Just bm -> do
+      (st', res) <- handleBlockLevel bk offset bm
+      return (ThreadState (IM.insert mbk st' v) ref, res)
+
+
+
 
 
 data TraceFunctionsIO a s =
@@ -167,9 +185,10 @@ data TraceFunctionsIO a s =
 traceParFromM :: Monoid s => [RawBlock] -> TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 traceParFromM bs k cps = do
   let bs' = nub $ (map (blockMBlock . rawBlockAddr) bs)
+  unsafeLiftIO $ print (("SPAWNING: ", threads))
   (init_mblocks, dones, start)  <- unzip3 <$> mapM (\b -> do
                                     (ti, done, start) <- initThread k
-                                    return ((fromIntegral b, ti), done, start)) bs'
+                                    return ((fromIntegral b, ti), done, start)) [0 .. threads - 1]
   (other_ti, done_other, start_other) <- initThread k
   let ts_map = IM.fromList init_mblocks
       go  = sendToChan other_ti (TraceState ts_map)
