@@ -94,10 +94,15 @@ spec = do
           (c:_) <- run d (savedObjects >>= dereferenceClosures)
           let itptr = tableId . info . noSize $ c
           cd <- run d (getSourceInfo itptr)
-          print c
-          print cd
           cd `shouldBe` Just (SourceInformation {infoName = "sat_s2jk_info", infoClosureType = THUNK, infoType = "Integer", infoLabel = "main", infoModule = "Main", infoPosition = "test-progs/SaveIPEPause.hs:13:21-26"})
 
+    describe "RequestBlocks" $
+      it "should return all blocks" $
+        withStartedDebuggee "clock" $ \ h d -> do
+          waitForSync $ Server.stdout h
+          pause d
+          bs <- run d precacheBlocks
+          length bs `shouldSatisfy` (> 10)
 
     describe "HeapGraph-Cycles" $
       it "should terminate" $
