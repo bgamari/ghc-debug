@@ -48,9 +48,10 @@ test-suite system-test
         SystemTest
       , Server
   default-language: Haskell2010
-  ghc-options:         -threaded -debug -g3
+  ghc-options:         -threaded -debug
   build-tool-depends: ghc-debug-stub:debug-test
                     , ghc-debugger:save-one-pause
+                    , ghc-debugger:save-ipe-pause
                     , ghc-debugger:clock
                     , ghc-debugger:cycles
 
@@ -58,7 +59,7 @@ executable clock
   main-is:             Clock.hs
   hs-source-dirs:
       test-progs
-  ghc-options:         -threaded -debug -g3 -O0
+  ghc-options:         -threaded -debug -O0 -finfo-table-map -fdistinct-constructor-tables
   build-depends:       base
                      , ghc-debug-stub
   default-language:    Haskell2010
@@ -67,7 +68,7 @@ executable save-one-pause
   main-is:             SaveOnePause.hs
   hs-source-dirs:
       test-progs
-  ghc-options:         -threaded -debug -g3 -O0
+  ghc-options:         -threaded -debug -O0 -finfo-table-map -fdistinct-constructor-tables
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
@@ -78,14 +79,28 @@ executable save-one-pause
                      , ghc-debug-stub
   default-language:    Haskell2010
 
--- TODO integrate this into the test suite (I'm not sure how that's supposed to work...)
+executable save-ipe-pause
+  main-is:             SaveIPEPause.hs
+  hs-source-dirs:
+      test-progs
+  ghc-options:         -threaded -O0 -finfo-table-map -fdistinct-constructor-tables
+  build-depends:       base
+                     , ghc-debug-client
+                     , ghc-debug-common
+                     , ghc-heap
+                     , containers
+                     , extra
+                     , process
+                     , ghc-debug-stub
+  default-language:    Haskell2010
+
 executable cycles
   main-is:             Cycles.hs
   hs-source-dirs:
       test-progs
   -- NOTE: at the moment disabling optimizations seems to be required to create
   -- cycles in the heap for generalBuildHeapGraph to choke on:
-  ghc-options:         -threaded -debug -g3 -O0
+  ghc-options:         -threaded -debug -O0
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common

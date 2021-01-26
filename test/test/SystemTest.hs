@@ -86,6 +86,19 @@ spec = do
           cd <- run d (dereferenceConDesc itptr)
           cd `shouldBe` ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "I#"}
 
+    describe "RequestSourceInfo" $
+      it "should return IPE information for saved object" $
+        withStartedDebuggee "save-ipe-pause" $ \ h d -> do
+          waitForSync $ Server.stdout h
+          pause d
+          (c:_) <- run d (savedObjects >>= dereferenceClosures)
+          let itptr = tableId . info . noSize $ c
+          cd <- run d (getSourceInfo itptr)
+          print c
+          print cd
+          cd `shouldBe` Just (SourceInformation {infoName = "sat_s2jk_info", infoClosureType = THUNK, infoType = "Integer", infoLabel = "main", infoModule = "Main", infoPosition = "test-progs/SaveIPEPause.hs:13:21-26"})
+
+
     describe "HeapGraph-Cycles" $
       it "should terminate" $
         withStartedDebuggee "cycles" $ \ _ d -> do
