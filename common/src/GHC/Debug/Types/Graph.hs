@@ -318,7 +318,7 @@ ppClosure herald showBox prec c = case c of
     BCOClosure {..} -> app
         ["_bco", showBox 10 bcoptrs]
     ArrWordsClosure {..} -> app
-        ["toArray", "("++show bytes ++ " bytes)", ((show $ arrWordsBS arrWords)) ]
+        ["ARR_WORDS", "("++show bytes ++ " bytes)", ((show $ arrWordsBS arrWords)) ]
     MutArrClosure {..} -> app
         --["toMutArray", "("++show (length mccPayload) ++ " ptrs)",  intercalate "," (shorten (map (showBox 10) mccPayload))]
         ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]
