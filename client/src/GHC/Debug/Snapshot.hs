@@ -19,6 +19,7 @@ snapshot :: FilePath -> DebugM ()
 snapshot fp = do
   bs <- precacheBlocks
   rs <- gcRoots
+  _so <- savedObjects
   tracePar bs rs
   saveCache fp
 
