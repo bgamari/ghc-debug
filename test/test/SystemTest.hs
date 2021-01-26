@@ -4,6 +4,7 @@ import Test.Tasty.Hspec
 
 import GHC.Debug.Client
 import GHC.Debug.Types
+import GHC.Debug.Snapshot
 import GHC.Debug.Types.Graph hiding (buildHeapGraph, multiBuildHeapGraph)
 import GHC.Debug.Types.Closures
 import Data.Text (unpack)
@@ -23,6 +24,8 @@ import GHC.Clock
 import System.Timeout
 import Data.List.Extra
 import Data.List.NonEmpty(NonEmpty(..))
+import System.IO.Temp
+import System.FilePath
 
 spec :: SpecWith ()
 spec = do
@@ -103,6 +106,21 @@ spec = do
           pause d
           bs <- run d precacheBlocks
           length bs `shouldSatisfy` (> 10)
+
+{-
+-- Snapshot test is broken because par tracing doesn't
+-- work when inside another thread..
+    describe "Snapshot" $
+      it "creating and loading a snapshot" $
+        withSystemTempDirectory "ghc-debug" $ \td -> do
+          let ss_fp = (td </> "ghc-debug-cache")
+          withStartedDebuggee "clock" $ \ h d -> do
+            waitForSync $ Server.stdout h
+            pause d
+            run d (snapshot ss_fp)
+          print "made"
+          --snapshotRun ss_fp (\d -> run d $ gcRoots >>= traceFrom )
+-}
 
     describe "HeapGraph-Cycles" $
       it "should terminate" $
