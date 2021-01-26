@@ -4,7 +4,21 @@ import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Profile
 import           GHC.Debug.Trace
+import           GHC.Debug.ParTrace hiding (TraceFunctionsIO(..))
+import GHC.Debug.ParTrace (TraceFunctionsIO(TraceFunctionsIO))
 import Control.Monad.State
+
+
+parCount :: [RawBlock] -> [ClosurePtr] -> DebugM CensusStats
+parCount bs = traceParFromM bs funcs . map (ClosurePtrWithInfo ())
+  where
+    nop = const (return ())
+    funcs = TraceFunctionsIO nop nop clos (const (const (return mempty))) nop
+
+    clos :: ClosurePtr -> SizedClosure -> ()
+              -> DebugM ((), CensusStats, DebugM () -> DebugM ())
+    clos _cp sc _ = do
+      return $ ((), mkCS (dcSize sc), id)
 
 -- | Simple statistics about a heap, total objects, size and maximum object
 -- size

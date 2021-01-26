@@ -9,7 +9,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Functions to support the constant space traversal of a heap.
 -- This module is like the Trace module but performs the tracing in
--- parellel.
+-- parellel. The speed-up is quite modest but hopefully can be improved in
+-- future.
 --
 -- The tracing functions create a thread for each MBlock which we
 -- traverse, closures are then sent to the relevant threads to be
@@ -24,11 +25,17 @@ import Data.Array.BitArray.IO hiding (map)
 import Control.Monad.Reader
 import Data.Word
 import GHC.Debug.Client.Monad.Simple
-import Control.Concurrent.Chan.Unagi
+--import Control.Concurrent.Chan.Unagi
 import Control.Concurrent.Async
 import Data.List
 import Data.IORef
 import Control.Exception.Base
+import Control.Concurrent.STM.TChan
+import Control.Concurrent.STM
+import GHC.Conc
+
+type InChan = TChan
+type OutChan = TChan
 
 unsafeLiftIO :: IO a -> DebugM a
 unsafeLiftIO = DebugM . liftIO
@@ -62,17 +69,18 @@ sendToChan :: ThreadInfo a -> TraceState a -> ClosurePtrWithInfo a -> DebugM ()
 sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ ask >>= \_ -> liftIO $ do
   let st = visited ts
       mkey = getMBlockKey cp
-  case IM.lookup mkey st of
-    Nothing -> writeChan main_ic cpi
-    Just (ThreadInfo ic) -> writeChan ic cpi
+  atomically $ case IM.lookup mkey st of
+    Nothing -> writeTChan main_ic cpi
+    Just (ThreadInfo ic) -> writeTChan ic cpi
 
-initThread :: Monoid s => TraceFunctionsIO a s -> DebugM (ThreadInfo a, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
+initThread :: Monoid s => TraceFunctionsIO a s -> DebugM (ThreadInfo a, STM Bool, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
 initThread k = DebugM $ do
   e <- ask
-  (ic, oc) <- liftIO $ newChan
+  ic <- liftIO $ atomically $ newTChan
+  let oc = ic
   ref <- liftIO $ newIORef mempty
   let start go = unsafeLiftIO $ async $ runSimple e $ workerThread k ref go oc
-  return (ThreadInfo ic,  start)
+  return (ThreadInfo ic, isEmptyTChan ic ,  start)
 
 workerThread :: forall s a . Monoid s => TraceFunctionsIO a s -> IORef s -> (ClosurePtrWithInfo a -> DebugM ()) -> OutChan (ClosurePtrWithInfo a) -> DebugM s
 workerThread k ref go oc = DebugM $ do
@@ -80,14 +88,14 @@ workerThread k ref go oc = DebugM $ do
   liftIO $ runSimple d (loop (ThreadState IM.empty ref))
   where
     loop !m = do
-      mcp <- unsafeLiftIO $ try $ readChan oc
+      mcp <- unsafeLiftIO $ try $ atomically $ readTChan oc
       case mcp of
         -- The thread gets blocked on readChan when the work is finished so
         -- when this happens, catch the exception and return the accumulated
         -- state for the thread. Each thread has a reference to all over
         -- threads, so the exception is only raised when ALL threads are
         -- waiting for work.
-        Left BlockedIndefinitelyOnMVar -> unsafeLiftIO $ readIORef ref
+        Left AsyncCancelled -> unsafeLiftIO $ readIORef ref
         Right (ClosurePtrWithInfo a cp) -> do
           (m', b) <- unsafeLiftIO $ checkVisit cp m
           if b
@@ -159,15 +167,24 @@ data TraceFunctionsIO a s =
 traceParFromM :: Monoid s => [RawBlock] -> TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 traceParFromM bs k cps = do
   let bs' = nub $ (map (blockMBlock . rawBlockAddr) bs)
-  (init_mblocks, start)  <- unzip <$> mapM (\b -> do
-                                    (ti, start) <- initThread k
-                                    return ((fromIntegral b, ti), start)) bs'
-  (other_ti, start_other) <- initThread k
+  (init_mblocks, dones, start)  <- unzip3 <$> mapM (\b -> do
+                                    (ti, done, start) <- initThread k
+                                    return ((fromIntegral b, ti), done, start)) bs'
+  (other_ti, done_other, start_other) <- initThread k
   let ts_map = IM.fromList init_mblocks
       go  = sendToChan other_ti (TraceState ts_map)
   as <- sequence (start_other go : map ($ go) start )
   mapM go cps
+  unsafeLiftIO $ atomically $ waitFinish (done_other : dones)
+  unsafeLiftIO $ mapM_ cancel as
   unsafeLiftIO $ mconcat <$> mapM wait as
+
+waitFinish :: [STM Bool] -> STM ()
+waitFinish [] = return ()
+waitFinish (t:ts) = do
+   b <- t
+   if b then waitFinish ts
+        else retry
 
 -- | A parellel tracing function, the first argument is the list of known
 -- blocks, providing an accurate list here will greatly speed up the
