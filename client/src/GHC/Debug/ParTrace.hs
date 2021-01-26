@@ -18,7 +18,6 @@ module GHC.Debug.ParTrace ( traceParFromM, tracePar, TraceFunctionsIO(..), Closu
 
 import           GHC.Debug.Types
 import           GHC.Debug.Client.Query
-import           GHC.Debug.Profile.Types
 
 import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO hiding (map)
@@ -28,9 +27,6 @@ import GHC.Debug.Client.Monad.Simple
 import Control.Concurrent.Chan.Unagi
 import Control.Concurrent.Async
 import Data.List
-import qualified Data.Map.Monoidal.Strict as MMap
-import qualified Data.Map as Map
-import Data.Text (Text)
 import Data.IORef
 import Control.Exception.Base
 
