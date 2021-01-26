@@ -54,7 +54,7 @@ censusByMBlock = closureCensusBy go
            else return $ Nothing
 
 -- | Perform a census based on which block each closure resides in.
-censusByBlock :: [ClosurePtr] -> DebugM CensusByClosureType
+censusByBlock :: [ClosurePtr] -> DebugM (Map.Map BlockPtr CensusStats)
 censusByBlock = closureCensusBy go
   where
     go cp d =
@@ -62,8 +62,7 @@ censusByBlock = closureCensusBy go
           s = dcSize d
           v =  mkCS s
 
-          k :: Text
-          k = pack (show (applyBlockMask cp))
+          k = applyBlockMask cp
       in if heapAlloced cp
            then return $ Just (k, v)
            -- Ignore static things
