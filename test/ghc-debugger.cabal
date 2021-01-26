@@ -52,6 +52,7 @@ test-suite system-test
   build-tool-depends: ghc-debug-stub:debug-test
                     , ghc-debugger:save-one-pause
                     , ghc-debugger:clock
+                    , ghc-debugger:cycles
 
 executable clock
   main-is:             Clock.hs

@@ -4,7 +4,7 @@ import Test.Tasty.Hspec
 
 import GHC.Debug.Client
 import GHC.Debug.Types
-import GHC.Debug.Types.Graph hiding (buildHeapGraph)
+import GHC.Debug.Types.Graph hiding (buildHeapGraph, multiBuildHeapGraph)
 import GHC.Debug.Types.Closures
 import Data.Text (unpack)
 import System.IO
@@ -22,6 +22,7 @@ import Data.IORef
 import GHC.Clock
 import System.Timeout
 import Data.List.Extra
+import Data.List.NonEmpty(NonEmpty(..))
 
 spec :: SpecWith ()
 spec = do
@@ -84,6 +85,14 @@ spec = do
           let itptr = tableId . info . noSize $ c
           cd <- run d (dereferenceConDesc itptr)
           cd `shouldBe` ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "I#"}
+
+    describe "HeapGraph-Cycles" $
+      it "should terminate" $
+        withStartedDebuggee "cycles" $ \ _ d -> do
+            pause d
+            (r:rs) <- run d gcRoots
+            _hg <- run d $ multiBuildHeapGraph Nothing (r :| rs)
+            return ()
 
     describe "RequestResume" $
       it "should resume a paused debugee" $
