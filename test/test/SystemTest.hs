@@ -39,6 +39,13 @@ spec = do
           roots <- run d gcRoots
           roots `shouldSatisfy` notNull
 
+    describe "RequestRoots(fork)" $
+      it "should return a non-empty result" $
+        withStartedDebuggee "debug-test" $ \ _ d -> do
+          fork d
+          roots <- run d gcRoots
+          roots `shouldSatisfy` notNull
+
     describe "RequestClosures" $
       it "should return a non-empty result" $
         withStartedDebuggee "debug-test" $ \ _ d -> do

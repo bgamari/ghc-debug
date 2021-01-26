@@ -44,7 +44,7 @@ emptyRequestCache = RequestCache HM.empty
 
 getResponseBinary :: Request a -> Get a
 getResponseBinary RequestVersion       = getWord32be
-getResponseBinary RequestPause         = get
+getResponseBinary (RequestPause {})    = get
 getResponseBinary RequestResume        = get
 getResponseBinary RequestRoots         = get
 getResponseBinary (RequestClosure {}) = get
@@ -61,7 +61,7 @@ getResponseBinary RequestBlock {}  = get
 
 putResponseBinary :: Request a -> a -> Put
 putResponseBinary RequestVersion w = putWord32be w
-putResponseBinary RequestPause w       = put w
+putResponseBinary (RequestPause {}) w  = put w
 putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs
 putResponseBinary (RequestClosure {}) rcs = put rcs

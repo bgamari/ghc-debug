@@ -11,6 +11,7 @@
 
 module GHC.Debug.Types(module T
                       , Request(..)
+                      , ForkOrPause(..)
                       , requestCommandId
                       , doRequest
                       , isWriteRequest
@@ -51,13 +52,28 @@ import GHC.Debug.Decode
 import Control.Concurrent
 import Debug.Trace
 
+-- | The decision about whether to fork the running process or
+-- pause it running whilst we are debugging it.
+data ForkOrPause = Pause | Fork deriving (Eq, Ord, Show, Enum)
+
+instance Hashable ForkOrPause where
+  hashWithSalt s v = s `hashWithSalt` (fromEnum v)
+
+instance Binary ForkOrPause where
+  put     = putWord8 . fromIntegral . fromEnum
+  get     = getWord8 >>= toBool
+    where
+      toBool 0 = return (toEnum 0)
+      toBool 1 = return (toEnum 1)
+      toBool c = fail ("Could not map value " ++ show c ++ " to ForkOrPause")
+
 
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
     -- | Request protocol version
     RequestVersion :: Request Word32
     -- | Pause the debuggee.
-    RequestPause :: Request ()
+    RequestPause :: ForkOrPause -> Request ()
     -- | Resume the debuggee.
     RequestResume :: Request ()
     -- | Request the debuggee's root pointers.
@@ -101,7 +117,7 @@ eq1request :: Request a -> Request b -> Bool
 eq1request r1 r2 =
   case r1 of
     RequestVersion -> case r2 of {RequestVersion -> True; _ -> False}
-    RequestPause   -> case r2 of {RequestPause -> True; _ -> False }
+    RequestPause f1 -> case r2 of {RequestPause f2 -> f1 == f2; _ -> False }
     RequestResume  -> case r2 of {RequestResume -> True; _ -> False }
     RequestRoots   -> case r2 of {RequestRoots -> True; _ -> False }
     RequestClosure cs -> case r2 of {(RequestClosure cs') -> cs == cs'; _ -> False }
@@ -122,7 +138,7 @@ isWriteRequest r = getConst $ withWriteRequest r (Const False) (const (Const Tru
 withWriteRequest :: Request a -> r a -> ((a ~ ()) => Request a -> r a) -> r a
 withWriteRequest r def k =
   case r of
-    RequestPause  -> k RequestPause
+    RequestPause f -> k (RequestPause f)
     RequestResume -> k RequestResume
     RequestPoll -> k RequestPoll
     _ -> def
@@ -147,7 +163,7 @@ deriving instance Eq (Request a)
 instance Hashable (Request a) where
   hashWithSalt s r = case r of
     RequestVersion ->  s `hashWithSalt` cmdRequestVersion
-    RequestPause   ->  s `hashWithSalt` cmdRequestPause
+    RequestPause f ->  s `hashWithSalt` f `hashWithSalt` cmdRequestPause
     RequestResume  ->  s `hashWithSalt` cmdRequestResume
     RequestRoots   -> s `hashWithSalt` cmdRequestRoots
     RequestClosure cs -> s `hashWithSalt` cmdRequestClosures `hashWithSalt` cs
@@ -245,7 +261,7 @@ putCommand c body = do
 
 putRequest :: Request a -> Put
 putRequest RequestVersion        = putCommand cmdRequestVersion mempty
-putRequest RequestPause          = putCommand cmdRequestPause mempty
+putRequest (RequestPause p)      = putCommand cmdRequestPause (put p)
 putRequest RequestResume         = putCommand cmdRequestResume mempty
 putRequest RequestRoots          = putCommand cmdRequestRoots mempty
 putRequest (RequestClosure cs)  =
@@ -278,7 +294,9 @@ getRequest = do
     cmd <- get
     if
       | cmd == cmdRequestVersion -> return (AnyReq RequestVersion)
-      | cmd == cmdRequestPause   -> return (AnyReq RequestPause)
+      | cmd == cmdRequestPause   -> do
+          b <- get
+          return (AnyReq (RequestPause b))
       | cmd == cmdRequestResume  -> return (AnyReq RequestResume)
       | cmd == cmdRequestRoots   -> return (AnyReq RequestRoots)
       | cmd == cmdRequestClosures -> do
@@ -316,7 +334,7 @@ getRequest = do
 
 getResponse :: Request a -> Get a
 getResponse RequestVersion       = getWord32be
-getResponse RequestPause         = get
+getResponse RequestPause {}      = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosure {}) = get

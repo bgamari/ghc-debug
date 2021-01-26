@@ -81,6 +81,9 @@ extern "C" Capability **capabilities;
 
 const int maxSavedObjects = 20;
 
+// Whether to fork on pause or not.
+static bool use_fork = false;
+
 static struct savedObjectsState {
     StgWord n_objects;
     StgStablePtr objects[maxSavedObjects];
@@ -185,8 +188,6 @@ static Response * r_poll_pause_resp = NULL;
 
 static StgStablePtr rts_saved_closure = NULL;
 
-// Whether to fork on pause or not.
-static bool use_fork = false;
 
 extern "C"
 void pause_mutator() {
@@ -207,6 +208,7 @@ void pause_mutator() {
   else {
     int status = 0;
     wait(&status);
+    use_fork = false;
   }
 }
 
@@ -354,7 +356,9 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
 
       case CMD_PAUSE:
+        use_fork = (bool)ntohl(p.get<uint8_t>());
         trace("PAUSE: %d", paused);
+        trace("PAUSE(FORK): %d", use_fork);
         if (paused) {
             trace("ALREADY");
             resp.finish(RESP_ALREADY_PAUSED);

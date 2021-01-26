@@ -12,6 +12,7 @@
 module GHC.Debug.Client.Query
   ( -- * Pause/Resume
     pause
+  , fork
   , pauseThen
   , resume
   , pausePoll
@@ -51,7 +52,11 @@ import Debug.Trace
 -- | Pause the debuggee
 pause :: Debuggee -> IO ()
 pause e = do
-  run e $ request RequestPause
+  run e $ request (RequestPause Pause)
+
+fork :: Debuggee -> IO ()
+fork e = do
+  run e $ request (RequestPause Fork)
 
 -- | Resume the debuggee
 resume :: Debuggee -> IO ()

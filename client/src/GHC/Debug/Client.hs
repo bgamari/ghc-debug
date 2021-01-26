@@ -28,6 +28,7 @@ module GHC.Debug.Client
 
     -- * Pause/Resume
   , pause
+  , fork
   , pauseThen
   , resume
   , pausePoll
