@@ -22,7 +22,6 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.List
 import Data.Ord
-import Data.Text (pack, Text)
 import Data.Word
 
 -- | Print a summary of the given raw blocks
