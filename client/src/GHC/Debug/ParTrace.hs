@@ -197,7 +197,7 @@ data TraceFunctionsIO a s =
 -- lower.
 traceParFromM :: Monoid s => TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 traceParFromM k cps = do
-  unsafeLiftIO $ print (("SPAWNING: ", threads))
+  traceM ("SPAWNING: " ++ show threads)
   (init_mblocks, dones, start)  <- unzip3 <$> mapM (\b -> do
                                     (ti, done, start) <- initThread k
                                     return ((fromIntegral b, ti), done, start)) [0 .. threads - 1]
