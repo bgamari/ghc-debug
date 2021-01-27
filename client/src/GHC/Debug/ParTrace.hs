@@ -27,12 +27,10 @@ import Data.Word
 import GHC.Debug.Client.Monad.Simple
 --import Control.Concurrent.Chan.Unagi
 import Control.Concurrent.Async
-import Data.List
 import Data.IORef
 import Control.Exception.Base
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
-import GHC.Conc
 import Debug.Trace
 
 type InChan = TChan
@@ -142,6 +140,11 @@ workerThread k ref go oc = DebugM $ do
       () <$ traverse (go . ClosurePtrWithInfo a) p'
 
 
+handleBlockLevel :: IM.Key
+                    -> Word16
+                    -> IM.IntMap (IOBitArray Word16)
+                    -> IO (IM.IntMap (IOBitArray Word16), Bool)
+
 handleBlockLevel bk offset m = do
   case IM.lookup bk m of
     Nothing -> do
@@ -192,9 +195,8 @@ data TraceFunctionsIO a s =
 -- As performance depends highly on contention, snapshot mode is much more
 -- amenable to parrelisation where the time taken for requests is much
 -- lower.
-traceParFromM :: Monoid s => [RawBlock] -> TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
-traceParFromM bs k cps = do
-  let bs' = nub $ (map (blockMBlock . rawBlockAddr) bs)
+traceParFromM :: Monoid s => TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
+traceParFromM k cps = do
   unsafeLiftIO $ print (("SPAWNING: ", threads))
   (init_mblocks, dones, start)  <- unzip3 <$> mapM (\b -> do
                                     (ti, done, start) <- initThread k
@@ -218,8 +220,8 @@ waitFinish (t:ts) = do
 -- | A parellel tracing function, the first argument is the list of known
 -- blocks, providing an accurate list here will greatly speed up the
 -- traversal.
-tracePar :: [RawBlock] -> [ClosurePtr] -> DebugM ()
-tracePar bs = traceParFromM bs funcs . map (ClosurePtrWithInfo ())
+tracePar :: [ClosurePtr] -> DebugM ()
+tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
     nop = const (return ())
     funcs = TraceFunctionsIO nop nop clos (const (const (return ()))) nop

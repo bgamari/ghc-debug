@@ -384,10 +384,13 @@ p36 e = do
 p37 e = do
   pause e
   cs <- runTrace e $ do
-    precacheBlocks
+    _ <- precacheBlocks
     rs <- gcRoots
-    count rs
+    c <- parCount rs
+    --mbb_census <- censusByMBlock rs
+    return c
   print cs
+  --printMBlockCensus mb
 
 p38 e = do
   u <- pauseThen e $ unfoldingAnalysis
@@ -649,9 +652,9 @@ p42 e = do
 p43 e = do
   pause e
   runTrace e $ do
-    bs <- precacheBlocks
+    _ <- precacheBlocks
     rs <- gcRoots
-    tracePar bs rs
+    tracePar rs
 
 p44 e = do
   pause e
@@ -664,9 +667,9 @@ p44 e = do
 p45 e = do
   pause e
   t <- runTrace e $ do
-    bs <- precacheBlocks
+    _ <- precacheBlocks
     rs <- gcRoots
-    typePointsFrom bs rs
+    typePointsFrom rs
   --printCensusByClosureType (getNodes t)
   print (Map.size (getNodes t))
   print (Map.size (getEdges t))

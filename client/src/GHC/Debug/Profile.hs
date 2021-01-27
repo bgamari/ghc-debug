@@ -80,8 +80,8 @@ closureCensusBy :: forall k v . (Semigroup v, Ord k)
                 => (ClosurePtr -> SizedClosure -> DebugM (Maybe (k, v)))
                 -> [ClosurePtr] -> DebugM (Map.Map k v)
 closureCensusBy f cps = do
-  bs <- precacheBlocks
-  MMap.getMonoidalMap <$> traceParFromM bs funcs (map (ClosurePtrWithInfo ()) cps)
+  () <$ precacheBlocks
+  MMap.getMonoidalMap <$> traceParFromM funcs (map (ClosurePtrWithInfo ()) cps)
   where
     funcs = TraceFunctionsIO {
                papTrace = const (return ())

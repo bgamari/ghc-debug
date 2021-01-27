@@ -17,10 +17,10 @@ import Control.Monad.Trans
 -- | Make a snapshot of the current heap and save it to the given file.
 snapshot :: FilePath -> DebugM ()
 snapshot fp = do
-  bs <- precacheBlocks
+  precacheBlocks
   rs <- gcRoots
   _so <- savedObjects
-  tracePar bs rs
+  tracePar rs
   saveCache fp
 
 -- | Traverse the tree from GC roots, to populate the caches

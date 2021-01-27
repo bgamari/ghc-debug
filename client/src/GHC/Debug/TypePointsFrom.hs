@@ -72,8 +72,8 @@ singletonTPF k s es = TypePointsFrom (Map.singleton k s)
                                   (Map.fromList es)
 
 -- | Perform a "type points from" heap census
-typePointsFrom :: [RawBlock] -> [ClosurePtr] -> DebugM TypePointsFrom
-typePointsFrom bs cs = traceParFromM bs funcs (map (ClosurePtrWithInfo Root) cs)
+typePointsFrom :: [ClosurePtr] -> DebugM TypePointsFrom
+typePointsFrom cs = traceParFromM funcs (map (ClosurePtrWithInfo Root) cs)
 
   where
     nop = const (return ())
@@ -121,10 +121,10 @@ detectLeaks interval e = loop Nothing (M.empty, M.empty) 0
       threadDelay (interval * 1_000_000)
       pause e
       (gs, r, new_rmaps) <- runTrace e $ do
-        bs <- precacheBlocks
+        _ <- precacheBlocks
         rs <- gcRoots
         traceWrite (length rs)
-        res <- typePointsFrom bs rs
+        res <- typePointsFrom rs
         let !new_rmaps = case prev_census of
                            Nothing -> rms
                            Just pcensus -> updateRankMap rms pcensus res

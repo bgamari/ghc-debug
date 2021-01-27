@@ -9,8 +9,8 @@ import GHC.Debug.ParTrace (TraceFunctionsIO(TraceFunctionsIO))
 import Control.Monad.State
 
 
-parCount :: [RawBlock] -> [ClosurePtr] -> DebugM CensusStats
-parCount bs = traceParFromM bs funcs . map (ClosurePtrWithInfo ())
+parCount :: [ClosurePtr] -> DebugM CensusStats
+parCount = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
     nop = const (return ())
     funcs = TraceFunctionsIO nop nop clos (const (const (return mempty))) nop
