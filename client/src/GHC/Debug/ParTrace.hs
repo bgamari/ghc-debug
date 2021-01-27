@@ -43,15 +43,23 @@ threads = 16
 
 unsafeLiftIO :: IO a -> DebugM a
 unsafeLiftIO = DebugM . liftIO
--- | State local to a thread
+
+-- | State local to a thread, there are $threads spawned, each which deals
+-- with (address `div` 8) % threads. Each thread therefore:
+--
+-- * Outer map, segmented by MBlock
+--  * Inner map, blocks for that MBlock
+--    * Inner IOBitArray, visited information for that block
 data ThreadState s = ThreadState (IM.IntMap (IM.IntMap (IOBitArray Word16))) (IORef s)
 
 data ThreadInfo a = ThreadInfo !(InChan (ClosurePtrWithInfo a))
 
+-- | A 'ClosurePtr' with some additional information which needs to be
+-- communicated across to another thread.
 data ClosurePtrWithInfo a = ClosurePtrWithInfo !a !ClosurePtr
 
 
--- Map from MBlockPtr -> Information about the thread for that pointer
+-- | Map from Thread -> Information about the thread
 type ThreadMap a = IM.IntMap (ThreadInfo a)
 
 data TraceState a = TraceState { visited :: !(ThreadMap a) }
@@ -79,7 +87,8 @@ sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ ask 
     Nothing -> writeTChan main_ic cpi
     Just (ThreadInfo ic) -> writeTChan ic cpi
 
-initThread :: Monoid s => TraceFunctionsIO a s -> DebugM (ThreadInfo a, STM Bool, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
+initThread :: Monoid s => TraceFunctionsIO a s
+           -> DebugM (ThreadInfo a, STM Bool, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
 initThread k = DebugM $ do
   e <- ask
   ic <- liftIO $ atomically $ newTChan
@@ -116,7 +125,8 @@ workerThread k ref go oc = DebugM $ do
           loop m'
 
 
-    -- Just do the other dereferencing in the same thread
+    -- Just do the other dereferencing in the same thread for other closure
+    -- types as they are not as common.
     gos a st = do
       st' <- dereferenceStack st
       stackTrace k st'
