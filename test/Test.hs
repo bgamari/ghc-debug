@@ -44,6 +44,7 @@ import Data.Maybe
 import qualified Data.Map as Map
 import Data.Ord
 import Data.List
+import qualified Data.Set as S
 import Data.List.NonEmpty(NonEmpty(..))
 
 saveOnePath :: IO FilePath
@@ -62,9 +63,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p31 e) --  >> outputRequestLog e)
+--main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p50 e) --  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" p31
+main = snapshotRun "/tmp/ghc-debug-cache" p37
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -264,15 +265,15 @@ p29 e = do
     rs <- gcRoots
     traceWrite (length rs)
     censusClosureType rs
-  printCensusByClosureType r
   resume e
-  threadDelay 1_000_000
+  printCensusByClosureType r
+  threadDelay 5_000_000
   p29 e
 
 
 p30 e = profile 10_000_000 e
 
-p31 e = analyseFragmentation 1_000_000 e
+p31 e = analyseFragmentation 5_000_000 e
 
 -- Given the roots and bad closures, find out why they are being retained
 doAnalysis rs (l, ptrs) = do
@@ -306,26 +307,52 @@ analyseFragmentation interval e = loop
       threadDelay interval
       pause e
       putStrLn "PAUSED"
-      (mb_census, bs, rs) <- runTrace e $ do
+      (mb_census, mbb_census, mbb_census2, cen, bs, rs, rets) <- runTrace e $ do
         -- Get all known blocks
         bs <- precacheBlocks
         rs <- gcRoots
         traceWrite ("ROOTS", length rs)
         mb_census <- censusPinnedBlocks bs rs
+        mbb_census <- censusByMBlock rs
+        mbb_census2 <- censusByBlock rs
+        let is_small (CS _ (Size s) _) = fromIntegral s < 4096 * 0.9
+        let small_blocks = S.fromList (Map.keys (Map.filter is_small mbb_census2))
+        let pred cp = applyBlockMask cp `S.member` small_blocks
+        cen <- censusClosureTypeF (not . pred) rs
+        rets <- findRetainers (Just 10) rs (\cp _ -> return $ pred cp)
+        rets' <- traverse addLocationToStack rets
         let bads = findBadPtrs mb_census
         -- Print how many objects there are in the badly fragmented blocks
         traceWrite ("FRAG_OBJECTS", (foldl1 (<>) (map (fst . fst) bads)))
         -- Only take 5 bad results as otherwise can take a long time as
         -- each call to `doAnalysis` will perform a full heap traversal.
         as <- mapM (doAnalysis rs) ([(l, ptrs) | ((c, ptrs), l) <- take 5 (bads)])
-        return (mb_census, bs, as)
+        return (mb_census, mbb_census, mbb_census2, cen, bs, as, rets')
       resume e
       summariseBlocks bs
       let go (PinnedCensusStats (m, _)) = m
       printBlockCensus (Map.map go mb_census)
-      displayRetainerStack (catMaybes rs)
+      printMBlockCensus mbb_census
+      printBlockCensus mbb_census2
+      printMBlockCensus cen
+      --displayRetainerStack (("one",) <$> rets)
+
+--      displayRetainerStack (catMaybes rs)
       putStrLn "------------------------"
       loop
+
+censusClosureTypeF :: (ClosurePtr -> Bool) -> [ClosurePtr] -> DebugM _
+censusClosureTypeF p = closureCensusBy go
+  where
+    go :: ClosurePtr -> SizedClosure
+       -> DebugM (Maybe (BlockPtr, CensusStats))
+    go cp s | p cp = do
+      d <- quadtraverse pure dereferenceConDesc pure pure s
+      let siz :: Size
+          siz = dcSize d
+          v =  mkCS siz
+      return $ Just (applyMBlockMask cp, v)
+    go _ _ = return Nothing
 
 getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
 
@@ -676,6 +703,12 @@ p45 e = do
   mapM_ print (take 10 (reverse $ sortBy (comparing (cssize . snd)) (Map.assocs (getEdges t))))
 
 p46 e = detectLeaks 1 e
+
+p50 e = do
+  pause e
+  run e $ snapshot "/tmp/ghc-debug-cache"
+
+p51 e = fork e >> threadDelay 100000000
 
 
 tcModResult rroots = findRetainers (Just 10) rroots go

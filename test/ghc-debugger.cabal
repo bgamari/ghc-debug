@@ -44,11 +44,13 @@ test-suite system-test
     , async
     , extra
     , text
+    , filepath
+    , temporary
   other-modules:
         SystemTest
       , Server
   default-language: Haskell2010
-  ghc-options:         -threaded -debug
+  ghc-options:         -threaded -rtsopts
   build-tool-depends: ghc-debug-stub:debug-test
                     , ghc-debugger:save-one-pause
                     , ghc-debugger:save-ipe-pause
