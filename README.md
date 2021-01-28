@@ -1,4 +1,4 @@
-`ghc-heap` is a set of libraries which allow you to inspect the heap of
+`ghc-debug` is a set of libraries which allow you to inspect the heap of
 a running Haskell program from an external debugger.
 
 For example, you could use this library to
