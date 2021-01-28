@@ -1,9 +1,98 @@
-This set of libraries is progress towards implementing a way to interact
-with Haskell's RTS from another Haskell program.
+`ghc-heap` is a set of libraries which allow you to inspect the heap of
+a running Haskell program from an external debugger.
 
 For example, you could use this library to
-* Implement a memory profiler, written in Haskell
-* Precisely analyse other heap properties such as retainers
+* Implement a memory profiler, written in Haskell - [GHC.Debug.Profile](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Profile.hs)
+* Precisely analyse other heap properties such as retainers - [GHC.Debug.Retainers](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Retainers.hs)
+* Work out any other question you want about the heap by writing your own
+custom analysis. The possibilities are endless!
+
+# Getting Started
+
+There are two parts to using `ghc-debug`. Firstly the application you want to
+inspect has to be instrumented using the `withGhcDebug` function from
+`GHC.Debug.Stub`. This just wraps the normal main function of your executable,
+when it is executed it will create a socket by which a debugger can connect
+and issue requests to. The location of the socket can be controlled by setting
+the `GHC_DEBUG_SOCKET` variable when the executable is run.
+
+```
+import GHC.Debug.Stub
+
+main = withGhcDebug normalMain
+```
+
+## A simple debugger
+
+The most productive way to use `ghc-debug` is to write your own heap analysis
+scripts. Fortunately, this is also quite simple. Here is a simple, complete, debugger
+which connects to the `/tmp/ghc-debug` socket, requests the GC roots and then
+decodes the first one up to depth 10 before printing the result to the user.
+
+```
+import GHC.Debug.Client
+
+main = withDebuggeeConnect "/tmp/ghc-debug" p1
+
+p1 :: Debuggee -> IO ()
+p1 e = do
+  pause e
+  g <- run e $ do
+        precacheBlocks
+        (r:_) <- gcRoots
+        buildHeapGraph (Just 10) r
+  putStrLn (ppHeapGraph (const "") h)
+```
+
+The API for writing debuggers is described in the `GHC.Debug.Client` module.
+
+There are many more examples in the `test/Test.hs` file.
+
+## Snapshotting
+
+A convenient way to use `ghc-debug` is to take a *snapshot* of the heap and then
+perform further analysis on the snapshot rather than connecting to a running
+process. Snapshotting utilities are in the `GHC.Debug.Snapshot` module. A
+snapshot can be created using the `makeSnapshot` program, it will pause
+the process and then save a snapshot to the `/tmp/ghc-debug-snapshot` file.
+
+```
+import GHC.Debug.Client
+import GHC.Debug.Snapshot
+
+main = withDebuggeeConnect "/tmp/ghc-debug" (\d -> makeSnapshot d "/tmp/ghc-debug-snapshot")
+```
+
+A snapshot can be then used for further analysis. For example, we can run `p1` on
+the snapshot by using `snapshotRun` instead of `withDebuggeeConnect`. The same
+programs can be used with snapshots but requests such as pausing and resuming are
+just ignored.
+
+```
+import GHC.Debug.Client
+
+main = snapshotRun "/tmp/ghc-debug-snapshot" p1
+```
+
+
+## High-Level Analysis
+
+There are also some more high-level analysis tools already packaged with the
+library. Mostly as an idea about what sort of thing you could program yourself.
+
+* [Profiling](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Profile.hs) - Profiling modes in the spirit of `-hT`.
+* [Object Equivalence](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/ObjectEquiv.hs) - Detect equivalent heap objects which could be shared.
+* [Count](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Count.hs) - Simple heap statistics, total number of objects, total size and maximum object size.
+* [Fragmentation](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Fragmentation.hs) - Functions for analysis memory fragmentation including block and mblock utilisation histograms.
+* [Retainers](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Retainers.hs) - Finding paths through the heap to work out why objects are being retained.
+* [Type Points From](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/TypePointsFrom.hs) - Collapse a heap graph so that nodes are info tables and edges are references between info tables. This allows you to implement the [Cork](https://www.cs.utexas.edu/users/speedway/DaCapo/papers/cork-popl-2007.pdf) leak analysis.
+
+These analysis modes are implemented in terms of the more low-level traversal
+functions.
+
+* [Sequential Traversal](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Trace.hs) - Traversal with low memory overhead, accounting for cycles.
+* [Parallel Traversal](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/ParTrace.hs) - Experimental Parallel Traversal with low memory overhead.
+
 
 # How does it work?
 
@@ -24,34 +113,15 @@ is with nix. The nix shell uses the development version of GHC so you don't have
 
 ```
 $ nix-shell
-> cabal new-build all
+$ cabal new-build all
 ```
-
-In order to make a process debuggable it needs to wrap it's main function in the `withGhcDebug` function, see the `debug-test` executable for exactly how to do this.
-See `test/Test.hs` for an example of how to run and debug the `debug-test`
-executable. There are quite a lot of examples which query and traverse the heap
-in different ways.
-
-## Manual Testing / Examples
-
-There are two test executables `debug-test` and `debugger` which are used to
-test the library (manually). Run the test with:
-
-```
-$ cabal new-run -- debugger
-```
-
-`debugger` starts and immediately attaches to `debug-test` and makes some
-requests.  There are lots of helpful traces to see what's going on with each
-process. `debug-test` is the program we're debugging. It prints out an
-incrementing counter each second.
 
 ### Automated Testing
 
 There are `hspec` tests, that can be run with `cabal`:
 
 ```
-cabal new-build all && cabal new-test all
+cabal new-test all
 ```
 
 ### Unexpected Build Failures
