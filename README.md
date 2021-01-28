@@ -22,6 +22,9 @@ import GHC.Debug.Stub
 main = withGhcDebug normalMain
 ```
 
+Note: To enable source information you should also compile your application and
+dependencies with `-finfo-table-map` and optionally `-fdistinct-constructor-tables`.
+
 ## A simple debugger
 
 The most productive way to use `ghc-debug` is to write your own heap analysis
@@ -92,6 +95,10 @@ functions.
 
 * [Sequential Traversal](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/Trace.hs) - Traversal with low memory overhead, accounting for cycles.
 * [Parallel Traversal](https://gitlab.haskell.org/ghc/ghc-debug/-/blob/master/client/src/GHC/Debug/ParTrace.hs) - Experimental Parallel Traversal with low memory overhead.
+
+# Other Resources
+
+* [An introduction to ghc-debug: precise memory analysis for Haskell programs](https://www.youtube.com/watch?v=9zuAsGk9xoM)
 
 
 # How does it work?
