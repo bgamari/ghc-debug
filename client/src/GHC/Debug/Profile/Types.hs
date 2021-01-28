@@ -9,7 +9,7 @@ newtype Count = Count Int
                 deriving (Semigroup, Monoid, Num) via Sum Int
                 deriving (Show, Ord, Eq)
 
-data CensusStats = CS { n :: !Count, cssize :: !Size, csmax :: !(Max Size) } deriving (Show, Eq)
+data CensusStats = CS { cscount :: !Count, cssize :: !Size, csmax :: !(Max Size) } deriving (Show, Eq)
 
 mkCS :: Size -> CensusStats
 mkCS i = CS (Count 1) i (Max i)

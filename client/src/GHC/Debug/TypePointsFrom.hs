@@ -237,13 +237,13 @@ updateRankMap :: (RankMap Key, RankMap Edge)
               -> (RankMap Key, RankMap Edge)
 updateRankMap (rm_n, rm_e) t1 t2 = (ns, es)
   where
-    !(nodes, edges) = ratioRank t1 t2
+    !(rnodes, redges) = ratioRank t1 t2
     missingL = M.dropMissing
     missingR = M.mapMissing (\_ f -> RankInfo (f 0 0) 1)
     matched = M.zipWithMatched (\_ (RankInfo r iters) f -> RankInfo (f iters r) (iters + 1))
 
-    !ns = runIdentity $ M.mergeA missingL missingR matched rm_n nodes
-    !es = runIdentity $ M.mergeA missingL missingR matched rm_e edges
+    !ns = runIdentity $ M.mergeA missingL missingR matched rm_n rnodes
+    !es = runIdentity $ M.mergeA missingL missingR matched rm_e redges
 
 
 compareSize :: CensusStats -> CensusStats -> Maybe (Int -> Double -> Double)
@@ -265,7 +265,7 @@ compareSize (cssize -> Size s1) (cssize -> Size s2) =
 -- | Compute how to update the ranks based on the difference between two
 -- censuses.
 ratioRank :: TypePointsFrom -> TypePointsFrom -> (RankUpdateMap Key, RankUpdateMap Edge)
-ratioRank t1 t2 = (candidates, edges)
+ratioRank t1 t2 = (candidates, redges)
   where
     ns1 = getNodes t1
     ns2 = getNodes t2
@@ -277,7 +277,7 @@ ratioRank t1 t2 = (candidates, edges)
     matched = M.zipWithMaybeMatched (\_ cs1 cs2 -> compareSize cs1 cs2)
     !candidates = runIdentity $ M.mergeA missingL missingR matched ns1 ns2
 
-    !edges = runIdentity $ M.mergeA missingL missingR matched es1 es2
+    !redges = runIdentity $ M.mergeA missingL missingR matched es1 es2
 
 
 

@@ -26,16 +26,16 @@ intToClosurePtr :: Int -> ClosurePtr
 intToClosurePtr i = mkClosurePtr (fromIntegral i)
 
 convertToDom :: HeapGraph a -> DO.Rooted
-convertToDom  (HeapGraph roots is) = (0, graph)
+convertToDom  (HeapGraph groots is) = (0, new_graph)
   where
-    rootNodes = IS.fromList (map closurePtrToInt (NE.toList roots))
-    graph = IM.insert 0 rootNodes (IM.foldlWithKey' collectNodes IM.empty is)
+    rootNodes = IS.fromList (map closurePtrToInt (NE.toList groots))
+    new_graph = IM.insert 0 rootNodes (IM.foldlWithKey' collectNodes IM.empty is)
     collectNodes newMap k h =  IM.insert k (IS.fromList (map closurePtrToInt (catMaybes (allClosures (hgeClosure h))))) newMap
 
 computeDominators :: HeapGraph a -> [Tree.Tree (HeapGraphEntry a)]
-computeDominators hg = map (fmap (fromJust . flip lookupHeapGraph hg . intToClosurePtr)) entries
+computeDominators hg = map (fmap (fromJust . flip lookupHeapGraph hg . intToClosurePtr)) gentries
   where
-    entries = case DO.domTree (convertToDom hg) of
+    gentries = case DO.domTree (convertToDom hg) of
                 Tree.Node 0 es -> es
                 _ -> error "Dominator tree must contain 0"
 

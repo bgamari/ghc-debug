@@ -11,7 +11,6 @@ import GHC.Debug.Types
 import Control.Monad
 
 import Data.Coerce
-import Debug.Trace
 
 decodeStack :: Monad m
             => (RawClosure -> m StgInfoTableWithPtr) -- ^ How to decode the info table for the stack frame

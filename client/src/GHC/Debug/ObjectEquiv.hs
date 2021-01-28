@@ -173,6 +173,6 @@ objectEquivAnalysis = do
   return (r1, r2)
 
 objectEquiv :: Debuggee -> IO ()
-objectEquiv = runAnalysis objectEquivAnalysis $ \(emap, hg) -> do
-                                                    printObjectEquiv emap
+objectEquiv = runAnalysis objectEquivAnalysis $ \(rmap, hg) -> do
+                                                    printObjectEquiv rmap
                                                     putStrLn $ ppHeapGraph show hg

@@ -30,13 +30,11 @@ import GHC.Debug.Types.Closures
 import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
-import GHC.ForeignPtr
 import Data.Binary.Get as B
 import Data.Binary
 import Control.Monad
 import Data.Void
 import Control.DeepSeq
-import Debug.Trace
 
 import qualified Data.ByteString as B
 
