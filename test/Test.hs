@@ -63,7 +63,7 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "banj" "/tmp/ghc-debug" (\e -> p50 e) --  >> outputRequestLog e)
+--main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p50 e) --  >> outputRequestLog e)
 
 main = snapshotRun "/tmp/ghc-debug-cache" p37
 {-

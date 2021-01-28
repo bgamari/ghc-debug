@@ -150,9 +150,9 @@ traceProfile e = do
   print (profile p)
   -}
 
--- | Consult the BlockCache for the block which contains a specific
+-- | Consult the 'BlockCache' for the block which contains a specific
 -- closure, if it's not there then try to fetch the right block, if that
--- fails, call 'dereferenceClosure'
+-- fails, call 'dereferenceClosureDirect'
 dereferenceClosure :: ClosurePtr -> DebugM SizedClosure
 dereferenceClosure cp
   | not (heapAlloced cp) = dereferenceClosureDirect cp

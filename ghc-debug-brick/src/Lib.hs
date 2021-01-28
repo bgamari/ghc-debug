@@ -148,11 +148,10 @@ withDebuggeeRun exeName socketName action = GD.withDebuggeeRun exeName socketNam
 
 -- | Bracketed version of @debuggeeConnect@. Connects to a debuggee, runs the
 -- action, then closes the debuggee.
-withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
-                   -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+withDebuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                    -> (Debuggee -> IO a)
                    -> IO a
-withDebuggeeConnect exeName socketName action = GD.withDebuggeeConnect exeName socketName action
+withDebuggeeConnect socketName action = GD.withDebuggeeConnect socketName action
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
@@ -161,10 +160,9 @@ debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
 debuggeeRun exeName socketName = GD.debuggeeRun exeName socketName
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
-debuggeeConnect :: FilePath  -- ^ path to executable to run as the debuggee
-                -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+debuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect exeName socketName = GD.debuggeeConnect exeName socketName
+debuggeeConnect socketName = GD.debuggeeConnect socketName
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()

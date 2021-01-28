@@ -143,7 +143,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         Vty.EvKey KEnter _
           | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
           -> do
-            debuggee' <- liftIO $ debuggeeConnect (T.unpack (socketName socket)) (view socketLocation socket)
+            debuggee' <- liftIO $ debuggeeConnect (view socketLocation socket)
             continue $ appState & majorState .~ Connected
                   { _debuggeeSocket = socket
                   , _debuggee = debuggee'

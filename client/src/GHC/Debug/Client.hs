@@ -9,6 +9,24 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ViewPatterns #-}
+{- | The main API for creating debuggers. For example, this API can be used
+to connect to an instrumented process, query the GC roots and then decode
+the first root up to depth 10 and displayed to the user.
+
+@
+main = withDebuggeeConnect "\/tmp\/ghc-debug" p1
+
+p1 :: Debuggee -> IO ()
+p1 e = do
+  pause e
+  g <- run e $ do
+        precacheBlocks
+        (r:_) <- gcRoots
+        buildHeapGraph (Just 10) r
+  putStrLn (ppHeapGraph (const "") h)
+@
+
+-}
 module GHC.Debug.Client
   ( -- * Running/Connecting to a debuggee
     Debuggee

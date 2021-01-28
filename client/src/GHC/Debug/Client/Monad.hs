@@ -61,7 +61,7 @@ run (Debuggee d) = runDebug d
 -- | Bracketed version of @debuggeeRun@. Runs a debuggee, connects to it, runs
 -- the action, kills the process, then closes the debuggee.
 withDebuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
-                -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+                -> FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
                 -> (Debuggee -> IO a)
                 -> IO a
 withDebuggeeRun exeName socketName action = do
@@ -69,46 +69,45 @@ withDebuggeeRun exeName socketName action = do
     cp <- debuggeeProcess exeName socketName
     withCreateProcess cp $ \_ _ _ _ -> do
     -- Now connect to the socket the debuggeeProcess just started
-      withDebuggeeConnect exeName socketName action
+      withDebuggeeConnect socketName action
 
 -- | Bracketed version of @debuggeeConnect@. Connects to a debuggee, runs the
 -- action, then closes the debuggee.
-withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
-                    -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+withDebuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
                     -> (Debuggee -> IO a)
                     -> IO a
-withDebuggeeConnect exeName socketName action = do
-    new_env <- debuggeeConnect  exeName socketName
+withDebuggeeConnect socketName action = do
+    new_env <- debuggeeConnect socketName
     action new_env
       `finally`
       debuggeeClose new_env
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
-            -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+            -> FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
             -> IO Debuggee
 debuggeeRun exeName socketName = do
     -- Start the process we want to debug
     _ <- createProcess =<< debuggeeProcess exeName socketName
     -- Now connect to the socket the debuggeeProcess just started
-    debuggeeConnect exeName socketName
+    debuggeeConnect socketName
 
--- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
-debuggeeConnect :: FilePath  -- ^ path to executable to run as the debuggee
-                -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+-- | Connect to a debuggee on the given socket. Use @debuggeeClose@ when you're done.
+debuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect _exeName socketName = do
+debuggeeConnect socketName = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix socketName)
     hdl <- socketToHandle s ReadWriteMode
     new_env <- newEnv @DebugM (SocketMode hdl)
     return (Debuggee new_env)
 
+-- | Create a debuggee by loading a snapshot created by 'snapshot'.
 snapshotInit :: FilePath -> IO Debuggee
 snapshotInit fp = Debuggee <$> newEnv @DebugM (SnapshotMode fp)
 
 -- | Start an analysis session using a snapshot. This will not connect to a
--- debuggee.
+-- debuggee. The snapshot is created by 'snapshot'.
 snapshotRun :: FilePath -> (Debuggee -> IO a) -> IO a
 snapshotRun fp k = do
   denv <- snapshotInit fp
