@@ -213,9 +213,7 @@ waitFinish (t:ts) = do
    if b then waitFinish ts
         else retry
 
--- | A parellel tracing function, the first argument is the list of known
--- blocks, providing an accurate list here will greatly speed up the
--- traversal.
+-- | A parellel tracing function.
 tracePar :: [ClosurePtr] -> DebugM ()
 tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
