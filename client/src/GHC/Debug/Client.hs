@@ -1,14 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ParallelListComp #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE ViewPatterns #-}
 {- | The main API for creating debuggers. For example, this API can be used
 to connect to an instrumented process, query the GC roots and then decode
 the first root up to depth 10 and displayed to the user.
@@ -129,7 +118,7 @@ multiBuildHeapGraph = HG.multiBuildHeapGraph derefFuncM
 runAnalysis :: DebugM a -> (a -> IO r) -> Debuggee -> IO r
 runAnalysis a k e = do
   pause e
-  r <- run e $ a
+  r <- run e a
   resume e
   k r
 

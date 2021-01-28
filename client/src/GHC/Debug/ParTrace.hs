@@ -1,10 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Functions to support the constant space traversal of a heap.
@@ -50,7 +46,7 @@ unsafeLiftIO = DebugM . liftIO
 --    * Inner IOBitArray, visited information for that block
 data ThreadState s = ThreadState (IM.IntMap (IM.IntMap (IOBitArray Word16))) (IORef s)
 
-data ThreadInfo a = ThreadInfo !(InChan (ClosurePtrWithInfo a))
+newtype ThreadInfo a = ThreadInfo (InChan (ClosurePtrWithInfo a))
 
 -- | A 'ClosurePtr' with some additional information which needs to be
 -- communicated across to another thread.
@@ -60,14 +56,14 @@ data ClosurePtrWithInfo a = ClosurePtrWithInfo !a !ClosurePtr
 -- | Map from Thread -> Information about the thread
 type ThreadMap a = IM.IntMap (ThreadInfo a)
 
-data TraceState a = TraceState { visited :: !(ThreadMap a) }
+newtype TraceState a = TraceState { visited :: (ThreadMap a) }
 
 
 getKeyTriple :: ClosurePtr -> (Int, Int, Word16)
 getKeyTriple cp =
   let BlockPtr raw_bk = applyBlockMask cp
       bk = fromIntegral raw_bk `div` 8
-      offset = (getBlockOffset cp) `div` 8
+      offset = getBlockOffset cp `div` 8
       BlockPtr raw_mbk = applyMBlockMask cp
       mbk = fromIntegral raw_mbk `div` 8
   in (mbk, bk, fromIntegral offset)
@@ -78,7 +74,7 @@ getMBlockKey cp =
   in (fromIntegral raw_bk `div` fromIntegral mblockMask) `mod` threads
 
 sendToChan :: ThreadInfo a -> TraceState a -> ClosurePtrWithInfo a -> DebugM ()
-sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ ask >>= \_ -> liftIO $ do
+sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ liftIO $ do
   let st = visited ts
       mkey = getMBlockKey cp
   atomically $ case IM.lookup mkey st of
@@ -89,7 +85,7 @@ initThread :: Monoid s => TraceFunctionsIO a s
            -> DebugM (ThreadInfo a, STM Bool, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
 initThread k = DebugM $ do
   e <- ask
-  ic <- liftIO $ atomically $ newTChan
+  ic <- liftIO $ atomically newTChan
   let oc = ic
   ref <- liftIO $ newIORef mempty
   let start go = unsafeLiftIO $ async $ runSimple e $ workerThread k ref go oc
@@ -205,7 +201,7 @@ traceParFromM k cps = do
   let ts_map = IM.fromList init_mblocks
       go  = sendToChan other_ti (TraceState ts_map)
   as <- sequence (start_other go : map ($ go) start )
-  mapM go cps
+  mapM_ go cps
   unsafeLiftIO $ atomically $ waitFinish (done_other : dones)
   unsafeLiftIO $ mapM_ cancel as
   unsafeLiftIO $ mconcat <$> mapM wait as
@@ -231,6 +227,6 @@ tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
     clos _cp sc _ = do
       let itb = info (noSize sc)
       _traced <- getSourceInfo (tableId itb)
-      return $ ((), (), id)
+      return ((), (), id)
 
 

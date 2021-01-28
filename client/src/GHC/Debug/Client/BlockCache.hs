@@ -1,4 +1,3 @@
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TupleSections #-}
@@ -22,7 +21,7 @@ import Data.Bits
 import Data.List
 import Data.Binary
 
-data BlockCache = BlockCache (HM.HashMap Word64 RawBlock)
+newtype BlockCache = BlockCache (HM.HashMap Word64 RawBlock)
 
 instance Binary BlockCache where
   get = BlockCache . HM.fromList <$> get

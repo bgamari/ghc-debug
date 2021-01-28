@@ -1,16 +1,10 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ParallelListComp #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -61,7 +55,7 @@ data ObjectEquivState = ObjectEquivState  {
 -- the identity anyway.
 addEquiv :: ClosurePtr -> PtrClosure -> ObjectEquivState -> ObjectEquivState
 addEquiv cp pc (trimMap -> o) =
-                  let (res, new_m) = (PS.alter g pc (emap o))
+                  let (res, new_m) = PS.alter g pc (emap o)
                       new_emap2 = case res of
                                      Left _ -> emap2 o
                                      -- Only remap objects which have a hit
@@ -71,7 +65,7 @@ addEquiv cp pc (trimMap -> o) =
                       , emap2 = new_emap2 })
   where
     g Nothing = (Left cp, Just (0, cp))
-    g (Just (p, v)) = (Right v, Just ((p + 1), v))
+    g (Just (p, v)) = (Right v, Just (p + 1, v))
 
 addNewMap :: ClosurePtr -> ClosurePtr -> Equiv2Map -> Equiv2Map
 addNewMap (ClosurePtr cp) equiv_cp o = IM.insert (fromIntegral cp) equiv_cp o
@@ -157,7 +151,7 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
 printObjectEquiv :: EquivMap -> IO ()
 printObjectEquiv c = do
   let cmp (_, b,_) = b
-      res = reverse (sortBy (comparing cmp) (PS.toList c))
+      res = sortBy (flip (comparing cmp)) (PS.toList c)
       showLine (k, p, v) =
         concat [show v, ":", show p,":", ppClosure "" (\_ -> show) 0 (noSize k)]
   mapM_ (putStrLn . showLine) res
@@ -169,9 +163,9 @@ objectEquivAnalysis = do
   rs <- gcRoots
   traceWrite (length rs)
   r1 <- emap <$> censusObjectEquiv rs
-  let elems = (snd $ PS.atMostView of_interest r1)
+  let elems = snd $ PS.atMostView of_interest r1
       cmp (_, b,_) = b
-      cps = map (\(_, _, cp) -> cp) (reverse (sortBy (comparing cmp) (PS.toList elems)))
+      cps = map (\(_, _, cp) -> cp) (sortBy (flip (comparing cmp)) (PS.toList elems))
   -- Use this code if we are returning ClosurePtr not SourceInformation
   r2 <- case cps of
     [] -> error "None"

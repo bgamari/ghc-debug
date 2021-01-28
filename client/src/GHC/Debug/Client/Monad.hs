@@ -30,7 +30,6 @@ module GHC.Debug.Client.Monad
 
 import Control.Exception (finally)
 import Network.Socket
-import System.IO
 import System.Process
 import System.Environment
 import GHC.Debug.Client.Monad.Class
@@ -48,7 +47,7 @@ newtype Debuggee = Debuggee { debuggeeEnv :: DebugEnv DebugM }
 runTrace :: Debuggee -> DebugM a -> IO a
 runTrace (Debuggee e) act = do
   (r, ws) <- runDebugTrace e act
-  mapM putStrLn ws
+  mapM_ putStrLn ws
   return r
 
 traceWrite :: DebugMonad m => Show a => a -> m ()

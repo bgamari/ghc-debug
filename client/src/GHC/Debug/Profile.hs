@@ -1,19 +1,14 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
 {- | Functions for performing whole heap census in the style of the normal
 - heap profiling -}
 module GHC.Debug.Profile( profile
@@ -87,7 +82,7 @@ closureCensusBy f cps = do
                papTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
-              , visitedVal = const (const (return (MMap.empty)))
+              , visitedVal = const (const (return MMap.empty))
               , conDescTrace = const (return ())
 
             }
@@ -160,10 +155,10 @@ parCensus bs cs =  do
 
 printCensusByClosureType :: CensusByClosureType -> IO ()
 printCensusByClosureType c = do
-  let res = reverse (sortBy (comparing (cssize . snd)) (Map.toList c))
-      showLine (k, (CS (Count n) (Size s) (Max (Size mn)))) =
+  let res = sortBy (flip (comparing (cssize . snd))) (Map.toList c)
+      showLine (k, CS (Count n) (Size s) (Max (Size mn))) =
         concat [unpack k, ":", show s,":", show n, ":", show mn,":", show @Double (fromIntegral s / fromIntegral n)]
-  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
+  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : map showLine res)
 
 
 -- | Peform a profile at the given interval (in seconds), the result will
@@ -179,11 +174,10 @@ profile interval e = loop [(0, Map.empty)] 0
         precacheBlocks
         rs <- gcRoots
         traceWrite (length rs)
-        r <- census2LevelClosureType rs
-        return r
+        census2LevelClosureType rs
       resume e
       printCensusByClosureType r
-      let new_data = (((i + 1) * interval, r) : ss)
+      let new_data = ((i + 1) * interval, r) : ss
       renderProfile new_data
       loop new_data (i + 1)
 
@@ -203,7 +197,7 @@ mkProfData raw_fs =
       binfo = Map.mapWithKey (\(Bucket k) (t,s,g) -> BucketInfo k Nothing t s g) totals
   -- Heap profiles do not support traces
       header = Header "ghc-debug" "" (Just HeapProfBreakdownClosureType) "" "" "" counts Nothing
-  in (ProfData header binfo mempty fs [] mempty)
+  in ProfData header binfo mempty fs [] mempty
 
 renderProfile :: [(Int, CensusByClosureType)] -> IO ()
 renderProfile ss = do
@@ -211,7 +205,7 @@ renderProfile ss = do
   as <- defaultArgs "unused"
   (header, data_json, descs, closure_descs) <- generateJsonData as pd
   let html = templateString header data_json descs closure_descs as
-  writeFile ("profile/ht.html") html
+  writeFile "profile/ht.html" html
   return ()
 
 

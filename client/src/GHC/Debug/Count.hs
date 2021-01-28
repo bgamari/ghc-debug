@@ -18,7 +18,7 @@ parCount = traceParFromM funcs . map (ClosurePtrWithInfo ())
     clos :: ClosurePtr -> SizedClosure -> ()
               -> DebugM ((), CensusStats, DebugM () -> DebugM ())
     clos _cp sc _ = do
-      return $ ((), mkCS (dcSize sc), id)
+      return ((), mkCS (dcSize sc), id)
 
 -- | Simple statistics about a heap, total objects, size and maximum object
 -- size

@@ -1,14 +1,8 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ParallelListComp #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE ViewPatterns #-}
 module GHC.Debug.Client.Query
   ( -- * Pause/Resume
     pause
@@ -110,8 +104,7 @@ dereferenceStack (StackCont sp stack) = do
       get_info_table rc = (\(a, _, _) -> a) <$> lookupInfoTable rc
 --  traceShowM ("BAD", printStack stack, rawStackSize stack)
 --  traceShowM ("GOOD", printStack req_stack, rawStackSize req_stack)
-  decoded_stack <- decodeStack get_info_table get_bitmap stack
-  return decoded_stack
+  decodeStack get_info_table get_bitmap stack
 
 -- | Derference the PapPayload from the 'PayloadCont'
 dereferencePapPayload :: PayloadCont -> DebugM PapPayload

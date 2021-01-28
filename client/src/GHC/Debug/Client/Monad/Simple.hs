@@ -3,8 +3,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -79,7 +77,7 @@ instance Binary Snapshot where
   get = do
     v <- get
     if v == snapshotVersion
-      then Snapshot <$> pure v <*> get
+      then Snapshot v <$> get
       else fail ("Wrong snapshot version.\nGot: " ++ show v ++ "\nExpected: " ++ show snapshotVersion)
   put (Snapshot v c1) = do
     put v

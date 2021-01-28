@@ -14,7 +14,7 @@ findClosures f = go
 findConstructors :: String -> HeapGraph a -> [HeapGraphEntry a]
 findConstructors con_name hg = findClosures predicate hg
     where
-      predicate h = checkConstrTable (hgeClosure $ h)
+      predicate h = checkConstrTable (hgeClosure h)
 
       checkConstrTable (ConstrClosure _ _ _ (ConstrDesc _ _ n)) = n == con_name
       checkConstrTable _ = False

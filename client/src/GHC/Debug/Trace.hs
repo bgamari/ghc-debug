@@ -1,5 +1,4 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE BangPatterns #-}
 -- | Functions to support the constant space traversal of a heap.
@@ -25,7 +24,7 @@ getKeyPair :: ClosurePtr -> (Int, Word16)
 getKeyPair cp =
   let BlockPtr raw_bk = applyBlockMask cp
       bk = fromIntegral raw_bk `div` 8
-      offset = (getBlockOffset cp) `div` 8
+      offset = getBlockOffset cp `div` 8
   in (bk, fromIntegral offset)
 
 checkVisit :: ClosurePtr -> IORef TraceState -> IO Bool

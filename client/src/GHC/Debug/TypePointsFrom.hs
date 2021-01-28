@@ -1,16 +1,12 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE ParallelListComp #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ViewPatterns #-}
 {- | Type Points From analysis in the style of
@@ -38,7 +34,6 @@ import GHC.Debug.Profile
 import Control.Monad.Identity
 import Control.Concurrent
 import Data.List
-import Data.Ord
 import Language.Dot
 import qualified Data.Set as S
 
@@ -82,7 +77,7 @@ typePointsFrom cs = traceParFromM funcs (map (ClosurePtrWithInfo Root) cs)
     visit :: ClosurePtr -> Context -> DebugM TypePointsFrom
     visit cp ctx = do
       sc <- dereferenceClosure cp
-      let k = (tableId $ info (noSize sc))
+      let k = tableId $ info (noSize sc)
           v = mkCS (dcSize sc)
           parent_edge = case ctx of
                           Root -> []
@@ -104,7 +99,7 @@ typePointsFrom cs = traceParFromM funcs (map (ClosurePtrWithInfo Root) cs)
                           Root -> []
                           Parent pk -> [(Edge k pk, v)]
 
-      return $ (Parent k, singletonTPF k v parent_edge, id)
+      return (Parent k, singletonTPF k v parent_edge, id)
 
 
 data Context = Root | Parent Key
@@ -170,14 +165,14 @@ lookupRM k m = M.assocs filtered_map
     -- TODO, work out how to use these functions O(log n)
     --smaller =  traceShow (M.size m) (M.dropWhileAntitone ((/= k) . edgeSource) $ m)
     --res_map = traceShow (M.size smaller) (M.takeWhileAntitone ((== k) . edgeSource) smaller)
-    (res_map, _) = M.partitionWithKey ((\e _ -> (== k) . edgeSource $ e)) m
+    (res_map, _) = M.partitionWithKey (\e _ -> (== k) . edgeSource $ e) m
     filtered_map = M.filter (\(RankInfo r _) -> r > 0) res_map
 
 mkDotId :: InfoTablePtr -> Id
 mkDotId (InfoTablePtr w) = IntegerId (fromIntegral w)
 
 findSlice :: RankMap Edge -> Key -> DebugM Graph
-findSlice rm k = Graph StrictGraph DirectedGraph (Just (mkDotId k)) <$> (evalStateT (go 3 k) S.empty)
+findSlice rm k = Graph StrictGraph DirectedGraph (Just (mkDotId k)) <$> evalStateT (go 3 k) S.empty
 
   where
     getKey :: InfoTablePtr -> DebugM String
@@ -200,7 +195,7 @@ findSlice rm k = Graph StrictGraph DirectedGraph (Just (mkDotId k)) <$> (evalSta
       visited_set <- get
       -- But don't stop going deep until we've seen a decent number of
       -- nodes
-      if (S.member cur_k visited_set) || (n <= 0 && S.size visited_set >= 20)
+      if S.member cur_k visited_set || (n <= 0 && S.size visited_set >= 20)
         then return []
         else do
           label <- lift $ getKey cur_k
@@ -211,7 +206,7 @@ findSlice rm k = Graph StrictGraph DirectedGraph (Just (mkDotId k)) <$> (evalSta
               mkEdge (Edge _ e, ri) = EdgeStatement [ENodeId NoEdge (NodeId (mkDotId cur_k) Nothing), ENodeId DirectedEdge (NodeId (mkDotId e) Nothing)] [AttributeSetValue (StringId "label") (StringId (show (getRank ri))) ]
 
           modify' (S.insert cur_k)
-          ss <- concat <$> mapM (go (n-1)) (map (edgeTarget . fst) next_edges)
+          ss <- concat <$> mapM (go (n-1) . edgeTarget . fst) next_edges
           return $ node_stmt : edge_stmts ++ ss
 
 renderSourceInfo :: SourceInformation -> String
@@ -224,7 +219,7 @@ escapeQuotes (x:xs) = x:escapeQuotes xs
 
 
 chooseCandidates :: RankMap Key -> [Key]
-chooseCandidates = map fst . reverse . sortBy (comparing (getRank . snd)) . M.assocs . M.filter applyRankFilter
+chooseCandidates = map fst . reverse . sortOn (getRank . snd) . M.assocs . M.filter applyRankFilter
 
 type RankMap k = M.Map k RankInfo
 
@@ -247,8 +242,8 @@ updateRankMap (rm_n, rm_e) t1 t2 = (ns, es)
     missingR = M.mapMissing (\_ f -> RankInfo (f 0 0) 1)
     matched = M.zipWithMatched (\_ (RankInfo r iters) f -> RankInfo (f iters r) (iters + 1))
 
-    !ns = (runIdentity $ M.mergeA missingL missingR matched rm_n nodes)
-    !es = (runIdentity $ M.mergeA missingL missingR matched rm_e edges)
+    !ns = runIdentity $ M.mergeA missingL missingR matched rm_n nodes
+    !es = runIdentity $ M.mergeA missingL missingR matched rm_e edges
 
 
 compareSize :: CensusStats -> CensusStats -> Maybe (Int -> Double -> Double)
@@ -264,7 +259,7 @@ compareSize (cssize -> Size s1) (cssize -> Size s2) =
           else Just (\phases rank ->
                         rank +
                           ((fromIntegral (phases + 1))
-                            * (((fromIntegral s2 / fromIntegral s1)) - 1)))
+                            * ((fromIntegral s2 / fromIntegral s1) - 1)))
     else Nothing
 
 -- | Compute how to update the ranks based on the difference between two
@@ -280,7 +275,7 @@ ratioRank t1 t2 = (candidates, edges)
     missingL = M.dropMissing
     missingR = M.dropMissing
     matched = M.zipWithMaybeMatched (\_ cs1 cs2 -> compareSize cs1 cs2)
-    !candidates = (runIdentity $ M.mergeA missingL missingR matched ns1 ns2)
+    !candidates = runIdentity $ M.mergeA missingL missingR matched ns1 ns2
 
     !edges = runIdentity $ M.mergeA missingL missingR matched es1 es2
 

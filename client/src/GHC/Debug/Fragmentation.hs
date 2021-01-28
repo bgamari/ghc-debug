@@ -65,7 +65,7 @@ censusByBlock = closureCensusBy go
       in if heapAlloced cp
            then return $ Just (k, v)
            -- Ignore static things
-           else return $ Nothing
+           else return Nothing
 
 newtype PinnedCensusStats =
           PinnedCensusStats (CensusStats, [(ClosurePtr, SizedClosure)])
@@ -98,7 +98,7 @@ censusPinnedBlocks bs = closureCensusBy go
 findBadPtrs :: Map.Map k PinnedCensusStats
             -> [((Count, [ClosurePtr]), String)]
 findBadPtrs mb_census  =
-      let fragged_blocks = Map.filter (\(PinnedCensusStats ((CS _ (Size s) _), _)) -> fromIntegral s / fromIntegral blockMaxSize <= (0.1 :: Double))  mb_census
+      let fragged_blocks = Map.filter (\(PinnedCensusStats (CS _ (Size s) _, _)) -> fromIntegral s / fromIntegral blockMaxSize <= (0.1 :: Double))  mb_census
           all_arr_words :: [(String, (Count, [ClosurePtr]))]
           all_arr_words = concatMap (\(PinnedCensusStats (_, i)) -> map (\(c,d) -> (displayArrWords d, (Count 1, [c]))) i) (Map.elems fragged_blocks)
           swap (a, b) = (b, a)
@@ -121,7 +121,7 @@ printXBlockCensus :: Word64 -> Map.Map BlockPtr CensusStats -> IO ()
 printXBlockCensus maxSize m =
   mapM_ (putStrLn . displayLine) (bin 0 (map calcPercentage (sortBy (comparing (cssize . snd)) (Map.toList m))))
   where
-    calcPercentage (k, (CS _ (Size tot) _)) =
+    calcPercentage (k, CS _ (Size tot) _) =
       (k, (fromIntegral tot/ fromIntegral maxSize) * 100 :: Double)
 
     displayLine (l, h, n) = show l ++ "%-" ++ show h ++ "%: " ++ show n
