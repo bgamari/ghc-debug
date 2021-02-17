@@ -3,6 +3,8 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Main where
 
@@ -36,6 +38,7 @@ import Control.Concurrent
 import Data.Bitraversable
 import Data.Monoid
 import Control.Applicative
+import GHC.Debug.Client.Monad
 
 import Data.List.Extra (trim)
 import System.Process
@@ -45,7 +48,10 @@ import qualified Data.Map as Map
 import Data.Ord
 import Data.List
 import qualified Data.Set as S
-import Data.List.NonEmpty(NonEmpty(..))
+import Data.List.NonEmpty(NonEmpty(..), fromList)
+import Data.Semigroup
+import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BS
 
 saveOnePath :: IO FilePath
 saveOnePath = testProgPath "save-one"
@@ -65,7 +71,27 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p50 e) --  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" p37
+--main = snapshotRun "/tmp/ghc-debug-cache" p37
+--
+main = snapshotRun "/tmp/ghc-debug-cache" p44d
+
+{-
+main = do
+    --before <- snapshotInit "/tmp/ghc-debug-cache-baseline-hasura"
+    --after <- snapshotInit "/tmp/ghc-debug-cache-after-hasura"
+    after <- snapshotInit "/tmp/ghc-debug-cache"
+--    p44ec before after
+    --p44c2 after
+    --p44i after
+    --p44c4 before
+    putStrLn "hello"
+    p44d after
+    --analyseFragmentation 10 before
+    --analyseFragmentation 10 after
+    -}
+
+
+
 {-
 main = do
   -- Get the path to the "debug-test" executable
@@ -109,7 +135,7 @@ p40 :: Debuggee -> IO ()
 p41 :: Debuggee -> IO ()
 p42 :: Debuggee -> IO ()
 p43 :: Debuggee -> IO ()
-p44 :: Debuggee -> IO ()
+--p44 :: Debuggee -> IO ()
 p45 :: Debuggee -> IO ()
 
 
@@ -204,8 +230,7 @@ annotateWithSource :: HeapGraph a -> DebugM (HeapGraph (Maybe SourceInformation)
 annotateWithSource hg = traverseHeapGraph go2 hg
   where
     go2 (HeapGraphEntry a1 a2 _) = HeapGraphEntry a1 a2 <$> go a2
-    go (ThunkClosure (StgInfoTableWithPtr i _) _ _) = getSourceInfo i
-    go _ = return Nothing
+    go c = getSourceInfo (tableId $ info c)
 
 p20 e = do
   res <- pauseThen e $ allBlocks
@@ -224,10 +249,10 @@ p24 e = do
   pause e
   hg <- runTrace e $ do
     precacheBlocks
-    rs <- gcRoots
+    rs <- savedObjects
     hg <- case rs of
       [] -> error "Empty roots"
-      (x:xs) -> multiBuildHeapGraph  Nothing (x :| xs)
+      (x:xs) -> multiBuildHeapGraph (Just 20) (x :| xs)
     return hg
   putStrLn $ ppHeapGraph show hg
 --    case retainerSize hg of
@@ -290,9 +315,9 @@ doAnalysis rs (l, ptrs) = do
 displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
 displayRetainerStack rs = do
       let disp (d, l) =
-            maybe "nl" infoModule l ++ ":" ++ (ppClosure (maybe "" tdisplay l)  (\_ -> show) 0 . noSize $ d)
+            maybe "nl" tdisplay l ++ ":" ++ (ppClosure ""  (\_ -> show) 0 . noSize $ d)
             where
-              tdisplay sl = infoModule sl ++ ":" ++ infoPosition sl
+              tdisplay sl = infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
           do_one k (l, stack) = do
             putStrLn (show k ++ "-------------------------------------")
             print l
@@ -304,7 +329,6 @@ analyseFragmentation interval e = loop
   where
     loop ::IO ()
     loop = do
-      threadDelay interval
       pause e
       putStrLn "PAUSED"
       (mb_census, mbb_census, mbb_census2, cen, bs, rs, rets) <- runTrace e $ do
@@ -339,7 +363,7 @@ analyseFragmentation interval e = loop
 
 --      displayRetainerStack (catMaybes rs)
       putStrLn "------------------------"
-      loop
+      --loop
 
 censusClosureTypeF :: (ClosurePtr -> Bool) -> [ClosurePtr] -> DebugM _
 censusClosureTypeF p = closureCensusBy go
@@ -369,9 +393,10 @@ p32 e = do
     traceMsg "loaded"
 
 p33 e = forM_ [0..] $ \i -> do
+  getLine
   makeSnapshot e "/tmp/ghc-debug-cache"
   putStrLn ("CACHED: " ++ show i)
-  threadDelay 1_000_000
+  --threadDelay 1_000_000
 
 p34 e = forM_ [0..] $ \i -> do
   pause e
@@ -509,10 +534,10 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
       = do
           ctx <- ask
           case ctx of
-            TwoContext ("ghc:GHC.Core.TyCo.Rep:TyConApp", a) p -> do
+            TwoContext ("graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Schema:Definition", a) p -> do
               loc <-  lift $ a
               --lift $ modify' (Map.insertWith (<>) cp (Count 1))
-              modify' (Map.insertWith (<>) loc (Count 1))
+              modify' (Map.insertWith (<>) cp (Count 1))
 
               k
             OneContext p -> k
@@ -545,6 +570,32 @@ thunkAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) (
             ThunkClosure {} ->  do
               loc <- lift $ getSourceLoc sc
               modify' (Map.insertWith (<>) loc (Count 1))
+              k
+            _ -> k
+
+-- | Analays the TyConApp[IND_STATIC, _] closures
+arrWordsAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
+arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    -- First time we have visited a closure
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+    closAccum cp sc k = do
+          case (noSize sc) of
+            ArrWordsClosure _ _ p ->  do
+              modify' (Map.insertWith (<>) (arrWordsBS p) (Count 1))
+              k
             _ -> k
 
 -- | Analays the TyConApp[IND_STATIC, _] closures
@@ -568,10 +619,117 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
     closAccum cp sc k = do
           s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
           let ty = closureToKey (noSize s')
-          when (ty == "ghc:GHC.Types.Demand:DmdType") $ do
+          --when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Internal.Parser:InputFieldsParser") $ do
+--          when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Schema:Definition") $ do
+--          when (ty == "ghc-prim:GHC.Tuple:(,)") $ do
+--          when (ty == "text-1.2.4.0:Data.Text.Internal:Text") $ do
+          when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Internal.Parser:Parser") $ do
             loc <- lift $ getSourceLoc sc
-            modify' (Map.insertWith (<>) loc (Count 1))
+            let it = info (noSize sc)
+            modify' (Map.insertWith (<>) (maybe (Left it) Right loc) (Count 1))
           k
+
+getDescriptionName :: ClosurePtr -> SizedClosure -> DebugM (Maybe ByteString)
+getDescriptionName cp sc = do
+  case noSize sc of
+    ConstrClosure _ ps _ cd -> do
+      cd' <- dereferenceConDesc cd
+      case cd' of
+        ConstrDesc _ "Hasura.GraphQL.Parser.Schema" "Definition" -> do
+          -- First pointer is a String pointer
+          Just <$> follow (head ps)
+        _ -> return Nothing
+    _ -> return Nothing
+  where
+        follow p = do
+          sc' <- noSize <$> (dereferenceClosure p)
+          case sc' of
+            IndClosure _ p -> follow p
+            ConstrClosure _ ps _ cd -> do
+              s <- noSize <$> (dereferenceClosure (head ps))
+              case s of
+                ArrWordsClosure _ _ ws -> do
+                  return (arrWordsBS ws)
+                _ -> error "No ArrWords"
+
+            c -> do
+              c' <- quadtraverse pure dereferenceConDesc pure pure c
+              error (ppClosure "" (\_ _ -> "") 0 c')
+
+-- | Analays the TyConApp[IND_STATIC, _] closures
+descriptionNames :: [ClosurePtr] -> DebugM (Map.Map _ Count)
+descriptionNames rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    -- First time we have visited a closure
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+               -> (RWST () () (Map.Map _ Count) DebugM) ()
+
+    closAccum cp sc k = do
+      mname <- lift $ getDescriptionName cp sc
+
+      case mname of
+        Nothing -> k
+        Just bs ->  do
+          loc <- lift $ getSourceLoc sc
+          modify' (Map.insertWith (<>) (bs, loc) (Count 1))
+          k
+
+
+
+-- | Analays the TyConApp[IND_STATIC, _] closures
+getAllPtrs :: [ClosurePtr] -> DebugM [(ClosurePtr, ByteString)]
+getAllPtrs rroots = (\(_, (_, r), _) -> r) <$> runRWST (traceFromM funcs rroots) () (0, [])
+  where
+    funcs = TraceFunctions {
+               papTrace = const (return ())
+              , stackTrace = const (return ())
+              , closTrace = closAccum
+              , visitedVal = const (return ())
+              , conDescTrace = const (return ())
+
+            }
+
+    -- First time we have visited a closure
+    closAccum  :: ClosurePtr
+               -> SizedClosure
+               -> (RWST () () (Int, [(ClosurePtr, ByteString)]) DebugM) ()
+               -> (RWST () () (Int, [(ClosurePtr, ByteString)]) DebugM) ()
+    closAccum cp sc k = do
+          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          (!n, cs) <- get
+          mname <- lift $ getDescriptionName cp sc
+          case mname of
+            Nothing -> k
+            Just name | "ny_court_nyscef" == (BS.filter (/= 0) name)
+              -> do
+                let new = (n + 1, (cp, BS.filter (/=0) name) : cs)
+                put new
+                k
+            Just {} -> k
+          {-
+          let ty = closureToKey (noSize s')
+          --when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Internal.Parser:InputFieldsParser") $ do
+          when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Schema:Definition") $ do
+            let new = (n + 1, cp : cs)
+            put new
+          k
+            {-
+          if n >= 1000000
+            then return ()
+            else k
+            -}
+            -}
 
 
 -- | 1. Find all CoreUnfolding closures.
@@ -656,9 +814,9 @@ p41 e = do
   stacks <- runTrace e $ do
     precacheBlocks
     roots <- gcRoots
-    rs <- splitEnv roots
-    traverse addLocationToStack rs
-  displayRetainerStack (("one",) <$> stacks)
+    rs <- modIface roots
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) rs
+  displayRetainerStack stacks
 
 p42 e = do
   pause e
@@ -687,9 +845,196 @@ p44 e = do
   pause e
   c <- runTrace e $ do
     bs <- precacheBlocks
-    rs <- gcRoots
-    censusClosureType rs
+    ro <- savedObjects
+    censusClosureType ro
   printCensusByClosureType c
+
+p44a e = do
+  pause e
+  c <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- savedObjects
+    count rs
+  print c
+
+p44h e = do
+  pause e
+  c <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- savedObjects
+    arrWordsAnalysis rs
+  printResult c
+
+p44b e = do
+  pause e
+  cs <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- savedObjects
+    ps <- map fst <$> getAllPtrs rs
+    mapM (\c -> (c,) <$> count [c]) ps
+  let Size m = (maximum (map (cssize . snd) cs))
+  print m
+  histogram (fromIntegral m) (map snd cs)
+  let big = filter (\(c, s) -> cssize s >= Size m) cs
+  (hg, res) <- runTrace e $ do
+--          h1 <- multiBuildHeapGraph (Just 10) (fromList $ map fst big)
+--          annotateWithSource h1
+          (,) <$> census2LevelClosureType (map fst big) <*> arrWordsAnalysis (map fst big)
+  printCensusByClosureType hg
+  printResult res
+  --putStrLn $ ppHeapGraph (maybe  "" show) hg
+
+p44c e = do
+  pause e
+  stacks <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    ss <- roleContext rs
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) ss
+  displayRetainerStack stacks
+
+p44c2 e = do
+  pause e
+  stacks <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    ss <- buildOutputs rs
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) ss
+  displayRetainerStack stacks
+
+p44c3 e = do
+  pause e
+  stacks <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    so <- savedObjects
+    ss <- hashTuples (rs \\ so)
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) ss
+  displayRetainerStack stacks
+
+
+p44c4 e = do
+  pause e
+  stacks <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    ss <- thunks_f rs
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) ss
+  displayRetainerStack stacks
+
+p44d e = do
+  pause e
+  (!c, !indiv_c, !r, !stacks, names, a, tpf) <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    ps <- getAllPtrs rs
+    traceWrite (length ps)
+    -- Total size, with sharing
+    indiv_c_raw <-sortBy (comparing (\(_, _, cs) -> cssize cs)) <$> mapM (\(c, d) -> (c,d,) <$> count [c]) ps
+    let n = 4
+    let indiv_c = take n $ reverse indiv_c_raw
+
+    c <- count [cp | (cp, _, _) <- indiv_c ]
+
+    traceWrite "DONE2"
+    let comb (s, cs) (s', cs') = (max s s', cs <> cs')
+    r <- census2LevelClosureType [cp | (cp, _, _) <- indiv_c]
+
+    ss <- findRetainersOf (Just n) rs [cp | (cp, _,_) <- indiv_c]
+    names <- descriptionNames [cp | (cp, _, _) <- indiv_c ]
+    stack <- traverse (\c -> (show (head c),) <$> (addLocationToStack c)) ss
+    a <- sebAnalysis [cp | (cp, _, _) <- indiv_c]
+
+    tpf <- typePointsFrom rs --[cp | (cp, _, _) <- indiv_c]
+    let es = Map.toList (getEdges tpf)
+
+    let getKey :: InfoTablePtr -> DebugM String
+        getKey itblp = do
+          loc <- getSourceInfo itblp
+          itbl <- dereferenceInfoTable itblp
+          case loc of
+            Nothing -> getKeyFallback itblp itbl
+            Just s -> return $ show (tipe itbl) ++ ":" ++ renderSourceInfo s
+
+        renderSourceInfo :: SourceInformation -> String
+        renderSourceInfo s = (infoName s ++ ":" ++ infoType s ++ ":" ++ infoPosition s)
+
+        getKeyFallback itbp itbl = do
+          case tipe itbl of
+            t | CONSTR <= t && t <= CONSTR_NOCAF   -> do
+              ConstrDesc a b c <- dereferenceConDesc itbp
+              return $ a ++ ":" ++ b ++ ":" ++ c
+            _ -> return $ show (tipe itbl)
+    es' <- mapM (\(Edge e1 e2, cs) -> (,cs) . T.pack . show <$> ((,) <$> getKey e1 <*> getKey e2)) es
+
+
+    return (c, indiv_c,  r, stack, names, a, Map.fromList es')
+
+  printResult names
+  printResult a
+  displayRetainerStack stacks
+  printCensusByClosureType r
+  printCensusByClosureType tpf
+  print c
+  mapM print indiv_c
+  -- Heuristic to choose candidates which are probably big, based on their
+  -- height
+--  let high_dups = take 100 (reverse $ sortBy (comparing (getCHeight . snd)) d)
+  -- This doesn't memoise any size calculation so can be expensive to run a
+  -- few times.
+--  savings <- (runTrace e $ mapM savings2 high_dups)
+
+p44ec before after = do
+  before_census <- runTrace before $ do
+                      precacheBlocks
+                      gcRoots >>= count
+  after_census  <- runTrace after $ do
+                      precacheBlocks
+                      gcRoots >>= count
+  let diff_census = (\cs1 cs2 -> Just (CS (cscount cs1 - cscount cs2) (cssize cs1 - cssize cs2) (Max 0)))
+  print before_census
+  print after_census
+  print (diff_census after_census before_census)
+
+p44e before after = do
+  before_census <- runTrace before $ do
+                      precacheBlocks
+                      gcRoots >>= censusClosureType
+  after_census  <- runTrace after $ do
+                      precacheBlocks
+                      gcRoots >>= censusClosureType
+  let diff_census = Map.differenceWith (\cs1 cs2 -> Just (CS (cscount cs1 - cscount cs2) (cssize cs1 - cssize cs2) (Max 0))) after_census before_census
+  printCensusByClosureType diff_census
+
+p44f before after = do
+  before_census <- runTrace before $ do
+                      precacheBlocks
+                      gcRoots >>= census2LevelClosureType
+  after_census  <- runTrace after $ do
+                      precacheBlocks
+                      gcRoots >>= census2LevelClosureType
+  let diff_census = Map.differenceWith (\cs1 cs2 -> Just (CS (cscount cs1 - cscount cs2) (cssize cs1 - cssize cs2) (Max 0))) after_census before_census
+  printCensusByClosureType diff_census
+
+p44g after = do
+  res <- runTrace after $ do
+    precacheBlocks
+    gcRoots >>= descriptionNames
+  printResult res
+
+{-
+p44i after = do
+  res <- runTrace after $ do
+    precacheBlocks
+    gcRoots >>= descriptionNamesHash
+  let ks = Map.keys res
+  g <- runTrace after $ do
+          hg <- multiBuildHeapGraph (Just 10) (fromList ks)
+          annotateWithSource hg
+  let disp  s = infoType s ++ ", " ++ infoModule s ++ "," ++ infoPosition s
+  putStrLn $ ppHeapGraph (maybe "" disp) g
+  -}
+
 
 p45 e = do
   pause e
@@ -710,6 +1055,14 @@ p50 e = do
 
 p51 e = fork e >> threadDelay 100000000
 
+modIface rroots = findRetainers (Just 100) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "HomeModInfo"
+        _ -> return $ False
 
 tcModResult rroots = findRetainers (Just 10) rroots go
   where
@@ -727,6 +1080,63 @@ splitEnv rroots = findRetainers (Just 10) rroots go
         ConstrClosure _ _ _ cd -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "MkSplitUniqSupply"
+        _ -> return $ False
+
+dmaps rroots = findRetainers (Just 10) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _  mname cname <- dereferenceConDesc cd
+          return $ mname == "Data.Dependent.Map.Internal" && (cname == "Tip" || cname == "Bin")
+        _ -> return $ False
+
+roleContext rroots = findRetainers (Just 2) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _  mname cname <- dereferenceConDesc cd
+          return $ mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "RebuildableSchemaCache")
+        _ -> return $ False
+
+buildOutputs rroots = findRetainers (Just 2) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _  mname cname <- dereferenceConDesc cd
+          return $ mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "BuildOutputs")
+        _ -> return $ False
+
+hashTuples rroots = findRetainers (Just 100) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _  mname cname <- dereferenceConDesc cd
+          loc <- getSourceLoc sc
+          return $ (cname == "(,)" && ((infoLabel <$> loc) == Just "pruneDanglingDependents"))
+        _ -> return $ False
+
+enumTuples rroots = findRetainers (Just 100) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _  mname cname <- dereferenceConDesc cd
+          loc <- getSourceLoc sc
+--          return $ (cname == "(,)" && ((infoLabel <$> loc) == Just "tableSelectColumnsEnum"))
+          return $ (cname == "InputFieldsParser" && ((infoLabel <$> loc) == Just "orderByExp"))
+        _ -> return $ False
+
+thunks_f rroots = findRetainers (Just 100) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ThunkClosure {} -> do
+          loc <- getSourceLoc sc
+          return $ (((infoName <$> loc) == Just "f_info"))
         _ -> return $ False
 
 findTcModResult rroots = execStateT (traceFromM funcs rroots) []
