@@ -61,6 +61,6 @@ withStartedDebuggee exeName action = withTempDir $ \ tempDirPath -> do
     -- TODO wait (programmatically) for the socket to appear
     threadDelay 500000
 
-    withDebuggeeConnect (trim prog) socketName (action handles)
+    withDebuggeeConnect socketName (action handles)
   where
     serverExePathCmd = shell $ "which " ++ exeName

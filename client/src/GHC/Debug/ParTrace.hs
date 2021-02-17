@@ -2,6 +2,9 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Functions to support the constant space traversal of a heap.
 -- This module is like the Trace module but performs the tracing in
@@ -28,6 +31,32 @@ import Control.Exception.Base
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
 import Debug.Trace
+import Control.Concurrent
+
+import Data.Bits
+import GHC.Int
+import GHC.IO (IO(..))
+import GHC.Prim
+import GHC.Ptr
+
+newFastMutInt :: IO FastMutInt
+readFastMutInt :: FastMutInt -> IO Int
+writeFastMutInt :: FastMutInt -> Int -> IO ()
+
+data FastMutInt = FastMutInt (MutableByteArray# RealWorld)
+
+newFastMutInt = IO $ \s ->
+  case newByteArray# size s of { (# s, arr #) ->
+  (# s, FastMutInt arr #) }
+  where !(I# size) = finiteBitSize (0 :: Int)
+
+readFastMutInt (FastMutInt arr) = IO $ \s ->
+  case readIntArray# arr 0# s of { (# s, i #) ->
+  (# s, I# i #) }
+
+writeFastMutInt (FastMutInt arr) (I# i) = IO $ \s ->
+  case writeIntArray# arr 0# i s of { s ->
+  (# s, () #) }
 
 type InChan = TChan
 type OutChan = TChan
@@ -81,23 +110,26 @@ sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ lift
     Nothing -> writeTChan main_ic cpi
     Just (ThreadInfo ic) -> writeTChan ic cpi
 
-initThread :: Monoid s => TraceFunctionsIO a s
+initThread :: Monoid s =>
+              FastMutInt
+           -> TraceFunctionsIO a s
            -> DebugM (ThreadInfo a, STM Bool, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
-initThread k = DebugM $ do
+initThread fm k = DebugM $ do
   e <- ask
   ic <- liftIO $ atomically newTChan
   let oc = ic
   ref <- liftIO $ newIORef mempty
-  let start go = unsafeLiftIO $ async $ runSimple e $ workerThread k ref go oc
+  let start go = unsafeLiftIO $ async $ runSimple e $ workerThread k fm ref go oc
   return (ThreadInfo ic, isEmptyTChan ic ,  start)
 
-workerThread :: forall s a . Monoid s => TraceFunctionsIO a s -> IORef s -> (ClosurePtrWithInfo a -> DebugM ()) -> OutChan (ClosurePtrWithInfo a) -> DebugM s
-workerThread k ref go oc = DebugM $ do
+workerThread :: forall s a . Monoid s => TraceFunctionsIO a s -> FastMutInt -> IORef s -> (ClosurePtrWithInfo a -> DebugM ()) -> OutChan (ClosurePtrWithInfo a) -> DebugM s
+workerThread k fm ref go oc = DebugM $ do
   d <- ask
   liftIO $ runSimple d (loop (ThreadState IM.empty ref))
   where
     loop !m = do
       mcp <- unsafeLiftIO $ try $ atomically $ readTChan oc
+      unsafeLiftIO $ writeFastMutInt fm 1
       case mcp of
         -- The thread gets blocked on readChan when the work is finished so
         -- when this happens, catch the exception and return the accumulated
@@ -194,24 +226,28 @@ data TraceFunctionsIO a s =
 traceParFromM :: Monoid s => TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 traceParFromM k cps = do
   traceM ("SPAWNING: " ++ show threads)
+  fm <- unsafeLiftIO $ newFastMutInt
+  unsafeLiftIO $ writeFastMutInt fm 1
   (init_mblocks, dones, start)  <- unzip3 <$> mapM (\b -> do
-                                    (ti, done, start) <- initThread k
+                                    (ti, done, start) <- initThread fm k
                                     return ((fromIntegral b, ti), done, start)) [0 .. threads - 1]
-  (other_ti, done_other, start_other) <- initThread k
+  (other_ti, done_other, start_other) <- initThread fm k
   let ts_map = IM.fromList init_mblocks
       go  = sendToChan other_ti (TraceState ts_map)
   as <- sequence (start_other go : map ($ go) start )
   mapM_ go cps
-  unsafeLiftIO $ atomically $ waitFinish (done_other : dones)
+  unsafeLiftIO $ waitFinish fm
   unsafeLiftIO $ mapM_ cancel as
   unsafeLiftIO $ mconcat <$> mapM wait as
 
-waitFinish :: [STM Bool] -> STM ()
-waitFinish [] = return ()
-waitFinish (t:ts) = do
-   b <- t
-   if b then waitFinish ts
-        else retry
+waitFinish :: FastMutInt -> IO ()
+waitFinish fm = do
+  -- Wait 0.1s
+  threadDelay 100_000
+  v <- readFastMutInt fm
+  if v > 0
+    then writeFastMutInt fm 0 >> waitFinish fm
+    else return ()
 
 -- | A parellel tracing function.
 tracePar :: [ClosurePtr] -> DebugM ()

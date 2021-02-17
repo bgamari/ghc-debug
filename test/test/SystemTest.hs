@@ -67,7 +67,7 @@ spec = do
             os@(o:_) <- run d savedObjects
             length os `shouldBe` 1
             hg <- run d $ buildHeapGraph (Just 20) o
-            ppHeapGraph (const "") hg `shouldBe` "let x1() = I# 1\nin () r0: x1\n\n"
+            ppHeapGraph (const "") hg `shouldBe` "let x1() = I# 1\nin () r0:() x1\n\n"
 
     describe "RequestInfoTables" $
       it "should return decodable RawInfoTables" $
@@ -108,8 +108,6 @@ spec = do
           bs <- run d precacheBlocks
           length bs `shouldSatisfy` (> 10)
 
--- Snapshot test is broken because par tracing doesn't
--- work when inside another thread..
     describe "Snapshot" $
       it "creating and loading a snapshot" $
         withSystemTempDirectory "ghc-debug" $ \td -> do
