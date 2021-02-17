@@ -185,7 +185,7 @@ findSlice rm k = Graph StrictGraph DirectedGraph (Just (mkDotId k)) <$> evalStat
 
     getKeyFallback itbp itbl = do
       case tipe itbl of
-        CONSTR -> do
+        t | CONSTR <= t && t <= CONSTR_NOCAF   -> do
           ConstrDesc a b c <- dereferenceConDesc itbp
           return $ a ++ ":" ++ b ++ ":" ++ c
         _ -> return $ show (tipe itbl)
