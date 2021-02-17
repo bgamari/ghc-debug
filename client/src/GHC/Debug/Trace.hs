@@ -66,7 +66,7 @@ type C m = (MonadTrans m, Monad (m DebugM))
 -- not a huge amount of memory.
 traceFromM :: C m => TraceFunctions m-> [ClosurePtr] -> m DebugM ()
 traceFromM k cps = do
-  st <- lift (unsafeLiftIO (newIORef (TraceState (VisitedSet IM.empty) 0)))
+  st <- lift (unsafeLiftIO (newIORef (TraceState (VisitedSet IM.empty) 1)))
   runReaderT (mapM_ (traceClosureFromM k) cps) st
 {-# INLINE traceFromM #-}
 {-# INLINE traceClosureFromM #-}
