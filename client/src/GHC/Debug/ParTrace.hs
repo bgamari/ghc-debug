@@ -24,20 +24,17 @@ import Data.Array.BitArray.IO hiding (map)
 import Control.Monad.Reader
 import Data.Word
 import GHC.Debug.Client.Monad.Simple
---import Control.Concurrent.Chan.Unagi
+import Control.Concurrent.Chan.Unagi
 import Control.Concurrent.Async
 import Data.IORef
 import Control.Exception.Base
-import Control.Concurrent.STM.TChan
-import Control.Concurrent.STM
 import Debug.Trace
-import Control.Concurrent
+import Control.Concurrent (threadDelay)
 
 import Data.Bits
 import GHC.Int
 import GHC.IO (IO(..))
 import GHC.Prim
-import GHC.Ptr
 
 newFastMutInt :: IO FastMutInt
 readFastMutInt :: FastMutInt -> IO Int
@@ -46,23 +43,20 @@ writeFastMutInt :: FastMutInt -> Int -> IO ()
 data FastMutInt = FastMutInt (MutableByteArray# RealWorld)
 
 newFastMutInt = IO $ \s ->
-  case newByteArray# size s of { (# s, arr #) ->
-  (# s, FastMutInt arr #) }
-  where !(I# size) = finiteBitSize (0 :: Int)
+  case newByteArray# siz s of { (# s', arr #) ->
+  (# s', FastMutInt arr #) }
+  where !(I# siz) = finiteBitSize (0 :: Int)
 
 readFastMutInt (FastMutInt arr) = IO $ \s ->
-  case readIntArray# arr 0# s of { (# s, i #) ->
-  (# s, I# i #) }
+  case readIntArray# arr 0# s of { (# s', i #) ->
+  (# s', I# i #) }
 
 writeFastMutInt (FastMutInt arr) (I# i) = IO $ \s ->
-  case writeIntArray# arr 0# i s of { s ->
-  (# s, () #) }
-
-type InChan = TChan
-type OutChan = TChan
+  case writeIntArray# arr 0# i s of { s' ->
+  (# s', () #) }
 
 threads :: Int
-threads = 16
+threads = 8
 
 unsafeLiftIO :: IO a -> DebugM a
 unsafeLiftIO = DebugM . liftIO
@@ -100,45 +94,52 @@ getKeyTriple cp =
 getMBlockKey :: ClosurePtr -> Int
 getMBlockKey cp =
   let BlockPtr raw_bk = applyMBlockMask cp
-  in (fromIntegral raw_bk `div` fromIntegral mblockMask) `mod` threads
+  in (fromIntegral raw_bk `div` fromIntegral mblockMask `div` 4) `mod` threads
 
-sendToChan :: ThreadInfo a -> TraceState a -> ClosurePtrWithInfo a -> DebugM ()
-sendToChan (ThreadInfo main_ic) ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ liftIO $ do
+sendToChan :: TraceState a -> ClosurePtrWithInfo a -> DebugM ()
+sendToChan  ts cpi@(ClosurePtrWithInfo _ cp) = DebugM $ liftIO $ do
   let st = visited ts
       mkey = getMBlockKey cp
-  atomically $ case IM.lookup mkey st of
-    Nothing -> writeTChan main_ic cpi
-    Just (ThreadInfo ic) -> writeTChan ic cpi
+  case IM.lookup mkey st of
+    Nothing -> error $ "Not enough chans:" ++ show mkey ++ show threads
+    Just (ThreadInfo ic) -> writeChan ic cpi
 
 initThread :: Monoid s =>
-              FastMutInt
+              Int
+           -> FastMutInt
            -> TraceFunctionsIO a s
-           -> DebugM (ThreadInfo a, STM Bool, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
-initThread fm k = DebugM $ do
+           -> DebugM (ThreadInfo a, (ClosurePtrWithInfo a -> DebugM ()) -> DebugM (Async s))
+initThread n fm k = DebugM $ do
   e <- ask
-  ic <- liftIO $ atomically newTChan
-  let oc = ic
+  (ic, oc) <- liftIO $ newChan
   ref <- liftIO $ newIORef mempty
-  let start go = unsafeLiftIO $ async $ runSimple e $ workerThread k fm ref go oc
-  return (ThreadInfo ic, isEmptyTChan ic ,  start)
+  let start go = unsafeLiftIO $ async $ runSimple e $ workerThread n k fm ref go oc
+  return (ThreadInfo ic,  start)
 
-workerThread :: forall s a . Monoid s => TraceFunctionsIO a s -> FastMutInt -> IORef s -> (ClosurePtrWithInfo a -> DebugM ()) -> OutChan (ClosurePtrWithInfo a) -> DebugM s
-workerThread k fm ref go oc = DebugM $ do
+workerThread :: forall s a . Monoid s => Int -> TraceFunctionsIO a s -> FastMutInt -> IORef s -> (ClosurePtrWithInfo a -> DebugM ()) -> OutChan (ClosurePtrWithInfo a) -> DebugM s
+workerThread n k fm ref go oc = DebugM $ do
   d <- ask
-  liftIO $ runSimple d (loop (ThreadState IM.empty ref))
+  r <- liftIO $ newIORef (ThreadState IM.empty ref)
+  liftIO $ runSimple d (loop r)
   where
-    loop !m = do
-      mcp <- unsafeLiftIO $ try $ atomically $ readTChan oc
-      unsafeLiftIO $ writeFastMutInt fm 1
+    loop r = do
+      mcp <- unsafeLiftIO $ try $ readChan oc
       case mcp of
         -- The thread gets blocked on readChan when the work is finished so
         -- when this happens, catch the exception and return the accumulated
         -- state for the thread. Each thread has a reference to all over
         -- threads, so the exception is only raised when ALL threads are
         -- waiting for work.
-        Left AsyncCancelled -> unsafeLiftIO $ readIORef ref
-        Right (ClosurePtrWithInfo a cp) -> do
+        Left AsyncCancelled -> do
+          unsafeLiftIO $ readIORef ref
+        Right cpi -> deref r cpi >> loop r
+
+    deref r (ClosurePtrWithInfo a cp) = do
+        m <- unsafeLiftIO $ readIORef r
+        unsafeLiftIO $ writeFastMutInt fm 1
+        do
           (m', b) <- unsafeLiftIO $ checkVisit cp m
+          unsafeLiftIO $ writeIORef r m'
           if b
             then do
               s <- visitedVal k cp a
@@ -147,25 +148,29 @@ workerThread k fm ref go oc = DebugM $ do
               sc <- dereferenceClosure cp
               (a', s, cont) <- closTrace k cp sc a
               unsafeLiftIO $ modifyIORef' ref (s <>)
-              cont (() <$ quadtraverse (gop a') gocd (gos a') (go . ClosurePtrWithInfo a') sc)
-          loop m'
+              cont (() <$ quadtraverse (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
 
+    goc r c@(ClosurePtrWithInfo _i cp) =
+      let mkey = getMBlockKey cp
+      in if (mkey == n)
+          then deref r c
+          else go c
 
     -- Just do the other dereferencing in the same thread for other closure
     -- types as they are not as common.
-    gos a st = do
+    gos r a st = do
       st' <- dereferenceStack st
       stackTrace k st'
-      () <$ traverse (go . ClosurePtrWithInfo a) st'
+      () <$ traverse (goc r . ClosurePtrWithInfo a) st'
 
     gocd d = do
       cd <- dereferenceConDesc d
       conDescTrace k cd
 
-    gop a p = do
+    gop r a p = do
       p' <- dereferencePapPayload p
       papTrace k p'
-      () <$ traverse (go . ClosurePtrWithInfo a) p'
+      () <$ traverse (goc r . ClosurePtrWithInfo a) p'
 
 
 handleBlockLevel :: IM.Key
@@ -228,13 +233,12 @@ traceParFromM k cps = do
   traceM ("SPAWNING: " ++ show threads)
   fm <- unsafeLiftIO $ newFastMutInt
   unsafeLiftIO $ writeFastMutInt fm 1
-  (init_mblocks, dones, start)  <- unzip3 <$> mapM (\b -> do
-                                    (ti, done, start) <- initThread fm k
-                                    return ((fromIntegral b, ti), done, start)) [0 .. threads - 1]
-  (other_ti, done_other, start_other) <- initThread fm k
+  (init_mblocks, start)  <- unzip <$> mapM (\b -> do
+                                    (ti, start) <- initThread b fm k
+                                    return ((fromIntegral b, ti), start)) [0 .. threads - 1]
   let ts_map = IM.fromList init_mblocks
-      go  = sendToChan other_ti (TraceState ts_map)
-  as <- sequence (start_other go : map ($ go) start )
+      go  = sendToChan (TraceState ts_map)
+  as <- sequence (map ($ go) start )
   mapM_ go cps
   unsafeLiftIO $ waitFinish fm
   unsafeLiftIO $ mapM_ cancel as

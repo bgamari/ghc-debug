@@ -73,7 +73,7 @@ testProgPath progName = do
 
 --main = snapshotRun "/tmp/ghc-debug-cache" p37
 --
-main = snapshotRun "/tmp/ghc-debug-cache" p44d
+main = snapshotRun "/tmp/ghc-debug-cache" p37
 
 {-
 main = do
