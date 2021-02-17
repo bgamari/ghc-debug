@@ -11,6 +11,7 @@ module GHC.Debug.Fragmentation (summariseBlocks
                                       , PinnedCensusStats(..)
 
                                       , findBadPtrs
+                                      , histogram
                                       ) where
 
 import GHC.Debug.Profile
@@ -112,17 +113,17 @@ displayArrWords d =
       _ -> error "Not ARR_WORDS"
 
 printMBlockCensus, printBlockCensus ::  Map.Map BlockPtr CensusStats -> IO ()
-printMBlockCensus = printXBlockCensus mblockMaxSize
+printMBlockCensus = histogram mblockMaxSize . Map.elems
 -- | Print out a block census
-printBlockCensus = printXBlockCensus blockMaxSize
+printBlockCensus = histogram blockMaxSize . Map.elems
 
 -- | Print either a MBlock or Block census as a histogram
-printXBlockCensus :: Word64 -> Map.Map BlockPtr CensusStats -> IO ()
-printXBlockCensus maxSize m =
-  mapM_ (putStrLn . displayLine) (bin 0 (map calcPercentage (sortBy (comparing (cssize . snd)) (Map.toList m))))
+histogram :: Word64 -> [CensusStats] -> IO ()
+histogram maxSize m =
+  mapM_ (putStrLn . displayLine) (bin 0 (map calcPercentage (sortBy (comparing cssize) m )))
   where
-    calcPercentage (k, CS _ (Size tot) _) =
-      (k, (fromIntegral tot/ fromIntegral maxSize) * 100 :: Double)
+    calcPercentage (CS _ (Size tot) _) =
+      ((fromIntegral tot/ fromIntegral maxSize) * 100 :: Double)
 
     displayLine (l, h, n) = show l ++ "%-" ++ show h ++ "%: " ++ show n
 
@@ -131,5 +132,5 @@ printXBlockCensus maxSize m =
                  [] -> bin (k + 10) later
                  _ -> (k, k+10, length now) : bin (k + 10) later
       where
-        (now, later) = span ((<= k + 10) . snd) xs
+        (now, later) = span ((<= k + 10)) xs
 
