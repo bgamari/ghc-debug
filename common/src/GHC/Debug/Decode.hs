@@ -92,6 +92,7 @@ decodePAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
 decodeAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
+  _itbl <- skipClosureHeader
   carity <- getWord32le
   nargs <- getWord32le
   funp <- getClosurePtr
@@ -181,13 +182,14 @@ decodeFromBS :: RawClosure -> Get (DebugClosure pap string s b)
                            -> DebugClosureWithExtra Size pap string s b
 decodeFromBS (RawClosure rc) parser =
   case runGetOrFail parser (BSL.fromStrict rc) of
-    Left err -> error (show err)
+    Left err -> error ("DEC:" ++ show err ++ printBS rc)
     Right (_rem, o, v) ->
       let !s = fromIntegral o
       in DCS (Size s) v
 
 decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPStack (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
+  _itbl <- skipClosureHeader
   _itbl <- skipClosureHeader
   st_size <- getWord
   fun_closure <- getClosurePtr
