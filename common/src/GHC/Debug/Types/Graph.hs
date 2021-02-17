@@ -182,7 +182,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
     bindings = boundMultipleTimes (HeapGraph (heapGraphRoot :| rs) m) [heapGraphRoot]
 
     roots = unlines [
-              "r" ++ show n ++ ": " ++ ppRef 0 (Just r) ++ "\n"
+              "r" ++ show n ++ ":(" ++ printData (hgeData (iToE r)) ++ ") " ++ ppRef 0 (Just r) ++ "\n"
               | (n, r) <- zip [0 :: Int ..] (heapGraphRoot : rs) ]
 
     letWrapper =
