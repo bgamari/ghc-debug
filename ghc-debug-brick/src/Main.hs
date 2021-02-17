@@ -192,7 +192,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
-          _ <- liftIO $ initialiseViews
+--          _ <- liftIO $ initialiseViews
           (rootsTree, initRoots) <- liftIO $ mkSavedAndGCRootsIOTree Nothing
           continue (appState & majorState . mode .~
                       PausedMode
