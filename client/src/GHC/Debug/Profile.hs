@@ -16,7 +16,7 @@ module GHC.Debug.Profile( profile
                         , census2LevelClosureType
                         , closureCensusBy
                         , CensusByClosureType
-                        , printCensusByClosureType
+                        , writeCensusByClosureType
                         , CensusStats(..)
                         , mkCS
                         , Count(..)
@@ -153,18 +153,18 @@ parCensus bs cs =  do
       -}
 
 
-printCensusByClosureType :: CensusByClosureType -> IO ()
-printCensusByClosureType c = do
+writeCensusByClosureType :: FilePath -> CensusByClosureType -> IO ()
+writeCensusByClosureType outpath c = do
   let res = sortBy (flip (comparing (cssize . snd))) (Map.toList c)
       showLine (k, CS (Count n) (Size s) (Max (Size mn))) =
         concat [unpack k, ":", show s,":", show n, ":", show mn,":", show @Double (fromIntegral s / fromIntegral n)]
-  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : map showLine res)
+  writeFile outpath (unlines $ "key, total, count, max, avg" : map showLine res)
 
 
 -- | Peform a profile at the given interval (in seconds), the result will
 -- be rendered after each iteration using @eventlog2html@.
-profile :: Int -> Debuggee -> IO ()
-profile interval e = loop [(0, Map.empty)] 0
+profile :: FilePath -> Int -> Debuggee -> IO ()
+profile outpath interval e = loop [(0, Map.empty)] 0
   where
     loop :: [(Int, CensusByClosureType)] -> Int -> IO ()
     loop ss i = do
@@ -176,7 +176,7 @@ profile interval e = loop [(0, Map.empty)] 0
         traceWrite (length rs)
         census2LevelClosureType rs
       resume e
-      printCensusByClosureType r
+      writeCensusByClosureType outpath r
       let new_data = ((i + 1) * interval, r) : ss
       renderProfile new_data
       loop new_data (i + 1)

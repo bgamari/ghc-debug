@@ -90,7 +90,7 @@ main = do
     --analyseFragmentation 10 after
     -}
 
-
+printCensusByClosureType = writeCensusByClosureType "profile/profile_out.txt"
 
 {-
 main = do
@@ -296,7 +296,7 @@ p29 e = do
   p29 e
 
 
-p30 e = profile 10_000_000 e
+p30 e = profile "profile/profile_out.txt" 10_000_000 e
 
 p31 e = analyseFragmentation 5_000_000 e
 
