@@ -42,7 +42,7 @@ library
                        ghc-debug-common, ghc-debug-convention,
                        text, process, filepath, directory, bitwise,
                        haxl, hashable, mtl, eventlog2html >= 0.8.3, binary, psqueues,
-                       dom-lt, async, monoidal-containers, language-dot, ghc-prim, unagi-chan
+                       dom-lt, async, monoidal-containers, language-dot, ghc-prim, stm
 
   hs-source-dirs:      src
   default-language:    Haskell2010
