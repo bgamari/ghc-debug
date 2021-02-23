@@ -28,13 +28,7 @@ import Control.Concurrent.Async
 import Data.IORef
 import Control.Exception.Base
 import Debug.Trace
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
-
-import Data.Bits
-import GHC.Int
-import GHC.IO (IO(..))
-import GHC.Prim
 
 threads :: Int
 threads = 64
