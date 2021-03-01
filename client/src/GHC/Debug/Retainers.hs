@@ -1,9 +1,10 @@
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainers) where
+module GHC.Debug.Retainers(findRetainersOf, findRetainers, addLocationToStack, displayRetainerStack) where
 
 import GHC.Debug.Client
 import Control.Monad.State
 import GHC.Debug.Trace
+import GHC.Debug.Types.Graph
 
 import qualified Data.Set as Set
 import Control.Monad.RWS
@@ -54,3 +55,23 @@ findRetainers limit rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM fun
             Just 0 -> return ()
             _ -> local (cp:) k
 
+addLocationToStack :: [ClosurePtr] -> DebugM [(SizedClosureC, Maybe SourceInformation)]
+addLocationToStack r = do
+  cs <- dereferenceClosures r
+  cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+  locs <- mapM getSourceLoc cs'
+  return $ (zip cs' locs)
+  where
+    getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
+
+displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
+displayRetainerStack rs = do
+      let disp (d, l) =
+            (ppClosure ""  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
+            where
+              tdisplay sl = infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
+          do_one k (l, stack) = do
+            putStrLn (show k ++ "-------------------------------------")
+            print l
+            mapM (putStrLn . disp) stack
+      zipWithM_ do_one [0 :: Int ..] rs

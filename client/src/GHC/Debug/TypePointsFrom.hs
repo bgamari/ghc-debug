@@ -20,6 +20,7 @@ module GHC.Debug.TypePointsFrom( typePointsFrom
                                , getEdges
                                , Key
                                , Edge(..)
+                               , getKey
                                ) where
 
 import GHC.Debug.Client.Monad
@@ -136,6 +137,21 @@ detectLeaks interval e = loop Nothing (M.empty, M.empty) 0
 
 
 -- Analysis code
+--
+getKey :: InfoTablePtr -> DebugM String
+getKey itblp = do
+    loc <- getSourceInfo itblp
+    itbl <- dereferenceInfoTable itblp
+    case loc of
+      Nothing -> getKeyFallback itblp itbl
+      Just s -> return $ show (tipe itbl) ++ ":" ++ renderSourceInfo s
+
+getKeyFallback itbp itbl = do
+    case tipe itbl of
+      t | CONSTR <= t && t <= CONSTR_NOCAF   -> do
+        ConstrDesc a b c <- dereferenceConDesc itbp
+        return $ a ++ ":" ++ b ++ ":" ++ c
+      _ -> return $ show (tipe itbl)
 
 type Rank = Double
 type Decay = Double
@@ -175,20 +191,6 @@ findSlice :: RankMap Edge -> Key -> DebugM Graph
 findSlice rm k = Graph StrictGraph DirectedGraph (Just (mkDotId k)) <$> evalStateT (go 3 k) S.empty
 
   where
-    getKey :: InfoTablePtr -> DebugM String
-    getKey itblp = do
-      loc <- getSourceInfo itblp
-      itbl <- dereferenceInfoTable itblp
-      case loc of
-        Nothing -> getKeyFallback itblp itbl
-        Just s -> return $ show (tipe itbl) ++ ":" ++ renderSourceInfo s
-
-    getKeyFallback itbp itbl = do
-      case tipe itbl of
-        t | CONSTR <= t && t <= CONSTR_NOCAF   -> do
-          ConstrDesc a b c <- dereferenceConDesc itbp
-          return $ a ++ ":" ++ b ++ ":" ++ c
-        _ -> return $ show (tipe itbl)
 
     go :: Int -> InfoTablePtr -> StateT (S.Set InfoTablePtr) DebugM [Statement]
     go n cur_k = do

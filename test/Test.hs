@@ -69,11 +69,11 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p50 e) --  >> outputRequestLog e)
+--main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p33 e) --  >> outputRequestLog e)
 
---main = snapshotRun "/tmp/ghc-debug-cache" p37
+main = snapshotRun "/tmp/ghc-debug-cache" p45 --(tyConAppAnalysis)
 --
-main = snapshotRun "/tmp/ghc-debug-cache" p37
+--main = snapshotRun "/tmp/ghc-debug-cache" p37
 
 {-
 main = do
@@ -296,7 +296,7 @@ p29 e = do
   p29 e
 
 
-p30 e = profile "profile/profile_out.txt" 10_000_000 e
+p30 e = profile "profile/profile_out.txt" 10_000 e
 
 p31 e = analyseFragmentation 5_000_000 e
 
@@ -311,18 +311,6 @@ doAnalysis rs (l, ptrs) = do
       locs <- mapM getSourceLoc cs'
       return $ Just (zip cs' locs)
   return ((l,) <$> stack)
-
-displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
-displayRetainerStack rs = do
-      let disp (d, l) =
-            maybe "nl" tdisplay l ++ ":" ++ (ppClosure ""  (\_ -> show) 0 . noSize $ d)
-            where
-              tdisplay sl = infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
-          do_one k (l, stack) = do
-            putStrLn (show k ++ "-------------------------------------")
-            print l
-            mapM (putStrLn . disp) stack
-      zipWithM_ do_one [0..] rs
 
 analyseFragmentation :: Int -> Debuggee -> IO ()
 analyseFragmentation interval e = loop
@@ -468,7 +456,6 @@ p40 e = forM_ [0..] $ \i -> do
     rs <- gcRoots
     res <- thunkAnalysis rs
     return res
-  resume e
   print i
   top10 <- printResult res
   {-
@@ -480,7 +467,8 @@ p40 e = forM_ [0..] $ \i -> do
   mapM print (zip top10 cs)
   putStrLn $ ppHeapGraph show hg
   -}
-  threadDelay 10_000_000
+  threadDelay 10_000
+  resume e
 
 
 
@@ -628,6 +616,54 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
             let it = info (noSize sc)
             modify' (Map.insertWith (<>) (maybe (Left it) Right loc) (Count 1))
           k
+
+checkTyConAppTyCon :: (StgInfoTableWithPtr -> [ClosurePtr] -> [Word] -> DebugM (Maybe k)) -> ClosurePtr -> SizedClosure -> DebugM (Maybe k)
+checkTyConAppTyCon k cp sc = do
+  case noSize sc of
+    ConstrClosure info ps ds cd -> do
+      cd' <- dereferenceConDesc cd
+      case cd' of
+        ConstrDesc _ _ "TyConApp" -> do
+          k info ps ds
+        _ -> return Nothing
+    _ -> return Nothing
+
+getTyConAppTyCon = checkTyConAppTyCon (\info ps ds -> return (Just (head ps)))
+getTyConAppLoc = checkTyConAppTyCon (\info _ _ -> getSourceInfo (tableId info))
+
+addCount = fmap (fmap (, Count 1))
+
+tyConAppAnalysis e = do
+  res <- run e $ do
+    rs <- gcRoots
+    ty_con_census <- closureCensusBy (\cp sc -> addCount (getTyConAppTyCon cp sc)) rs
+    ty_con_loc    <- closureCensusBy (\cp sc -> addCount (getTyConAppLoc cp sc)) rs
+    return (ty_con_census, ty_con_loc)
+  cps <- printResult (fst res)
+  names <- runTrace e $ mapM tyConToName cps
+  hg <- runTrace e $ do
+                h1 <- multiBuildHeapGraph (Just 10) (fromList $ names)
+                --annotateWithSource h1
+                return h1
+  let disp  s = infoType s ++ ", " ++ infoModule s ++ "," ++ infoPosition s
+  putStrLn $ ppHeapGraph (const "") hg
+  printResult (snd res)
+
+tyConToName :: ClosurePtr -> DebugM ClosurePtr
+tyConToName cp = follow [1, 1, 1, 0] cp
+
+follow :: [Int] -> ClosurePtr -> DebugM ClosurePtr
+follow [] cp = return cp
+follow (x:xs) cp = do
+  sc <- dereferenceClosure cp
+  case noSize sc of
+    IndClosure _ p -> follow (x:xs) p
+    ConstrClosure _ ps _ _ -> do
+      follow xs (ps !! x)
+    _ -> do
+      c' <- quadtraverse pure dereferenceConDesc pure pure (noSize sc)
+      error (ppClosure "" (\_ _ -> "") 0 c')
+
 
 getDescriptionName :: ClosurePtr -> SizedClosure -> DebugM (Maybe ByteString)
 getDescriptionName cp sc = do
@@ -803,11 +839,6 @@ bigBoyAnalysis rroots = execStateT (traceFromM funcs rroots) NoBiggest
       k
 
 
-addLocationToStack r = do
-  cs <- dereferenceClosures r
-  cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
-  locs <- mapM getSourceLoc cs'
-  return $ (zip cs' locs)
 
 p41 e = do
   pause e
@@ -817,6 +848,32 @@ p41 e = do
     rs <- modIface roots
     traverse (\c -> (show (head c),) <$> (addLocationToStack c)) rs
   displayRetainerStack stacks
+
+p41a e = do
+  pause e
+  stacks <- runTrace e $ do
+    precacheBlocks
+    roots <- gcRoots
+    rs <- tyConApp roots
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) rs
+  displayRetainerStack stacks
+
+p41b e = do
+  pause e
+  stacks <- runTrace e $ do
+    precacheBlocks
+    roots <- gcRoots
+    rs <- typeEnv roots
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) rs
+  displayRetainerStack stacks
+
+p41c e = do
+  pause e
+  stacks <- runTrace e $ do
+    precacheBlocks
+    roots <- gcRoots
+    censusClosureType roots
+  printCensusByClosureType stacks
 
 p42 e = do
   pause e
@@ -1045,7 +1102,12 @@ p45 e = do
   --printCensusByClosureType (getNodes t)
   print (Map.size (getNodes t))
   print (Map.size (getEdges t))
-  mapM_ print (take 10 (reverse $ sortBy (comparing (cssize . snd)) (Map.assocs (getEdges t))))
+  let es = (reverse $ sortBy (comparing (cssize . snd)) (Map.assocs (getEdges t)))
+  es' <- runTrace e $ mapM (\(Edge e1 e2, c) -> do
+                                e' <-(,) <$> getKey e1 <*> getKey e2
+                                return (e', c)) es
+
+  mapM_ print es'
 
 p46 e = detectLeaks 1 e
 
@@ -1054,6 +1116,17 @@ p50 e = do
   run e $ snapshot "/tmp/ghc-debug-cache"
 
 p51 e = fork e >> threadDelay 100000000
+
+p52 e = forever $ do
+  pause e
+  stacks <- runTrace e $ do
+    bs <- precacheBlocks
+    rs <- gcRoots
+    ss <- moduleCon rs
+    traverse (\c -> (show (head c),) <$> (addLocationToStack c)) ss
+  displayRetainerStack stacks
+  resume e
+  threadDelay 100_000
 
 modIface rroots = findRetainers (Just 100) rroots go
   where
@@ -1064,6 +1137,24 @@ modIface rroots = findRetainers (Just 100) rroots go
           return $ cname == "HomeModInfo"
         _ -> return $ False
 
+tyConApp rroots = findRetainers (Just 100) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ ps _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "TyConApp"
+        _ -> return $ False
+
+typeEnv rroots = findRetainers (Just 300) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ ps _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "TypeEnv"
+        _ -> return $ False
+
 tcModResult rroots = findRetainers (Just 10) rroots go
   where
     go cp sc =
@@ -1071,6 +1162,24 @@ tcModResult rroots = findRetainers (Just 10) rroots go
         ConstrClosure _ _ _ cd -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "TcModuleResult"
+        _ -> return $ False
+
+tcGblEnv rroots = findRetainers (Just 10) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "TcGblEnv"
+        _ -> return $ False
+
+moduleCon rroots = findRetainers (Just 100) rroots go
+  where
+    go cp sc =
+      case noSize sc of
+        ConstrClosure _ _ _ cd -> do
+          ConstrDesc _ _  cname <- dereferenceConDesc cd
+          return $ cname == "Module"
         _ -> return $ False
 
 splitEnv rroots = findRetainers (Just 10) rroots go
