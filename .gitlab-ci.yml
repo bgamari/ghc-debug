@@ -1,0 +1,8 @@
+image: nixos/nix
+
+pages:
+  script:
+    - nix-build . -A site -o public
+  artifacts:
+    paths:
+      - public
