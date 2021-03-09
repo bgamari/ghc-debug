@@ -6,7 +6,7 @@ workflow:
 
 build:
   script:
-    - nix run nixpkgs.git
+    - nix-shell -p git
     - nix-shell
     - cabal update
     - cabal build all
