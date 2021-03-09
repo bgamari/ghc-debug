@@ -1,3 +1,6 @@
+[Documentation Site](http://ghc.gitlab.haskell.org/ghc-debug)
+
+
 `ghc-debug` is a set of libraries which allow you to inspect the heap of
 a running Haskell program from an external debugger.
 
