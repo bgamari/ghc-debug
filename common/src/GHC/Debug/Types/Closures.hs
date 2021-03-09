@@ -361,15 +361,6 @@ data DebugClosure pap string s b
         }
   deriving (Show, Generic, Functor, Foldable, Traversable, Ord, Eq)
 
-deriving instance Ord GHC.WhatNext
-deriving instance Ord GHC.WhyBlocked
-deriving instance Ord GHC.TsoFlags
-deriving instance Ord CostCentreStack
-deriving instance Ord CostCentre
-deriving instance Ord IndexTable
-deriving instance Ord StgTSOProfInfo
-deriving instance Eq StgTSOProfInfo
-
 data TRecEntry b = TRecEntry { tvar :: !b
                              , expected_value :: !b
                              , new_value :: !b
