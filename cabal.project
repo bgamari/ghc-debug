@@ -28,7 +28,6 @@ source-repository-package
   location: https://github.com/mpickering/ghc-events.git
   tag: 0d8a89d7b9f8f4600eba4f6e6c089d97a25d2295
 
-index-state: 2020-12-29T18:00:00Z
 
 package haxl
   ghc-options: -w
