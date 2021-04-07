@@ -16,6 +16,7 @@ extra-source-files:  CHANGELOG.md
 library
   exposed-modules:     GHC.Debug.Client,
                        GHC.Debug.Retainers,
+                       GHC.Debug.GML,
                        GHC.Debug.Fragmentation,
                        GHC.Debug.ObjectEquiv,
                        GHC.Debug.Client.Search,

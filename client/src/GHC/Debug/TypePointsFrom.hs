@@ -18,6 +18,8 @@ module GHC.Debug.TypePointsFrom( typePointsFrom
                                , TypePointsFrom(..)
                                , getNodes
                                , getEdges
+                               , edgeSource
+                               , edgeTarget
                                , Key
                                , Edge(..)
                                , getKey

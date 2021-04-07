@@ -47,7 +47,8 @@ allow-newer:
   integer-gmp,
   template-haskell,
   text,
-  time, semialign
+  time,
+  semialign
 
 constraints:
   Cabal ==2.4.1.0 || ==3.0.2.0 || ==3.2.1.0,
@@ -158,7 +159,6 @@ constraints:
   random ==1.1 || ==1.2.0,
   row-types ==1.0.0.0,
   salak ==0.3.6,
-  semialign ==1.2,
   semigroupoids ==5.3.5,
   serialise ==0.2.3.0,
   servant ==0.18.2,
@@ -184,4 +184,3 @@ constraints:
   xlsx ==0.8.3,
   xml-hamlet ==0.5.0.1,
   yesod-core ==1.6.18.8
-
