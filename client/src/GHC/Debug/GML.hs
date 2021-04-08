@@ -1,12 +1,11 @@
-module GHC.Debug.GML (typePointsFromToGML) where
+module GHC.Debug.GML (writeTpfToGML, addSourceInfo, typePointsFromToGML) where
 
 import GHC.Debug.TypePointsFrom as TPF
 import GHC.Debug.Types (SourceInformation(..))
 import GHC.Debug.Types.Closures (Size(..))
 import GHC.Debug.Profile.Types (CensusStats(..), Count(..))
-import GHC.Debug.Types.Ptr (ClosurePtr)
 import GHC.Debug.Client.Monad
-import GHC.Debug.Client.Query (getSourceInfo)
+import GHC.Debug.Client.Query (getSourceInfo, gcRoots)
 
 import Data.Map as Map
 import Data.Int (Int32)
@@ -18,12 +17,18 @@ import System.IO
 
 type SourceInfoMap = Map.Map TPF.Key SourceInformation
 
--- | Exports TypePointsFrom graph to a GML file
-typePointsFromToGML :: FilePath -> Debuggee -> [ClosurePtr] -> IO ()
-typePointsFromToGML path e cs = do
-  (tpf, infoMap) <- runTrace e $ do
-    tpf <- TPF.typePointsFrom cs
+typePointsFromToGML :: FilePath -> Debuggee -> IO ()
+typePointsFromToGML path e = do
+  (tpf, infoMap) <- run e $ do
+    roots <- gcRoots
+    tpf <- TPF.typePointsFrom roots
+    si <- addSourceInfo tpf
+    return (tpf, si)
+  writeTpfToGML path tpf infoMap
 
+-- | Exports TypePointsFrom graph to a GML file
+addSourceInfo :: TypePointsFrom -> DebugM SourceInfoMap
+addSourceInfo tpf = do
     -- Generate a map of InfoTablePtr to SourceInformation pairs
     let ptrs = MMap.keys . TPF.nodes $ tpf
     infos <- mapM getSourceInfo ptrs
@@ -36,9 +41,8 @@ typePointsFromToGML path e cs = do
         infoMap :: SourceInfoMap
         infoMap = Map.fromList kvPairs
 
-    return (tpf, infoMap)
+    return (infoMap)
 
-  writeTpfToGML path tpf infoMap
 
 writeTpfToGML :: FilePath -> TPF.TypePointsFrom -> SourceInfoMap -> IO ()
 writeTpfToGML path tpf infoMap = do

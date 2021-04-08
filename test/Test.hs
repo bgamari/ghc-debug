@@ -17,6 +17,7 @@ import GHC.Debug.Snapshot
 import GHC.Debug.Count
 import GHC.Debug.TypePointsFrom
 import GHC.Debug.Types.Ptr
+import GHC.Debug.GML
 import GHC.Debug.Types.Graph (heapGraphSize, traverseHeapGraph, ppClosure)
 --import GHC.Debug.Types.Closures
 import GHC.Debug.Trace
@@ -71,7 +72,9 @@ testProgPath progName = do
 
 --main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p33 e) --  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" p45 --(tyConAppAnalysis)
+main = snapshotRun "/tmp/ghc-debug-cache" (typePointsFromToGML "out.gml") --(tyConAppAnalysis)
+
+
 --
 --main = snapshotRun "/tmp/ghc-debug-cache" p37
 
