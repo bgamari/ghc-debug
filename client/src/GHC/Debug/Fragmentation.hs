@@ -33,9 +33,12 @@ summariseBlocks bs = do
   putStrLn ("TOTAL BLOCKS: " ++ show (length bs))
   putStrLn ("PINNED BLOCKS: " ++ show (length $ filter isPinnedBlock bs))
   putStrLn ("MBLOCK: " ++ show n_mblocks)
+  putStrLn ("PINNED MBLOCKS: " ++ show n_pmblocks)
   where
     n_mblocks :: Int
     n_mblocks = length (nub (map (blockMBlock . rawBlockAddr) bs))
+
+    n_pmblocks = length (nub (map (blockMBlock . rawBlockAddr) (filter isPinnedBlock bs)))
 
 -- | Perform a heap census by which MBlock each closure lives in
 censusByMBlock :: [ClosurePtr] -> DebugM (Map.Map BlockPtr CensusStats)
