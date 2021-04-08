@@ -1,8 +1,10 @@
 cabal-version:       2.4
 name:                ghc-debug-stub
 version:             0.1.0.0
--- synopsis:
--- description:
+synopsis:            Functions for instrumenting your application so the heap
+                     can be analysed with ghc-debug-common.
+description:         Functions for instrumenting your application so the heap can
+                     be analysed with ghc-debug-common.
 homepage:            https://gitlab.haskell.org/ghc/ghc-debug
 license:             BSD-3-Clause
 license-file:        LICENSE

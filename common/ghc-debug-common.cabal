@@ -1,8 +1,10 @@
 cabal-version:       3.0
 name:                ghc-debug-common
 version:             0.1.0.0
-synopsis:            A debugger for GHC
--- description:
+synopsis:            Connect to a socket created by ghc-debug-stub and analyse
+                     the heap of the debuggee program.
+description:         Connect to a socket created by ghc-debug-stub and analyse
+                     the heap of the debuggee program.
 homepage:            https://gitlab.haskell.org/ghc/ghc-debug
 license:             BSD-3-Clause
 license-file:        LICENSE

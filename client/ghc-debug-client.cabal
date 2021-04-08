@@ -1,8 +1,10 @@
 cabal-version:       3.0
 name:                ghc-debug-client
 version:             0.1.0.0
--- synopsis:
--- description:
+synopsis:            Useful functions for writing heap analysis tools which use
+                     ghc-debug.
+description:         Useful functions for writing heap analysis tools which use
+                     ghc-debug.
 homepage:            https://gitlab.haskell.org/ghc/ghc-debug
 license:             BSD-3-Clause
 license-file:        LICENSE
