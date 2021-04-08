@@ -1,0 +1,16 @@
+cabal haddock --haddock-html --haddock-quickjump --haddock-hyperlink-source all --with-haddock=/home/matt/.cabal/bin/haddock --verbose
+rm -rf hdocs/
+mkdir -p hdocs
+find dist-newstyle -type d -name '*html' -exec cp -r {} hdocs \;
+mv hdocs/html/* hdocs/
+
+~/.cabal/bin/haddock \
+    -o hdocs \
+    --optghc="-package-db /home/matt/ghc-debug/dist-newstyle/packagedb/ghc-9.1.20201218" \
+    --quickjump \
+    --gen-index \
+    --gen-contents \
+    --read-interface=ghc-debug-client,hdocs/ghc-debug-client/ghc-debug-client.haddock \
+    --read-interface=ghc-debug-common,hdocs/ghc-debug-common/ghc-debug-common.haddock \
+    --read-interface=ghc-debug-convention,hdocs/ghc-debug-convention/ghc-debug-convention.haddock \
+    --read-interface=ghc-debug-stub,hdocs/ghc-debug-stub/ghc-debug-stub.haddock
