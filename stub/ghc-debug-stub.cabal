@@ -3,12 +3,12 @@ name:                ghc-debug-stub
 version:             0.1.0.0
 -- synopsis:
 -- description:
-homepage:            https://github.com/bgamari/ghc-debug
+homepage:            https://gitlab.haskell.org/ghc/ghc-debug
 license:             BSD-3-Clause
 license-file:        LICENSE
-author:              Ben Gamari
-maintainer:          ben@smart-cactus.org
-copyright:           (c) 2019 Ben Gamari
+author:              Ben Gamari, Matthew Pickering
+maintainer:          matthewtpickering@gmail.com
+copyright:           (c) 2019-2021 Ben Gamari, Matthew Pickering
 category:            Development
 build-type:          Simple
 extra-source-files:  CHANGELOG.md, cbits/socket.h, cbits/trace.h, cbits/parser.h
@@ -18,14 +18,18 @@ flag trace
   Default:     False
   Manual:      True
 
+flag testexes
+  Description:   Build test executables
+  Default:       False
+
 library
   exposed-modules:     GHC.Debug.Stub
   hs-source-dirs:      src
   build-depends:       base >=4.12 && <4.14
-                     , directory
-                     , filepath
-                     , ghc-prim
-                     , ghc-debug-convention
+                     , directory ^>= 1.3
+                     , filepath ^>= 1.4
+                     , ghc-prim ^>= 0.8
+                     , ghc-debug-convention ^>= 0.1
   default-language:    Haskell2010
   cxx-sources:         cbits/stub.cpp, cbits/socket.cpp, cbits/trace.cpp
   cxx-options:         -std=gnu++11 -O3 -g3 -DTHREADED_RTS
@@ -36,6 +40,10 @@ library
     cpp-options: -DTRACE
 
 executable debug-test
+  if flag(testexes)
+    buildable: True
+  else
+    buildable: False
   main-is:             Test.hs
   ghc-options:         -threaded -debug -g3 -O0 -finfo-table-map -fdistinct-constructor-tables
   build-depends:       base,
@@ -43,6 +51,10 @@ executable debug-test
   default-language:    Haskell2010
 
 executable large-thunk
+  if flag(testexes)
+    buildable: True
+  else
+    buildable: False
   main-is:             LargeThunk.hs
   ghc-options:         -threaded -g3 -O2 -finfo-table-map -fdistinct-constructor-tables -rtsopts
   build-depends:       base,

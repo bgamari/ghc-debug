@@ -1,17 +1,17 @@
+cabal-version:       3.0
 name:                ghc-debug-client
 version:             0.1.0.0
 -- synopsis:
 -- description:
-homepage:            https://github.com/bgamari/ghc-debug
-license:             BSD3
+homepage:            https://gitlab.haskell.org/ghc/ghc-debug
+license:             BSD-3-Clause
 license-file:        LICENSE
-author:              Ben Gamari
-maintainer:          ben@smart-cactus.org
-copyright:           (c) 2019 Ben Gamari
+author:              Ben Gamari, Matthew Pickering, David Eichmann
+maintainer:          matthewtpickering@gmail.com
+copyright:           (c) 2019-2021 Ben Gamari, Matthew Pickering
 category:            Development
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
-cabal-version:       >=1.10
 
 library
   exposed-modules:     GHC.Debug.Client,
@@ -25,24 +25,39 @@ library
                        GHC.Debug.ParTrace,
                        GHC.Debug.Count,
                        GHC.Debug.TypePointsFrom,
-                       GHC.Debug.Snapshot
-                       GHC.Debug.Dominators
-                       GHC.Debug.Client.Query
+                       GHC.Debug.Snapshot,
+                       GHC.Debug.Dominators,
+                       GHC.Debug.Client.Query,
                        GHC.Debug.Client.Monad,
                        GHC.Debug.Client.BlockCache,
                        GHC.Debug.Client.RequestCache,
-                       GHC.Debug.Client.Monad.Class
-                       GHC.Debug.Client.Monad.Haxl
+                       GHC.Debug.Client.Monad.Class,
+                       GHC.Debug.Client.Monad.Haxl,
                        GHC.Debug.Client.Monad.Simple
 
-  build-depends:       base >=4.12 && <4.14,
-                       network >=2.6 && <2.7,
-                       containers,
-                       unordered-containers,
-                       ghc-debug-common, ghc-debug-convention,
-                       text, process, filepath, directory, bitwise,
-                       haxl, hashable, mtl, eventlog2html >= 0.8.3, binary, psqueues,
-                       dom-lt, async, monoidal-containers, language-dot, ghc-prim, stm
+  build-depends:       base >=4.16 && < 4.17,
+                       network ^>= 2.6,
+                       containers ^>= 0.6,
+                       unordered-containers ^>= 0.2.13,
+                       ghc-debug-common ^>= 0.1,
+                       ghc-debug-convention ^>= 0.1,
+                       text ^>= 1.2.4,
+                       process ^>= 1.6,
+                       filepath ^>= 1.4,
+                       directory ^>= 1.3,
+                       bitwise ^>= 1.0,
+                       haxl ^>= 2.3,
+                       hashable ^>= 1.3,
+                       mtl ^>= 2.2,
+                       eventlog2html ^>= 0.8.3,
+                       binary ^>= 0.8,
+                       psqueues ^>= 0.2,
+                       dom-lt ^>= 0.2,
+                       async ^>= 2.2,
+                       monoidal-containers ^>= 0.6,
+                       language-dot ^>= 0.1,
+                       ghc-prim ^>= 0.8,
+                       stm ^>= 2.5
 
   hs-source-dirs:      src
   default-language:    Haskell2010
