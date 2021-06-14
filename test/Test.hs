@@ -47,7 +47,7 @@ import Data.Tree
 import Data.Maybe
 import qualified Data.Map as Map
 import Data.Ord
-import Data.List
+import Data.List (sort, sortBy, (\\))
 import qualified Data.Set as S
 import Data.List.NonEmpty(NonEmpty(..), fromList)
 import Data.Semigroup

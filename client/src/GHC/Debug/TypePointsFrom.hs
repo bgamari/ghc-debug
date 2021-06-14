@@ -36,7 +36,7 @@ import qualified Data.Map.Internal as M
 import GHC.Debug.Profile
 import Control.Monad.Identity
 import Control.Concurrent
-import Data.List
+import Data.List (sortOn)
 import Language.Dot
 import qualified Data.Set as S
 

@@ -21,7 +21,7 @@ import GHC.Debug.Types.Graph (ppClosure)
 import GHC.Debug.Types(ClosurePtr(..))
 
 import Control.Monad.State
-import Data.List
+import Data.List (sortBy)
 import Data.Ord
 import Debug.Trace
 import qualified Data.OrdPSQ as PS

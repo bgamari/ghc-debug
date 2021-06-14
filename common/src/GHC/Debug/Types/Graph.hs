@@ -38,7 +38,7 @@ module GHC.Debug.Types.Graph( -- * Types
                             where
 
 import Data.Char
-import Data.List
+import Data.List (intercalate, foldl', sort, group, sortBy, groupBy)
 import Data.Maybe       ( catMaybes )
 import Data.Function
 import qualified Data.HashMap.Strict as M

@@ -18,7 +18,7 @@ import GHC.Word
 import Data.Hashable
 import Data.IORef
 import Data.Bits
-import Data.List
+import Data.List (sort)
 import Data.Binary
 
 newtype BlockCache = BlockCache (HM.HashMap Word64 RawBlock)

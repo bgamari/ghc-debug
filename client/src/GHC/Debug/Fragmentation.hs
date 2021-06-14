@@ -21,7 +21,7 @@ import GHC.Debug.Types
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.List
+import Data.List (nub, sortBy)
 import Data.Ord
 import Data.Word
 

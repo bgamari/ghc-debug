@@ -30,7 +30,7 @@ import GHC.Debug.Profile.Types
 
 import qualified Data.Map.Strict as Map
 import Control.Monad.State
-import Data.List
+import Data.List (sortBy)
 import Data.Ord
 import Control.Concurrent
 import Eventlog.Types
@@ -197,7 +197,7 @@ mkProfData raw_fs =
       binfo = Map.mapWithKey (\(Bucket k) (t,s,g) -> BucketInfo k Nothing t s g) totals
   -- Heap profiles do not support traces
       header = Header "ghc-debug" "" (Just HeapProfBreakdownClosureType) "" "" "" counts Nothing
-  in ProfData header binfo mempty fs [] mempty
+  in ProfData header binfo mempty fs [] (HeapInfo [] [] []) mempty
 
 renderProfile :: [(Int, CensusByClosureType)] -> IO ()
 renderProfile ss = do

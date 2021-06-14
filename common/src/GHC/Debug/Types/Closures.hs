@@ -71,7 +71,7 @@ import Data.Word
 import GHC.Exts
 import GHC.Generics
 import GHC.Debug.Types.Ptr
-import Data.List
+import Data.List (sortBy, intercalate)
 import Data.Char
 import Data.Kind
 
