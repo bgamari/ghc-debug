@@ -53,12 +53,14 @@ findRetainers limit rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM fun
                -> SizedClosure
                -> RWST [ClosurePtr] () (Maybe Int, [[ClosurePtr]]) DebugM ()
                -> RWST [ClosurePtr] () (Maybe Int, [[ClosurePtr]]) DebugM ()
+    closAccum _ (noSize -> WeakClosure {}) _ = return ()
     closAccum cp sc k = do
       b <- lift $ p cp sc
       if b
         then do
           ctx <- ask
           modify' (addOne (cp: ctx))
+          local (cp:) k
           -- Don't call k, there might be more paths to the pointer but we
           -- probably just care about this first one.
         else do
