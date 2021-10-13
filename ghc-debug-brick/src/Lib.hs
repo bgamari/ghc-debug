@@ -44,6 +44,10 @@ module Lib
   , closureReferences
   , closurePretty
   , fillConstrDesc
+  , InfoTablePtr
+  , ListItem(..)
+  , closureInfoPtr
+  , infoSourceLocation
 
     -- * Common initialisation
   , initialTraversal
@@ -243,6 +247,8 @@ retainersOfConstructor dbg con_name = do
 
 type Closure = DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr
 
+data ListItem a b c d = ListData | ListOnlyInfo InfoTablePtr | ListFullClosure (DebugClosure a b c d)
+
 data DebugClosure p cd s c
   = Closure
     { _closurePtr :: ClosurePtr
@@ -296,13 +302,20 @@ closureSourceLocation _ (Stack _ _) = return Nothing
 closureSourceLocation e (Closure _ c) = run e $ do
   request (RequestSourceInfo (tableId (info (noSize c))))
 
--- | Get the directly referenced closures (with a label) of a closure.
-closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, Maybe Closure)]
-closureReferences e (Stack _ stack) = run e $ do
-  let action (GD.SPtr ptr) = ("Pointer", Just . Closure ptr <$> GD.dereferenceClosure ptr)
-      action (GD.SNonPtr dat) = ("Data:" ++ show dat, return Nothing)
+closureInfoPtr :: DebugClosure p cd s c -> Maybe InfoTablePtr
+closureInfoPtr (Stack {}) = Nothing
+closureInfoPtr (Closure _ c) = Just (tableId (info (noSize c)))
 
-      frame_items frame = ("Info: " ++ show (tableId (frame_info frame)), return Nothing) :
+infoSourceLocation :: Debuggee -> InfoTablePtr -> IO (Maybe SourceInformation)
+infoSourceLocation e ip = run e $ request (RequestSourceInfo ip)
+
+-- | Get the directly referenced closures (with a label) of a closure.
+closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, ListItem PayloadCont ConstrDescCont StackCont ClosurePtr)]
+closureReferences e (Stack _ stack) = run e $ do
+  let action (GD.SPtr ptr) = ("Pointer", ListFullClosure . Closure ptr <$> GD.dereferenceClosure ptr)
+      action (GD.SNonPtr dat) = ("Data:" ++ show dat, return ListData)
+
+      frame_items frame = ("Info: " ++ show (tableId (frame_info frame)), return (ListOnlyInfo (tableId (frame_info frame)))) :
                           map action (GD.values frame)
 
       add_frame_ix ix (lbl, x) = ("Frame " ++ show ix ++ " " ++ lbl, x)
@@ -321,10 +334,10 @@ closureReferences e (Closure _ closure) = run e $ do
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
       refClosure' <- GD.dereferenceClosure cPtr
-      return (label, Just $ Closure cPtr refClosure')
+      return (label, ListFullClosure $ Closure cPtr refClosure')
     Right sPtr -> do
       refStack' <- GD.dereferenceStack sPtr
-      return (label, Just $ Stack sPtr refStack')
+      return (label, ListFullClosure $ Stack sPtr refStack')
 
 reverseClosureReferences :: HG.HeapGraph Size
                          -> HG.ReverseGraph

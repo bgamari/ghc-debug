@@ -10,11 +10,13 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Main where
 import Control.Applicative
 import Control.Monad (forever)
 import Control.Monad.IO.Class
+import Control.Monad.Catch (bracket)
 import Control.Concurrent
 import qualified Data.List as List
 import Data.Ord (comparing)
@@ -120,25 +122,33 @@ myAppDraw (AppState majorState') =
   where
 
   renderClosureDetails :: Maybe (ClosureDetails pap s c) -> Widget Name
-  renderClosureDetails (Just cd@(ClosureDetails {})) = vLimit 9 $ vBox $
-      [ txt "SourceLocation   "
-            <+> txt (maybe "" renderSourceInformation (_sourceLocation cd))
-      -- TODO these aren't actually implemented yet
-      -- , txt $ "Type             "
-      --       <> fromMaybe "" (_closureType =<< cd)
-      -- , txt $ "Constructor      "
-      --       <> fromMaybe "" (_constructor =<< cd)
-      , txt $ "Exclusive Size   "
+  renderClosureDetails (Just cd@(ClosureDetails {})) =
+    vLimit 9 $ vBox $
+      renderInfoInfo (_info cd)
+      ++
+      [ txt $ "Exclusive Size   "
             <> maybe "" (pack . show @Int . GD.getSize) (Just $ _excSize cd) <> " bytes"
       , txt $ "Retained Size    "
             <> maybe "" (pack . show @Int . GD.getRetainerSize) (_retainerSize cd) <> " bytes"
       , fill ' '
       ]
   renderClosureDetails Nothing = emptyWidget
-  renderClosureDetails _ = emptyWidget
+  renderClosureDetails (Just (LabelNode n)) = txt n
+  renderClosureDetails (Just (InfoDetails info')) = vLimit 9 $ vBox $ renderInfoInfo info'
+
+  renderInfoInfo info' =
+      [ txt "SourceLocation   "
+            <+> txt (maybe "" renderSourceInformation (_sourceLocation info'))
+      -- TODO these aren't actually implemented yet
+      -- , txt $ "Type             "
+      --       <> fromMaybe "" (_closureType =<< cd)
+      -- , txt $ "Constructor      "
+      --       <> fromMaybe "" (_constructor =<< cd)
+      ]
+
   renderSourceInformation :: SourceInformation -> T.Text
-  renderSourceInformation (SourceInformation name cty ty label modu loc) =
-      T.pack $ unlines [name, show cty, ty, label, modu, loc]
+  renderSourceInformation (SourceInformation name cty ty label' modu loc) =
+      T.pack $ unlines [name, show cty, ty, label', modu, loc]
 
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
@@ -176,10 +186,10 @@ updateListFrom dirIO llist = liftIO $ do
 
 myAppHandleEvent :: BChan Event -> AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
 myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case brickEvent of
-  VtyEvent (Vty.EvKey KEsc []) -> halt appState
   _ -> case majorState' of
     Setup st knownDebuggees' knownSnapshots' -> case brickEvent of
 
+      VtyEvent (Vty.EvKey KEsc []) -> halt appState
       VtyEvent event -> case event of
         -- Connect to the selected debuggee
         Vty.EvKey (KChar '\t') [] -> do
@@ -198,12 +208,15 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             Socket
               | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
               -> do
-                debuggee' <- liftIO $ debuggeeConnect (view socketLocation socket)
-                continue $ appState & majorState .~ Connected
+                bracket
+                  (liftIO $ debuggeeConnect (view socketLocation socket))
+                  (\debuggee' -> liftIO $ resume debuggee')
+                  (\debuggee' ->
+                    continue $ appState & majorState .~ Connected
                       { _debuggeeSocket = socket
                       , _debuggee = debuggee'
                       , _mode     = RunningMode  -- TODO should we query the debuggee for this?
-                      }
+                      })
             _ -> continue appState
 
         -- Navigate through the list.
@@ -232,6 +245,8 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
 
       RunningMode -> case brickEvent of
         -- Pause the debuggee
+        VtyEvent (Vty.EvKey KEsc []) ->
+          halt appState
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
 --          _ <- liftIO $ initialiseViews
@@ -268,6 +283,10 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         VtyEvent (Vty.EvKey (KFun 12) _) -> do
           liftIO $ resume debuggee'
           continue (appState & majorState . mode .~ RunningMode)
+
+        VtyEvent (Vty.EvKey KEsc []) -> do
+          liftIO $ resume debuggee'
+          continue $ initialAppState
 
         _ -> liftHandler (majorState . mode) os PausedMode (handleMain debuggee')
               appState (() <$ brickEvent)
@@ -315,17 +334,33 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         return $ (mkIOTree debuggee' manalysis (savedClosures' ++ rootClosures') getChildren id
                  , fmap toPtr <$> (raw_roots ++ raw_saved))
         where
+          getChildren :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr
+                      -> IO
+                           [(String, ListItem PayloadCont ConstrDesc StackCont ClosurePtr)]
           getChildren d c = do
             children <- closureReferences d c
-            traverse (traverse (traverse (fillConstrDesc d))) children
+            traverse (traverse (fillListItem d)) children
+
+          fillListItem :: Debuggee
+                       -> ListItem PayloadCont ConstrDescCont StackCont ClosurePtr
+                       -> IO (ListItem PayloadCont ConstrDesc StackCont ClosurePtr)
+          fillListItem _ (ListOnlyInfo x) = return $ ListOnlyInfo x
+          fillListItem d(ListFullClosure cd) = ListFullClosure <$> fillConstrDesc d cd
+          fillListItem _ ListData = return ListData
 
 
-mkIOTree :: Show c => Debuggee -> Maybe Analysis -> [ClosureDetails pap s c] -> (Debuggee -> DebugClosure pap ConstrDesc s c -> IO [(String, Maybe (DebugClosure pap ConstrDesc s c))]) -> ([ClosureDetails pap s c] -> [ClosureDetails pap s c]) -> IOTree (ClosureDetails pap s c) Name
+mkIOTree :: Show c => Debuggee
+         -> Maybe Analysis
+         -> [ClosureDetails pap s c]
+         -> (Debuggee -> DebugClosure pap ConstrDesc s c -> IO [(String, ListItem pap ConstrDesc s c)])
+         -> ([ClosureDetails pap s c] -> [ClosureDetails pap s c])
+         -> IOTree (ClosureDetails pap s c) Name
 mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
         (\c -> do
             case c of
               LabelNode {} -> return []
+              InfoDetails {} -> return []
               _ -> do
                 children <- getChildren debuggee' (_closure c)
                 cDets <- mapM (\(lbl, child) -> getClosureDetails debuggee' manalysis (pack lbl) child) children
@@ -344,42 +379,64 @@ mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_Closu
 
 renderInlineClosureDesc :: ClosureDetails pap s c -> Text
 renderInlineClosureDesc (LabelNode t) = t
+renderInlineClosureDesc (InfoDetails info') =
+  _labelInParent info' <> "   " <> _pretty info'
 renderInlineClosureDesc closureDesc =
-                      _labelInParent closureDesc
+                      _labelInParent (_info closureDesc)
                     <> "   "
                     <> pack (closureShowAddress (_closure closureDesc))
                     <> "   "
-                    <> _pretty closureDesc
+                    <> _pretty (_info closureDesc)
 completeClosureDetails :: Show c => Debuggee -> Maybe Analysis
                                             -> (Text, DebugClosure pap ConstrDescCont s c)
                                             -> IO (ClosureDetails pap s c)
 
-completeClosureDetails dbg manalysis (label, clos)  =
-  getClosureDetails dbg manalysis label . Just  =<< fillConstrDesc dbg clos
+completeClosureDetails dbg manalysis (label', clos)  =
+  getClosureDetails dbg manalysis label' . ListFullClosure  =<< fillConstrDesc dbg clos
 
 
 
 getClosureDetails :: Show c => Debuggee
                             -> Maybe Analysis
                             -> Text
-                            -> Maybe (DebugClosure pap ConstrDesc s c)
+                            -> ListItem pap ConstrDesc s c
                             -> IO (ClosureDetails pap s c)
-getClosureDetails _ _ t Nothing = return $ LabelNode t
-getClosureDetails debuggee' manalysis label (Just c) = do
+getClosureDetails debuggee' _ t (ListOnlyInfo info_ptr) = do
+  info' <- getInfoInfo debuggee' t info_ptr
+  return $ InfoDetails info'
+getClosureDetails _ _ t ListData = return $ LabelNode t
+getClosureDetails debuggee' manalysis label' (ListFullClosure c) = do
   let excSize' = closureExclusiveSize c
       retSize' = closureRetainerSize <$> manalysis <*> pure c
-  sourceLoc <- closureSourceLocation debuggee' c
+  sourceLoc <- maybe (return Nothing) (infoSourceLocation debuggee') (closureInfoPtr c)
   let pretty' = closurePretty c
   return ClosureDetails
     { _closure = c
-    , _pretty = pack pretty'
-    , _labelInParent = label
-    , _sourceLocation = sourceLoc
-    , _closureType = Nothing
-    , _constructor = Nothing
+    , _info = InfoInfo {
+       _pretty = pack pretty'
+      , _labelInParent = label'
+      , _sourceLocation = sourceLoc
+      , _closureType = Nothing
+      , _constructor = Nothing
+      }
     , _excSize = excSize'
     , _retainerSize = retSize'
     }
+
+getInfoInfo :: Debuggee -> Text -> InfoTablePtr -> IO InfoInfo
+getInfoInfo debuggee' label' infoPtr = do
+
+  sourceLoc <- infoSourceLocation debuggee' infoPtr
+  let pretty' = case sourceLoc of
+                  Just loc -> pack (infoPosition loc)
+                  Nothing -> ""
+  return $ InfoInfo {
+       _pretty = pretty'
+      , _labelInParent = label'
+      , _sourceLocation = sourceLoc
+      , _closureType = Nothing
+      , _constructor = Nothing
+      }
 
 
 -- Event handling when the main window has focus
@@ -497,7 +554,7 @@ mkRetainerTree :: Debuggee -> [[ClosureDetails PayloadCont StackCont ClosurePtr]
 mkRetainerTree dbg stacks = do
   let stack_map = [ (cp, rest) | stack <- stacks, Just (cp, rest) <- [List.uncons stack]]
       roots = map fst stack_map
-      info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((show n), Just (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
+      info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((show n), ListFullClosure (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
 
       lookup_c _dbg dc = let ptr = toPtr dc
                        in case M.lookup ptr info_map of

@@ -83,18 +83,23 @@ data MajorState
     , _mode     :: ConnectedMode
     }
 
-data ClosureDetails pap s c = ClosureDetails
-  { _closure :: DebugClosure pap ConstrDesc s c
-  , _labelInParent :: Text -- ^ A label describing the relationship to the parent
+data InfoInfo = InfoInfo
+  {
+    _labelInParent :: Text -- ^ A label describing the relationship to the parent
   -- Stuff  that requires IO to calculate
   , _pretty :: Text
   , _sourceLocation :: Maybe SourceInformation
   , _closureType :: Maybe Text
-  , _constructor :: Maybe Text
-  , _excSize :: Size
+  , _constructor :: Maybe Text }
+
+data ClosureDetails pap s c = ClosureDetails
+  { _closure :: DebugClosure pap ConstrDesc s c
   , _retainerSize :: Maybe RetainerSize
+  , _excSize :: Size
+  , _info :: InfoInfo
   }
-  | LabelNode { _labelInParent :: Text }
+  | InfoDetails { _info :: InfoInfo }
+  | LabelNode { _label :: Text }
 
 data TreeMode = Dominator | SavedAndGCRoots | Reverse | Retainer (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
 
