@@ -11,7 +11,7 @@ StgArrBytes *heap_view_closurePtrsAsWords(Capability *cap, StgClosure *closure) 
     // the closure and then we can allocate space on the heap and copy them
     // there
     StgClosure *ptrs[size];
-    StgWord nptrs = collect_pointers(closure, size, ptrs);
+    StgWord nptrs = collect_pointers(closure, ptrs);
     StgArrBytes *arr =
         (StgArrBytes *)allocate(cap, sizeofW(StgArrBytes) + nptrs);
     TICK_ALLOC_PRIM(sizeofW(StgArrBytes), nptrs, 0);
