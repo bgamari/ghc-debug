@@ -8,7 +8,6 @@ import Cursor.Types
 import Brick hiding (continue, halt)
 import qualified Graphics.Vty as V
 
-import Brick.Types ( Widget )
 import Namespace
 
 

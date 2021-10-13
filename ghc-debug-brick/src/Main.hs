@@ -8,14 +8,15 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 
 module Main where
 import Control.Applicative
-import Control.Monad (forever, (<=<))
+import Control.Monad (forever)
 import Control.Monad.IO.Class
 import Control.Concurrent
 import qualified Data.List as List
-import Data.Maybe (fromJust)
 import Data.Ord (comparing)
 import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
@@ -27,6 +28,7 @@ import System.Directory
 import System.FilePath
 import Data.Text (Text, pack)
 import qualified Data.Text as T
+import qualified Data.Map as M
 
 import IOTree
 import TextCursor
@@ -46,14 +48,14 @@ data Event
   | ReverseAnalysisReady ReverseAnalysis
   | HeapGraphReady (HeapGraph GD.Size)
 
-myAppDraw :: AppState -> [Widget Name]
-myAppDraw (AppState majorState') =
-  [ case majorState' of
 
-    Setup knownDebuggees' -> let
-      nKnownDebuggees = Seq.length $ majorState'^.knownDebuggees.listElementsL
+drawSetup :: Text -> Text -> GenericList Name Seq.Seq SocketInfo -> Widget Name
+drawSetup herald other_herald vals =
+
+      let nKnownDebuggees = Seq.length $ (vals ^. listElementsL)
       in mainBorder "ghc-debug" $ vBox
-        [ txt $ "Select a process to debug (" <> pack (show nKnownDebuggees) <> " found):"
+        [ txt $ "Select a " <> herald <> " to debug (" <> pack (show nKnownDebuggees) <> " found):"
+        , txt $ "Select " <> other_herald <> " with <TAB>"
         , renderList
             (\elIsSelected socketPath -> hBox
                 [ txt $ if elIsSelected then "*" else " "
@@ -64,8 +66,21 @@ myAppDraw (AppState majorState') =
                 ]
             )
             True
-            knownDebuggees'
+            vals
         ]
+
+mainBorder :: Text -> Widget a -> Widget a
+mainBorder title = borderWithLabel (txt title) . padAll 1
+
+myAppDraw :: AppState -> [Widget Name]
+myAppDraw (AppState majorState') =
+  [ case majorState' of
+
+    Setup setupKind' dbgs snaps ->
+      case setupKind' of
+        Socket -> drawSetup "process" "snapshot" dbgs
+        Snapshot   -> drawSetup "snapshot" "process" snaps
+
 
     Connected _socket _debuggee mode' -> case mode' of
 
@@ -73,20 +88,19 @@ myAppDraw (AppState majorState') =
         [ txt "Pause (p)"
         ]
 
-      (PausedMode os@(OperationalState treeMode' fmode _ro dtree _ reverseTree hg)) -> let
+      (PausedMode os@(OperationalState treeMode' fmode _ro _dtree _ _reverseTree _hg)) -> let
         in mainBorder "ghc-debug - Paused" $ vBox
           [ hBox
             [ border $ vBox
               ([ txt "Resume          (F12)"
+              , txt "Tree            (F1)"
               , txt "Parent          (<-)"
               , txt "Child           (->)"
               , txt "Saved/GC Roots  (F1)"
-              ] ++
-              [ txt "Dominator Tree  (F2)" | Just {} <- [dtree] ]
-                ++
-              [ txt "Reverse Analysis (F3)" | Just {} <- [reverseTree] ]
-                ++
-              [ txt "Search for Constructor (F8)" | Just {} <- [hg] ] )
+              , txt "Write Profile   (F3)"
+              , txt "Find Retainers  (F4)"
+              , txt "Take Snapshot   (F5)"
+              ])
             , -- Current closure details
               borderWithLabel (txt "Closure Details") $ pauseModeTree (renderClosureDetails . ioTreeSelection) os
             ]
@@ -96,6 +110,7 @@ myAppDraw (AppState majorState') =
                 Dominator -> "Dominator Tree"
                 SavedAndGCRoots -> "Root Closures"
                 Reverse -> "Reverse Edges"
+                Retainer {} -> "Retainers"
               )
               (pauseModeTree renderIOTree os)
           , hBorder
@@ -103,23 +118,24 @@ myAppDraw (AppState majorState') =
           ]
   ]
   where
-  mainBorder title = borderWithLabel (txt title) . padAll 1
 
   renderClosureDetails :: Maybe (ClosureDetails pap s c) -> Widget Name
-  renderClosureDetails cd = vLimit 9 $ vBox $
+  renderClosureDetails (Just cd@(ClosureDetails {})) = vLimit 9 $ vBox $
       [ txt "SourceLocation   "
-            <+> txt (maybe "" renderSourceInformation (_sourceLocation =<< cd))
+            <+> txt (maybe "" renderSourceInformation (_sourceLocation cd))
       -- TODO these aren't actually implemented yet
       -- , txt $ "Type             "
       --       <> fromMaybe "" (_closureType =<< cd)
       -- , txt $ "Constructor      "
       --       <> fromMaybe "" (_constructor =<< cd)
       , txt $ "Exclusive Size   "
-            <> maybe "" (pack . show @Int . GD.getSize) (_excSize <$> cd) <> " bytes"
+            <> maybe "" (pack . show @Int . GD.getSize) (Just $ _excSize cd) <> " bytes"
       , txt $ "Retained Size    "
-            <> maybe "" (pack . show @Int . GD.getRetainerSize) (_retainerSize =<< cd) <> " bytes"
+            <> maybe "" (pack . show @Int . GD.getRetainerSize) (_retainerSize cd) <> " bytes"
       , fill ' '
       ]
+  renderClosureDetails Nothing = emptyWidget
+  renderClosureDetails _ = emptyWidget
   renderSourceInformation :: SourceInformation -> T.Text
   renderSourceInformation (SourceInformation name cty ty label modu loc) =
       T.pack $ unlines [name, show cty, ty, label, modu, loc]
@@ -131,35 +147,12 @@ footer m = vLimit 1 $
    FooterInfo -> txt ""
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
-
-myAppHandleEvent :: BChan Event -> AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
-myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case brickEvent of
-  VtyEvent (Vty.EvKey KEsc []) -> halt appState
-  _ -> case majorState' of
-    Setup knownDebuggees' -> case brickEvent of
-
-      VtyEvent event -> case event of
-        -- Connect to the selected debuggee
-        Vty.EvKey KEnter _
-          | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
-          -> do
-            debuggee' <- liftIO $ debuggeeConnect (view socketLocation socket)
-            continue $ appState & majorState .~ Connected
-                  { _debuggeeSocket = socket
-                  , _debuggee = debuggee'
-                  , _mode     = RunningMode  -- TODO should we query the debuggee for this?
-                  }
-
-        -- Navigate through the list.
-        _ -> do
-          newOptions <- handleListEventVi handleListEvent event knownDebuggees'
-          continue $ appState & majorState . knownDebuggees .~ newOptions
-
-      AppEvent event -> case event of
-        PollTick -> do
-          -- Poll for debuggees
-          knownDebuggees'' <- liftIO $ do
-            dir :: FilePath <- socketDirectory
+updateListFrom :: MonadIO m =>
+                        IO FilePath
+                        -> GenericList n Seq.Seq SocketInfo
+                        -> m (GenericList n Seq.Seq SocketInfo)
+updateListFrom dirIO llist = liftIO $ do
+            dir :: FilePath <- dirIO
             debuggeeSocketFiles :: [FilePath] <- listDirectory dir <|> return []
 
             -- Sort the sockets by the time they have been created, newest
@@ -168,7 +161,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
                                   <$> mapM (mkSocketInfo . (dir </>)) debuggeeSocketFiles
 
             let currentSelectedPathMay :: Maybe SocketInfo
-                currentSelectedPathMay = fmap snd (listSelectedElement knownDebuggees')
+                currentSelectedPathMay = fmap snd (listSelectedElement llist)
 
                 newSelection :: Maybe Int
                 newSelection = do
@@ -178,9 +171,58 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
             return $ listReplace
                       (Seq.fromList debuggeeSockets)
                       (newSelection <|> (if Prelude.null debuggeeSockets then Nothing else Just 0))
-                      knownDebuggees'
+                      llist
 
+
+myAppHandleEvent :: BChan Event -> AppState -> BrickEvent Name Event -> EventM Name (Next AppState)
+myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case brickEvent of
+  VtyEvent (Vty.EvKey KEsc []) -> halt appState
+  _ -> case majorState' of
+    Setup st knownDebuggees' knownSnapshots' -> case brickEvent of
+
+      VtyEvent event -> case event of
+        -- Connect to the selected debuggee
+        Vty.EvKey (KChar '\t') [] -> do
+          continue $ appState & majorState . setupKind %~ toggleSetup
+        Vty.EvKey KEnter _ ->
+          case st of
+            Snapshot
+              | Just (_debuggeeIx, socket) <- listSelectedElement knownSnapshots'
+              -> do
+                debuggee' <- liftIO $ snapshotConnect (view socketLocation socket)
+                continue $ appState & majorState .~ Connected
+                      { _debuggeeSocket = socket
+                      , _debuggee = debuggee'
+                      , _mode     = RunningMode  -- TODO should we query the debuggee for this?
+                  }
+            Socket
+              | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
+              -> do
+                debuggee' <- liftIO $ debuggeeConnect (view socketLocation socket)
+                continue $ appState & majorState .~ Connected
+                      { _debuggeeSocket = socket
+                      , _debuggee = debuggee'
+                      , _mode     = RunningMode  -- TODO should we query the debuggee for this?
+                      }
+            _ -> continue appState
+
+        -- Navigate through the list.
+        _ -> do
+          case st of
+            Snapshot -> do
+              newOptions <- handleListEventVi handleListEvent event knownSnapshots'
+              continue $ appState & majorState . knownSnapshots .~ newOptions
+            Socket -> do
+              newOptions <- handleListEventVi handleListEvent event knownDebuggees'
+              continue $ appState & majorState . knownDebuggees .~ newOptions
+
+      AppEvent event -> case event of
+        PollTick -> do
+          -- Poll for debuggees
+          knownDebuggees'' <- updateListFrom socketDirectory knownDebuggees'
+          knownSnapshots'' <- updateListFrom snapshotDirectory knownSnapshots'
           continue $ appState & majorState . knownDebuggees .~ knownDebuggees''
+                              & majorState . knownSnapshots .~ knownSnapshots''
         DominatorTreeReady {} ->  continue appState
         ReverseAnalysisReady {} -> continue appState
         HeapGraphReady {} -> continue appState
@@ -234,15 +276,16 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
 
       where
 
-      initialiseViews = forkIO $ do
+      _initialiseViews = forkIO $ do
         !hg <- initialTraversal debuggee'
         writeBChan eventChan (HeapGraphReady hg)
-        _ <- mkDominatorTreeIO hg
-        _ <- mkReversalTreeIO hg
+--        _ <- mkDominatorTreeIO hg
+--        _ <- mkReversalTreeIO hg
         return ()
 
       -- This is really slow on big heaps, needs to be made more efficient
       -- or some progress/timeout indicator
+      {-
       mkDominatorTreeIO hg = forkIO $ do
         !analysis <- runAnalysis debuggee' hg
         !rootClosures' <- liftIO $ mapM (getClosureDetails debuggee' (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
@@ -255,12 +298,13 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
           getChildren analysis _dbg c = do
             cs <- closureDominatees debuggee' analysis c
             fmap (("",)) <$> mapM (fillConstrDesc debuggee') cs
+            -}
 
 
-      mkReversalTreeIO hg = forkIO $ do
-        let !revg = mkReverseGraph hg
-        let revIoTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
-        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis revIoTree (lookupHeapGraph hg)))
+--      mkReversalTreeIO hg = forkIO $ do
+--        let !revg = mkReverseGraph hg
+--        let revIoTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
+--        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis revIoTree (lookupHeapGraph hg)))
 
 
       mkSavedAndGCRootsIOTree manalysis = do
@@ -268,52 +312,60 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         rootClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_roots
         raw_saved <- map ("Saved Object",) <$> GD.savedClosures debuggee'
         savedClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_saved
-        return $ (mkIOTree manalysis (savedClosures' ++ rootClosures') getChildren id
+        return $ (mkIOTree debuggee' manalysis (savedClosures' ++ rootClosures') getChildren id
                  , fmap toPtr <$> (raw_roots ++ raw_saved))
         where
           getChildren d c = do
             children <- closureReferences d c
-            mapM (mapM (fillConstrDesc d)) children
+            traverse (traverse (traverse (fillConstrDesc d))) children
 
 
-      mkIOTree :: Show c => Maybe Analysis -> [ClosureDetails pap s c] -> (Debuggee -> DebugClosure pap ConstrDesc s c -> IO [(String, DebugClosure pap ConstrDesc s c)]) -> ([ClosureDetails pap s c] -> [ClosureDetails pap s c]) -> IOTree (ClosureDetails pap s c) Name
-      mkIOTree manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
+mkIOTree :: Show c => Debuggee -> Maybe Analysis -> [ClosureDetails pap s c] -> (Debuggee -> DebugClosure pap ConstrDesc s c -> IO [(String, Maybe (DebugClosure pap ConstrDesc s c))]) -> ([ClosureDetails pap s c] -> [ClosureDetails pap s c]) -> IOTree (ClosureDetails pap s c) Name
+mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
         (\c -> do
-            children <- getChildren debuggee' (_closure c)
-            cDets <- mapM (\(lbl, child) -> getClosureDetails debuggee' manalysis (pack lbl) child) children
-            return (sort cDets)
+            case c of
+              LabelNode {} -> return []
+              _ -> do
+                children <- getChildren debuggee' (_closure c)
+                cDets <- mapM (\(lbl, child) -> getClosureDetails debuggee' manalysis (pack lbl) child) children
+                return (sort cDets)
         )
         (\selected depth closureDesc -> hBox
                 [ txt (T.replicate depth "  ")
                 , (if selected then visible . txt else txt) $
                     (if selected then "* " else "  ")
-                    <> _labelInParent closureDesc
-                    <> "   "
-                    <> pack (closureShowAddress (_closure closureDesc))
-                    <> "   "
-                    <> _pretty closureDesc
+                    <> renderInlineClosureDesc closureDesc
                 ]
         )
         (\depth _closureDesc children -> if List.null children
             then txt $ T.replicate (depth + 2) "  " <> "<Empty>"
-            else emptyWidget
-        )
+            else emptyWidget)
+
+renderInlineClosureDesc :: ClosureDetails pap s c -> Text
+renderInlineClosureDesc (LabelNode t) = t
+renderInlineClosureDesc closureDesc =
+                      _labelInParent closureDesc
+                    <> "   "
+                    <> pack (closureShowAddress (_closure closureDesc))
+                    <> "   "
+                    <> _pretty closureDesc
 completeClosureDetails :: Show c => Debuggee -> Maybe Analysis
                                             -> (Text, DebugClosure pap ConstrDescCont s c)
                                             -> IO (ClosureDetails pap s c)
 
 completeClosureDetails dbg manalysis (label, clos)  =
-  getClosureDetails dbg manalysis label =<< fillConstrDesc dbg clos
+  getClosureDetails dbg manalysis label . Just  =<< fillConstrDesc dbg clos
 
 
 
 getClosureDetails :: Show c => Debuggee
                             -> Maybe Analysis
                             -> Text
-                            -> DebugClosure pap ConstrDesc s c
+                            -> Maybe (DebugClosure pap ConstrDesc s c)
                             -> IO (ClosureDetails pap s c)
-getClosureDetails debuggee' manalysis label c = do
+getClosureDetails _ _ t Nothing = return $ LabelNode t
+getClosureDetails debuggee' manalysis label (Just c) = do
   let excSize' = closureExclusiveSize c
       retSize' = closureRetainerSize <$> manalysis <*> pure c
   sourceLoc <- closureSourceLocation debuggee' c
@@ -349,7 +401,7 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
         VtyEvent (Vty.EvKey (KFun 2) _)
           -- Only switch if the dominator view is ready
           | Just {} <- domTree -> continue $ os & treeMode .~ Dominator
-        VtyEvent (Vty.EvKey (KFun 3) _)
+{-        VtyEvent (Vty.EvKey (KFun 3) _)
           -- Only switch if the reverse view is ready
           | Just ra <- reverseA -> do
             -- Get roots from rootTree and use those for the reverse view
@@ -359,8 +411,18 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
                 rs' = map convert rs
             continue $ os & treeMode .~ Reverse
                           & treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
-        VtyEvent (Vty.EvKey (KFun 8) _) ->
-          continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
+                          -}
+--        VtyEvent (Vty.EvKey (KFun 8) _) ->
+--          continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
+
+        VtyEvent (Vty.EvKey (KFun 3) _) ->
+          continue $ os & footerMode .~ (FooterInput FProfile emptyTextCursor)
+
+        VtyEvent (Vty.EvKey (KFun 4) _) ->
+          continue $ os & footerMode .~ (FooterInput FRetainer emptyTextCursor)
+
+        VtyEvent (Vty.EvKey (KFun 5) _) ->
+          continue $ os & footerMode .~ (FooterInput FSnapshot emptyTextCursor)
 
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
@@ -373,6 +435,11 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
           Reverse -> do
             newTree <- traverseOf (_Just . reverseIOTree) (handleIOTreeEvent event) reverseA
             continue (os & treeReverse .~ newTree)
+
+          Retainer t -> do
+            newTree <- handleIOTreeEvent event t
+            continue (os & treeMode .~ Retainer newTree)
+
         _ -> continue os
 
 inputFooterHandler :: Debuggee
@@ -412,6 +479,32 @@ dispatchFooterInput dbg FSearch tc os = do
                    & treeSavedAndGCRoots %~ setIOTreeRoots root_details)
     -- Should never happen
     Nothing -> continue os
+dispatchFooterInput dbg FProfile tc os = do
+   liftIO $ profile dbg (T.unpack (rebuildTextCursor tc))
+   continue (os & resetFooter)
+dispatchFooterInput dbg FRetainer tc os = do
+   cps <- liftIO $ retainersOfConstructor dbg (T.unpack (rebuildTextCursor tc))
+   let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+   res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+   let tree = mkRetainerTree dbg res
+   continue (os & resetFooter
+                & treeMode .~ Retainer tree)
+dispatchFooterInput dbg FSnapshot tc os = do
+   liftIO $ snapshot dbg (T.unpack (rebuildTextCursor tc))
+   continue (os & resetFooter)
+
+mkRetainerTree :: Debuggee -> [[ClosureDetails PayloadCont StackCont ClosurePtr]] -> IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name
+mkRetainerTree dbg stacks = do
+  let stack_map = [ (cp, rest) | stack <- stacks, Just (cp, rest) <- [List.uncons stack]]
+      roots = map fst stack_map
+      info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((show n), Just (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
+
+      lookup_c _dbg dc = let ptr = toPtr dc
+                       in case M.lookup ptr info_map of
+                            Nothing -> return []
+                            Just ss -> return ss
+
+  mkIOTree dbg Nothing roots lookup_c id
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set footerMode FooterInfo l)

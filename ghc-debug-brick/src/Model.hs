@@ -31,7 +31,9 @@ import Lib
 initialAppState :: AppState
 initialAppState = AppState
   { _majorState = Setup
-      { _knownDebuggees = list Setup_KnownDebuggeesList [] 1
+      { _setupKind = Socket
+      , _knownDebuggees = list Setup_KnownDebuggeesList [] 1
+      , _knownSnapshots = list Setup_KnownSnapshotsList [] 1
       }
   }
 
@@ -58,10 +60,20 @@ instance Ord SocketInfo where
     -- Compare time first
     compare t1 t2 <> compare s1 s2
 
+type SnapshotInfo = SocketInfo
+
+data SetupKind = Socket | Snapshot
+
+toggleSetup :: SetupKind -> SetupKind
+toggleSetup Socket = Snapshot
+toggleSetup Snapshot = Socket
+
 data MajorState
   -- | We have not yet connected to a debuggee.
   = Setup
-    { _knownDebuggees :: GenericList Name Seq SocketInfo
+    { _setupKind :: SetupKind
+    , _knownDebuggees :: GenericList Name Seq SocketInfo
+    , _knownSnapshots :: GenericList Name Seq SnapshotInfo
     }
 
   -- | Connected to a debuggee
@@ -82,17 +94,21 @@ data ClosureDetails pap s c = ClosureDetails
   , _excSize :: Size
   , _retainerSize :: Maybe RetainerSize
   }
+  | LabelNode { _labelInParent :: Text }
 
-data TreeMode = Dominator | SavedAndGCRoots | Reverse
+data TreeMode = Dominator | SavedAndGCRoots | Reverse | Retainer (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
 
 data FooterMode = FooterInfo
                 | FooterMessage Text
                 | FooterInput FooterInputMode TextCursor
 
-data FooterInputMode = FSearch
+data FooterInputMode = FSearch | FProfile | FRetainer | FSnapshot
 
 formatFooterMode :: FooterInputMode -> Text
 formatFooterMode FSearch = "search: "
+formatFooterMode FProfile = "filename: "
+formatFooterMode FRetainer = "constructor name: "
+formatFooterMode FSnapshot = "snapshot name: "
 
 data ConnectedMode
   -- | Debuggee is running
@@ -135,6 +151,7 @@ pauseModeTree k (OperationalState mode _ _footer dom roots reverseA _) = case mo
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots
   Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
+  Retainer r -> k r
 
 makeLenses ''AppState
 makeLenses ''MajorState

@@ -1,5 +1,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Common where
 
 import qualified Brick.Types as T

@@ -9,15 +9,19 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Lib
   ( -- * Running/Connecting to a debuggee
     Debuggee
   , debuggeeRun
   , debuggeeConnect
+  , snapshotConnect
   , debuggeeClose
   , withDebuggeeRun
   , withDebuggeeConnect
   , socketDirectory
+  , snapshotDirectory
 
     -- * Pause/Resume
   , GD.pause
@@ -56,6 +60,15 @@ module Lib
   , reverseClosureReferences
   , lookupHeapGraph
 
+    -- * Profiling
+  , profile
+
+    -- * Retainers
+  , retainersOfConstructor
+
+    -- * Snapshot
+  , snapshot
+
   -- * Types
   , Ptr(..)
   , toPtr
@@ -77,16 +90,20 @@ import qualified Data.Graph as G
 import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified GHC.Debug.Types as GD
 import           GHC.Debug.Types hiding (Closure, DebugClosure)
-import           GHC.Debug.Convention (socketDirectory)
+import           GHC.Debug.Convention (socketDirectory, snapshotDirectory)
 import           GHC.Debug.Client.Monad (request, run, Debuggee)
 import qualified GHC.Debug.Client.Monad as GD
 import qualified GHC.Debug.Client.Query as GD
+import qualified GHC.Debug.Profile as GD
+import qualified GHC.Debug.Retainers as GD
+import qualified GHC.Debug.Snapshot as GD
 import qualified GHC.Debug.Types.Graph as HG
 import qualified GHC.Debug.Dominators as HG
 import qualified Data.HashMap.Strict as HM
 import Data.Tree
 import Control.Monad
-
+import System.FilePath
+import System.Directory
 
 data Analysis = Analysis
   { analysisDominatorRoots :: ![ClosurePtr]
@@ -164,6 +181,9 @@ debuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO Debuggee
 debuggeeConnect socketName = GD.debuggeeConnect socketName
 
+snapshotConnect :: FilePath -> IO Debuggee
+snapshotConnect snapshotName = GD.snapshotInit snapshotName
+
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()
 debuggeeClose = GD.debuggeeClose
@@ -187,6 +207,26 @@ savedClosures e = run e $ do
   return $ zipWith Closure
             closurePtrs
             closures
+
+profile :: Debuggee -> FilePath -> IO ()
+profile dbg fp = do
+  c <- run dbg $ do
+    roots <- GD.gcRoots
+    GD.censusClosureType roots
+  GD.writeCensusByClosureType fp c
+
+snapshot :: Debuggee -> FilePath -> IO ()
+snapshot dbg fp = do
+  dir <- snapshotDirectory
+  createDirectoryIfMissing True dir
+  GD.makeSnapshot dbg (dir </> fp)
+
+retainersOfConstructor :: Debuggee -> String -> IO [[Closure]]
+retainersOfConstructor dbg con_name = do
+  run dbg $ do
+    roots <- GD.gcRoots
+    stack <- GD.findRetainersOfConstructor (Just 100) roots con_name
+    traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 -- -- | Request the description for an info table.
 -- -- The `InfoTablePtr` is just used for the equality
@@ -217,7 +257,10 @@ toPtr :: DebugClosure p cd s c -> Ptr
 toPtr (Closure cp _) = CP cp
 toPtr (Stack sc _)   = SP sc
 
-data Ptr = CP ClosurePtr | SP StackCont
+data Ptr = CP ClosurePtr | SP StackCont deriving (Eq, Ord)
+
+deriving instance Eq StackCont
+deriving instance Ord StackCont
 
 dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr)
 dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceClosure cp)
@@ -254,27 +297,34 @@ closureSourceLocation e (Closure _ c) = run e $ do
   request (RequestSourceInfo (tableId (info (noSize c))))
 
 -- | Get the directly referenced closures (with a label) of a closure.
-closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, Closure)]
+closureReferences :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, Maybe Closure)]
 closureReferences e (Stack _ stack) = run e $ do
-  let lblAndPtrs = [ ( "Frame " ++ show frameIx ++ " Pointer " ++ show ptrIx
-                     , ptr
-                     )
+  let action (GD.SPtr ptr) = ("Pointer", Just . Closure ptr <$> GD.dereferenceClosure ptr)
+      action (GD.SNonPtr dat) = ("Data:" ++ show dat, return Nothing)
+
+      frame_items frame = ("Info: " ++ show (tableId (frame_info frame)), return Nothing) :
+                          map action (GD.values frame)
+
+      add_frame_ix ix (lbl, x) = ("Frame " ++ show ix ++ " " ++ lbl, x)
+  let lblAndPtrs = [ map (add_frame_ix frameIx) (frame_items frame)
                       | (frameIx, frame) <- zip [(0::Int)..] (GD.getFrames stack)
-                      , (ptrIx  , ptr  ) <- zip [(0::Int)..] [ptr | GD.SPtr ptr <- GD.values frame]
                    ]
-  closures <- GD.dereferenceClosures (snd <$> lblAndPtrs)
+--  traverse GD.dereferenceClosures (snd <$> lblAndPtrs)
+  traverse (traverse id) (concat lblAndPtrs)
+  {-
   return $ zipWith (\(lbl,ptr) c -> (lbl, Closure ptr c))
             lblAndPtrs
             closures
+            -}
 closureReferences e (Closure _ closure) = run e $ do
   let refPtrs = closureReferencesAndLabels (unDCS closure)
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
       refClosure' <- GD.dereferenceClosure cPtr
-      return (label, Closure cPtr refClosure')
+      return (label, Just $ Closure cPtr refClosure')
     Right sPtr -> do
       refStack' <- GD.dereferenceStack sPtr
-      return (label, Stack sPtr refStack')
+      return (label, Just $ Stack sPtr refStack')
 
 reverseClosureReferences :: HG.HeapGraph Size
                          -> HG.ReverseGraph
