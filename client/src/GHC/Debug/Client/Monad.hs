@@ -34,12 +34,9 @@ import System.Process
 import System.Environment
 import GHC.Debug.Client.Monad.Class
 import GHC.Debug.Types (Request(..))
-import qualified GHC.Debug.Client.Monad.Haxl as H
 import qualified GHC.Debug.Client.Monad.Simple as S
 import System.IO
 
--- Modify this to switch between the haxl/non-haxl implementations
--- type DebugM = H.DebugM
 type DebugM = S.DebugM
 
 newtype Debuggee = Debuggee { debuggeeEnv :: DebugEnv DebugM }
