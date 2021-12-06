@@ -25,7 +25,6 @@ executable debugger
                      , text
                      , bytestring
   default-language:    Haskell2010
-  build-tool-depends: dyepack-test:dyepack-test
   default-extensions: ApplicativeDo
 
 test-suite system-test
