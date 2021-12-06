@@ -60,11 +60,11 @@ let
     repo = "ghc-utils";
     rev = "8ff33a41efdab01cb94e25648bc2a25864995466";
     sha256 = "0s745qvi26lbisz1y6zxdz0c10f69pvlrb87myv229f5k0vdp3vq";
-  }) {};
+  }) { nixpkgs = np; };
 
 in
-  np2.mkShell { buildInputs = [ghc-utils
-                               ghc
+  np2.mkShell { buildInputs = [#ghc-utils
+                               #ghc
                                fixedCabal
                                np.linuxPackages.perf
                                np2.ncurses
