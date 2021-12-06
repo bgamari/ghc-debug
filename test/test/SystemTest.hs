@@ -27,6 +27,7 @@ import Data.List.Extra
 import Data.List.NonEmpty(NonEmpty(..))
 import System.IO.Temp
 import System.FilePath
+import Test.Hspec
 
 spec :: SpecWith ()
 spec = do
