@@ -69,6 +69,7 @@ module Lib
 
     -- * Retainers
   , retainersOfConstructor
+  , retainersOfConstructorExact
 
     -- * Snapshot
   , snapshot
@@ -230,6 +231,13 @@ retainersOfConstructor dbg con_name = do
   run dbg $ do
     roots <- GD.gcRoots
     stack <- GD.findRetainersOfConstructor (Just 100) roots con_name
+    traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
+
+retainersOfConstructorExact :: Debuggee -> String -> IO [[Closure]]
+retainersOfConstructorExact dbg con_name = do
+  run dbg $ do
+    roots <- GD.gcRoots
+    stack <- GD.findRetainersOfConstructorExact (Just 100) roots con_name
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 -- -- | Request the description for an info table.

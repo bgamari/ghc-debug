@@ -107,12 +107,13 @@ data FooterMode = FooterInfo
                 | FooterMessage Text
                 | FooterInput FooterInputMode TextCursor
 
-data FooterInputMode = FSearch | FProfile | FRetainer | FSnapshot
+data FooterInputMode = FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
 
 formatFooterMode :: FooterInputMode -> Text
 formatFooterMode FSearch = "search: "
 formatFooterMode FProfile = "filename: "
 formatFooterMode FRetainer = "constructor name: "
+formatFooterMode FRetainerExact = "closure name: "
 formatFooterMode FSnapshot = "snapshot name: "
 
 data ConnectedMode

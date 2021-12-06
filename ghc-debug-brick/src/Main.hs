@@ -101,6 +101,7 @@ myAppDraw (AppState majorState') =
               , txt "Saved/GC Roots  (F1)"
               , txt "Write Profile   (F3)"
               , txt "Find Retainers  (F4)"
+              , txt "Find Retainers (Exact)  (F6)"
               , txt "Take Snapshot   (F5)"
               ])
             , -- Current closure details
@@ -478,6 +479,9 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
         VtyEvent (Vty.EvKey (KFun 4) _) ->
           continue $ os & footerMode .~ (FooterInput FRetainer emptyTextCursor)
 
+        VtyEvent (Vty.EvKey (KFun 6) _) ->
+          continue $ os & footerMode .~ (FooterInput FRetainerExact emptyTextCursor)
+
         VtyEvent (Vty.EvKey (KFun 5) _) ->
           continue $ os & footerMode .~ (FooterInput FSnapshot emptyTextCursor)
 
@@ -541,6 +545,13 @@ dispatchFooterInput dbg FProfile tc os = do
    continue (os & resetFooter)
 dispatchFooterInput dbg FRetainer tc os = do
    cps <- liftIO $ retainersOfConstructor dbg (T.unpack (rebuildTextCursor tc))
+   let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+   res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+   let tree = mkRetainerTree dbg res
+   continue (os & resetFooter
+                & treeMode .~ Retainer tree)
+dispatchFooterInput dbg FRetainerExact tc os = do
+   cps <- liftIO $ retainersOfConstructorExact dbg (T.unpack (rebuildTextCursor tc))
    let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
    res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
    let tree = mkRetainerTree dbg res

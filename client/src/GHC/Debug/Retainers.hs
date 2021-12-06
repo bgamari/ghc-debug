@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainers, addLocationToStack, displayRetainerStack) where
+module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainers, addLocationToStack, displayRetainerStack) where
 
 import GHC.Debug.Client
 import Control.Monad.State
@@ -32,6 +32,16 @@ findRetainersOfConstructor limit roots con_name =
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == con_name
         _ -> return $ False
+
+findRetainersOfConstructorExact :: Maybe Int -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
+findRetainersOfConstructorExact limit roots clos_name =
+  findRetainers limit roots go
+  where
+    go cp sc = do
+      loc <- getSourceInfo (tableId (info (noSize sc)))
+      case loc of
+        Nothing -> return False
+        Just loc -> return $ infoLabel loc == clos_name
 
 -- | From the given roots, find any path to one of the given pointers.
 -- Note: This function can be quite slow! The first argument is a limit to
