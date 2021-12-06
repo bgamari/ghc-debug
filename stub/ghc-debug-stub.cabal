@@ -20,10 +20,6 @@ flag trace
   Default:     False
   Manual:      True
 
-flag testexes
-  Description:   Build test executables
-  Default:       False
-
 library
   exposed-modules:     GHC.Debug.Stub
   hs-source-dirs:      src
@@ -40,24 +36,3 @@ library
   if flag(trace)
     cpp-options: -DTRACE
 
-executable debug-test
-  if flag(testexes)
-    buildable: True
-  else
-    buildable: False
-  main-is:             Test.hs
-  ghc-options:         -threaded  -g3 -O0 -finfo-table-map -fdistinct-constructor-tables
-  build-depends:       base,
-                       ghc-debug-stub, containers, unordered-containers
-  default-language:    Haskell2010
-
-executable large-thunk
-  if flag(testexes)
-    buildable: True
-  else
-    buildable: False
-  main-is:             LargeThunk.hs
-  ghc-options:         -threaded -g3 -O2 -finfo-table-map -fdistinct-constructor-tables -rtsopts
-  build-depends:       base,
-                       ghc-debug-stub, containers, deepseq
-  default-language:    Haskell2010

@@ -25,7 +25,7 @@ executable debugger
                      , text
                      , bytestring
   default-language:    Haskell2010
-  build-tool-depends: ghc-debug-stub:debug-test, dyepack-test:dyepack-test
+  build-tool-depends: dyepack-test:dyepack-test
   default-extensions: ApplicativeDo
 
 test-suite system-test
@@ -47,12 +47,13 @@ test-suite system-test
     , text
     , filepath
     , temporary
+    , hspec
   other-modules:
         SystemTest
       , Server
   default-language: Haskell2010
   ghc-options:         -threaded -rtsopts
-  build-tool-depends: ghc-debug-stub:debug-test
+  build-tool-depends: ghc-debugger:debug-test
                     , ghc-debugger:save-one-pause
                     , ghc-debugger:save-ipe-pause
                     , ghc-debugger:clock
@@ -114,3 +115,18 @@ executable cycles
                      , ghc-debug-stub
   default-language:    Haskell2010
 
+executable debug-test
+  main-is:             Test.hs
+  hs-source-dirs:      test-progs
+  ghc-options:         -threaded  -g3 -O0 -finfo-table-map -fdistinct-constructor-tables
+  build-depends:       base,
+                       ghc-debug-stub, containers, unordered-containers
+  default-language:    Haskell2010
+
+executable large-thunk
+  main-is:             LargeThunk.hs
+  hs-source-dirs:      test-progs
+  ghc-options:         -threaded -g3 -O2 -finfo-table-map -fdistinct-constructor-tables -rtsopts
+  build-depends:       base,
+                       ghc-debug-stub, containers, deepseq
+  default-language:    Haskell2010
