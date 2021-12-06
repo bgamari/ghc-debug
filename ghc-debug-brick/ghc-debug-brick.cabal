@@ -1,6 +1,6 @@
 cabal-version:       2.4
 name:                ghc-debug-brick
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis: A simple TUI using ghc-debug
 description: A simple TUI using ghc-debug
 -- bug-reports:
@@ -28,14 +28,14 @@ executable ghc-heap-view
                      , containers
                      , directory
                      , filepath
-                     , ghc-debug-client
                      , microlens-platform
                      , text
                      , vty
                      , time
                      , microlens
-                     , ghc-debug-common
-                     , ghc-debug-convention
+                     , ghc-debug-client == 0.2.0.0
+                     , ghc-debug-common == 0.2.0.0
+                     , ghc-debug-convention == 0.2.0.0
                      , unordered-containers
                      , exceptions
   hs-source-dirs:    src

@@ -1,5 +1,9 @@
 # Revision history for convention
 
-## 0.1.0.0 -- YYYY-mm-dd
+## 0.2.0.0 -- 2021-12-06
 
-* First version. Released on an unsuspecting world.
+* Add a snapshots convention folder.
+
+## 0.1.0.0 -- 2021-06-14
+
+* First version.
