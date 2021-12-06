@@ -99,7 +99,7 @@ spec = do
           (c:_) <- run d (savedObjects >>= dereferenceClosures)
           let itptr = tableId . info . noSize $ c
           cd <- run d (getSourceInfo itptr)
-          cd `shouldBe` Just (SourceInformation {infoName = "sat_s2jk_info", infoClosureType = THUNK, infoType = "Integer", infoLabel = "main", infoModule = "Main", infoPosition = "test-progs/SaveIPEPause.hs:13:21-26"})
+          fmap infoPosition cd `shouldBe` Just "test-progs/SaveIPEPause.hs:13:21-26"
 
     describe "RequestBlocks" $
       it "should return all blocks" $
