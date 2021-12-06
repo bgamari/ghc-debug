@@ -4,6 +4,7 @@
 {-# LANGUAGE GHCForeignImportPrim #-}
 {-# LANGUAGE UnliftedFFITypes #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeApplications #-}
 -- | Low-level functions for decoding a closure representation from the raw
 -- bytes
 module GHC.Debug.Decode ( decodeClosure
@@ -267,7 +268,7 @@ decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $
                         id
                         absurd
                         mkClosurePtr . convertClosure itb
-          $ fmap (\(W# w) -> (W64# w)) r
+          $ fmap (fromIntegral @Word @Word64) r
 
 
 fixTNTC :: Ptr a -> Ptr StgInfoTable
