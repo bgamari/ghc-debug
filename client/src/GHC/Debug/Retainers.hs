@@ -41,7 +41,9 @@ findRetainersOfConstructorExact limit roots clos_name =
       loc <- getSourceInfo (tableId (info (noSize sc)))
       case loc of
         Nothing -> return False
-        Just loc -> return $ infoLabel loc == clos_name
+        Just loc ->
+
+          return $ (infoName loc) == clos_name
 
 -- | From the given roots, find any path to one of the given pointers.
 -- Note: This function can be quite slow! The first argument is a limit to
