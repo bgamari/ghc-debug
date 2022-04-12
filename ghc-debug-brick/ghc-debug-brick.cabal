@@ -21,10 +21,12 @@ executable ghc-heap-view
                      , TextCursor
                      , Common
                      , Lib
+                     , Cursor.Types
+                     , Cursor.Text
+                     , Cursor.List
   -- other-extensions:
   build-depends:       base >=4.10 && <5
                      , brick
-                     , cursor
                      , containers
                      , directory
                      , filepath
@@ -32,6 +34,7 @@ executable ghc-heap-view
                      , text
                      , vty
                      , time
+                     , deepseq
                      , microlens
                      , ghc-debug-client == 0.2.0.0
                      , ghc-debug-common == 0.2.0.0
