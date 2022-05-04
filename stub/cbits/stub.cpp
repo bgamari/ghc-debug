@@ -609,7 +609,6 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       }
       case CMD_BLOCKS:
         {
-        printf("BD");
         listAllBlocks(list_blocks_callback, (void *) &resp);
         resp.finish(RESP_OKAY);
         break;
