@@ -72,6 +72,8 @@ import qualified Data.ByteString as BS
 import Data.Hashable
 import Data.Word
 
+import GHC.Debug.Utils
+
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -159,9 +161,9 @@ calculateStackLen siz offset (ClosurePtr p) (StackPtr sp) =
     )
     - sp -- Minus current Sp
 
-printBS :: BS.ByteString -> String
+printBS :: HasCallStack => BS.ByteString -> String
 -- Not technically all ClosurePtr but good for the show instance
-printBS bs = show (runGet (many (get @ClosurePtr)) (BSL.fromStrict bs))
+printBS bs = show (runGet_ (many (get @ClosurePtr)) (BSL.fromStrict bs))
 
 printStack :: RawStack -> String
 printStack (RawStack s) = printBS s
@@ -295,7 +297,7 @@ untagClosurePtr :: ClosurePtr -> ClosurePtr
 untagClosurePtr (ClosurePtr w) = UntaggedClosurePtr (w .&. complement tAG_MASK)
 
 getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
-getInfoTblPtr (RawClosure bs) = runGet (isolate 8 get) (BSL.fromStrict bs)
+getInfoTblPtr (RawClosure bs) = runGet_ (isolate 8 get) (BSL.fromStrict bs)
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
 newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)

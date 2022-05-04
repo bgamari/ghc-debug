@@ -47,10 +47,10 @@ import Data.Hashable
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
+import GHC.Debug.Utils
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
-import Debug.Trace
 
 -- | The decision about whether to fork the running process or
 -- pause it running whilst we are debugging it.
@@ -439,7 +439,7 @@ data Stream a r = Next !a (Stream a r)
 
 readFrames :: Handle -> IO (Stream BS.ByteString (Maybe Error))
 readFrames hdl = do
-    (respLen, status) <- runGet frameHeader <$> BSL.hGet hdl 6
+    (respLen, status) <- runGet_ frameHeader <$> BSL.hGet hdl 6
     respBody <- BS.hGet hdl (fromIntegral respLen)
     case status of
       OkayContinues -> do rest <- readFrames hdl
@@ -467,5 +467,5 @@ doRequest :: MVar Handle -> Request a -> IO a
 doRequest mhdl req = withMVar mhdl $ \hdl -> do
     BSL.hPutStr hdl $ runPut $ putRequest req
     bframes <- readFrames hdl
-    let x = runGet (getResponse req) (concatStream bframes)
+    let x = runGet_ (getResponse req) (concatStream bframes)
     return x

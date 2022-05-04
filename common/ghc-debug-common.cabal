@@ -22,6 +22,7 @@ library
                        GHC.Debug.Types,
                        GHC.Debug.Types.Closures,
                        GHC.Debug.Types.Graph,
+                       GHC.Debug.Utils,
                        GHC.Debug.Types.Ptr
   build-depends:       base >=4.12 && <4.14,
                        bytestring ^>=0.11,
