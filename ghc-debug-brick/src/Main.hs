@@ -31,6 +31,8 @@ import System.FilePath
 import Data.Text (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Map as M
+import Data.Bifunctor
+import Data.Maybe
 
 import IOTree
 import TextCursor
@@ -328,7 +330,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
 
 
       mkSavedAndGCRootsIOTree manalysis = do
-        raw_roots <- map ("GC Roots",) <$> GD.rootClosures debuggee'
+        raw_roots <- take 1000 . map ("GC Roots",) <$> GD.rootClosures debuggee'
         rootClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_roots
         raw_saved <- map ("Saved Object",) <$> GD.savedClosures debuggee'
         savedClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_saved
@@ -470,8 +472,8 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
             continue $ os & treeMode .~ Reverse
                           & treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
                           -}
---        VtyEvent (Vty.EvKey (KFun 8) _) ->
---          continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
+        VtyEvent (Vty.EvKey (KFun 8) _) ->
+          continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
 
         VtyEvent (Vty.EvKey (KFun 3) _) ->
           continue $ os & footerMode .~ (FooterInput FProfile emptyTextCursor)
@@ -525,26 +527,23 @@ dispatchFooterInput :: Debuggee
                     -> OperationalState
                     -> EventM n (Next OperationalState)
 dispatchFooterInput dbg FSearch tc os = do
-  case view heapGraph os of
-    Just hg -> do
-      -- limit to 100 results
-      let new_roots = take 100 $ map (\cp -> ("Searched", CP (hgeClosurePtr cp)))
-                        (findConstructors (T.unpack (rebuildTextCursor tc)) hg)
-      let manalysis = view getDominatorAnalysis <$> view treeDominator os
-      raw_roots <- liftIO $ mapM (traverse (dereferencePtr dbg)) new_roots
-      root_details <-
-        liftIO $ mapM (completeClosureDetails dbg manalysis) raw_roots
-      continue (os & resetFooter
-                   & rootsFrom .~ SearchedRoots new_roots
-                   & treeMode .~ SavedAndGCRoots
-                   & treeSavedAndGCRoots %~ setIOTreeRoots root_details)
-    -- Should never happen
-    Nothing -> continue os
+   cps <- map head <$> (liftIO $ retainersOfConstructor Nothing dbg (T.unpack (rebuildTextCursor tc)))
+   let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+   res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
+   let new_roots = map (second toPtr) cps'
+       root_details  = res
+   continue (os & resetFooter
+                & rootsFrom .~ SearchedRoots new_roots
+                & treeMode .~ SavedAndGCRoots
+                & treeSavedAndGCRoots %~ setIOTreeRoots root_details)
 dispatchFooterInput dbg FProfile tc os = do
    liftIO $ profile dbg (T.unpack (rebuildTextCursor tc))
    continue (os & resetFooter)
 dispatchFooterInput dbg FRetainer tc os = do
-   cps <- liftIO $ retainersOfConstructor dbg (T.unpack (rebuildTextCursor tc))
+   let roots = mapMaybe go (map snd (currentRoots (view rootsFrom os)))
+       go (CP p) = Just p
+       go (SP p)   = Nothing
+   cps <- liftIO $ retainersOfConstructor (Just roots) dbg (T.unpack (rebuildTextCursor tc))
    let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
    res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
    let tree = mkRetainerTree dbg res

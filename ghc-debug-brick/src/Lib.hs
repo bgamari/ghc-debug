@@ -226,10 +226,10 @@ snapshot dbg fp = do
   createDirectoryIfMissing True dir
   GD.makeSnapshot dbg (dir </> fp)
 
-retainersOfConstructor :: Debuggee -> String -> IO [[Closure]]
-retainersOfConstructor dbg con_name = do
+retainersOfConstructor :: Maybe [ClosurePtr] -> Debuggee -> String -> IO [[Closure]]
+retainersOfConstructor mroots dbg con_name = do
   run dbg $ do
-    roots <- GD.gcRoots
+    roots <- maybe GD.gcRoots return mroots
     stack <- GD.findRetainersOfConstructor (Just 100) roots con_name
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
