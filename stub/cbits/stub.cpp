@@ -322,11 +322,31 @@ static void write_string(Response& resp, const char * s){
 
 
 static void write_block(Response * resp, bdescr * bd){
-  resp->write(bd->flags);
-  resp->write(bd->start);
-  uint32_t len_payload = htonl(BLOCK_SIZE * bd->blocks);
+  bdescr * real_bd;
+  // TODO, need a special case here as well for LARGE objects?
+  if (bd->flags & BF_COMPACT){
+    bdescr *object_block, *head_block;
+
+    object_block = bd;
+
+    ASSERT((object_block->flags & BF_COMPACT) != 0);
+
+    if (object_block->blocks == 0)
+        head_block = object_block->link;
+    else
+        head_block = object_block;
+
+    ASSERT((head_block->flags & BF_COMPACT) != 0);
+
+    real_bd = head_block;
+  } else {
+    real_bd = bd;
+  }
+  resp->write(real_bd->flags);
+  resp->write(real_bd->start);
+  uint32_t len_payload = htonl(BLOCK_SIZE * real_bd->blocks);
   resp->write(len_payload);
-  resp->write((const char *) bd->start, BLOCK_SIZE * bd->blocks);
+  resp->write((const char *) real_bd->start, BLOCK_SIZE * real_bd->blocks);
 }
 
 static void write_blocks(Response * resp, bdescr * bd){
