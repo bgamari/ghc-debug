@@ -1,6 +1,6 @@
 cabal-version:       3.0
 name:                ghc-debug-common
-version:             0.2.0.0
+version:             0.2.1.0
 synopsis:            Connect to a socket created by ghc-debug-stub and analyse
                      the heap of the debuggee program.
 description:         Connect to a socket created by ghc-debug-stub and analyse
@@ -24,7 +24,7 @@ library
                        GHC.Debug.Types.Graph,
                        GHC.Debug.Utils,
                        GHC.Debug.Types.Ptr
-  build-depends:       base >=4.12 && <4.14,
+  build-depends:       base >=4.16 && < 5,
                        bytestring ^>=0.11,
                        binary ^>=0.8,
                        array ^>= 0.5,
@@ -37,7 +37,7 @@ library
                        transformers ^>= 0.5,
                        dom-lt ^>= 0.2,
                        unordered-containers ^>= 0.2,
-                       ghc-debug-convention ^>= 0.2,
+                       ghc-debug-convention == 0.2.0.0,
                        deepseq ^>= 1.4
 
   hs-source-dirs:      src
