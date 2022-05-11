@@ -38,8 +38,8 @@ test-suite system-test
     , tasty
     , tasty-hspec
     , process
-    , ghc-debug-client == 0.2.0.0
-    , ghc-debug-common == 0.2.0.0
+    , ghc-debug-client == 0.2.1.0
+    , ghc-debug-common == 0.2.1.0
     , directory
     , async
     , extra
