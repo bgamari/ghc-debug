@@ -116,15 +116,7 @@ and inspect the RTS.
 
 # How do I use it?
 
-The project needs to built with a development version of GHC from
-[this](https://gitlab.haskell.org/ghc/ghc/tree/wip/ghc-debug-ghc) branch. Then you
-can use normal cabal commands to build this library. The easiest way to do this
-is with nix. The nix shell uses the development version of GHC so you don't have to build it yourself.
-
-```
-$ nix-shell
-$ cabal new-build all
-```
+You can build the libraries directly from hackage.
 
 ### Automated Testing
 
