@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- Convert a GenClosure to a DebugClosure -}
 module GHC.Debug.Decode.Convert where
 
@@ -40,10 +41,14 @@ convertClosure itb g =
     -}
     GHC.OtherClosure _ a2 a3           -> OtherClosure itb a2 a3
     GHC.WeakClosure _ a2 a3 a4 a5 a6   ->
+#if __GLASGOW_HASKELL__ >= 905
+      let w_link = a6
+#else
       -- nullPtr check
       let w_link = if a6 == 0
                   then Nothing
                   else Just a6
+#endif
       in WeakClosure itb a2 a3 a4 a5 w_link
     GHC.UnsupportedClosure _           -> UnsupportedClosure itb
     c -> error ("Unexpected closure type: " ++ show c)
