@@ -725,7 +725,7 @@ void start(const char* socket_path) {
     }
     fflush(stdout);
     while (true) {
-        socklen_t len;
+        socklen_t len = sizeof(remote);
         int s2 = accept(s, (struct sockaddr *) &remote, &len);
         if (s2 == -1) {
           barf("accept failed %s", strerror(errno));
