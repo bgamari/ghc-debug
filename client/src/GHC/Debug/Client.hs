@@ -12,7 +12,7 @@ p1 e = do
         precacheBlocks
         (r:_) <- gcRoots
         buildHeapGraph (Just 10) r
-  putStrLn (ppHeapGraph (const "") h)
+  putStrLn (ppHeapGraph (const "") g)
 @
 
 -}
