@@ -216,12 +216,23 @@ decodeStandardLayout extra k (infot, _) (_, rc) = decodeFromBS rc $ do
   cwords <- replicateM (fromIntegral (nptrs (decodedTable infot))) getWord
   return $ k pts (map fromIntegral cwords)
 
+decodeArrWords :: (StgInfoTableWithPtr, b)
+               -> (a, RawClosure) -> DebugClosureWithExtra Size pap string s b1
+decodeArrWords  (infot, _) (_, rc) = decodeFromBS rc $ do
+  _itbl <- skipClosureHeader
+  bytes <- getWord64le
+  payload <- replicateM (fromIntegral bytes `div` 8) getWord
+  return $ GHC.Debug.Types.Closures.ArrWordsClosure infot (fromIntegral bytes) (map fromIntegral payload)
+
+
 decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeClosure i@(itb, _) c
   -- MP: It was far easier to implement the decoding of these closures in
   -- ghc-heap using binary rather than patching GHC and going through that
   -- dance. I think in the future it's better to do this for all the
   -- closures... it's simpler and probably much faster.
+--  | traceShow itb False = undefined
+  | (StgInfoTable { tipe = ARR_WORDS }) <- decodedTable itb = decodeArrWords i c
   | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
   | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
   | (StgInfoTable { tipe = TVAR }) <- decodedTable itb = decodeTVarClosure i c
