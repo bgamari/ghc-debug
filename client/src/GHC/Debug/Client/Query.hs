@@ -151,9 +151,15 @@ dereferenceClosure cp
   | not (heapAlloced cp) = dereferenceClosureDirect cp
   | otherwise = do
       rc <-  requestBlock (LookupClosure cp)
-      let it = getInfoTblPtr rc
-      st_it <- request (RequestInfoTable it)
-      return $ decodeClosure st_it (cp, rc)
+      if rawClosureSize rc < 8
+        then do
+          res <- dereferenceClosureDirect cp
+          traceShowM ("Warning!!: block decoding failed, report this as a bug:" ++ show (cp, res))
+          return res
+        else do
+          let it = getInfoTblPtr rc
+          st_it <- request (RequestInfoTable it)
+          return $ decodeClosure st_it (cp, rc)
 
 -- | Fetch all the blocks from the debuggee and add them to the block cache
 precacheBlocks :: DebugM [RawBlock]
