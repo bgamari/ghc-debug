@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainers, addLocationToStack, displayRetainerStack) where
+module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack') where
 
 import GHC.Debug.Client
 import Control.Monad.State
@@ -90,12 +90,33 @@ addLocationToStack r = do
   where
     getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
 
+addLocationToStack' :: [ClosurePtr] -> DebugM [(ClosurePtr, SizedClosureC, Maybe SourceInformation)]
+addLocationToStack' r = do
+  cs <- dereferenceClosures r
+  cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+  locs <- mapM getSourceLoc cs'
+  return $ (zip3 r cs' locs)
+  where
+    getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
+
 displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
 displayRetainerStack rs = do
       let disp (d, l) =
             (ppClosure ""  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
             where
-              tdisplay sl = infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
+              tdisplay sl = infoName sl ++ ":" ++ infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
+          do_one k (l, stack) = do
+            putStrLn (show k ++ "-------------------------------------")
+            print l
+            mapM (putStrLn . disp) stack
+      zipWithM_ do_one [0 :: Int ..] rs
+
+displayRetainerStack' :: [(String, [(ClosurePtr, SizedClosureC, Maybe SourceInformation)])] -> IO ()
+displayRetainerStack' rs = do
+      let disp (p, d, l) =
+            show p ++ ": " ++ (ppClosure ""  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
+            where
+              tdisplay sl = infoName sl ++ ":" ++ infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
           do_one k (l, stack) = do
             putStrLn (show k ++ "-------------------------------------")
             print l
