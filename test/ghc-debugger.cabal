@@ -27,6 +27,22 @@ executable debugger
   default-language:    Haskell2010
   default-extensions: ApplicativeDo
 
+executable string-analysis
+  main-is:             StringAnalysis.hs
+  ghc-options:         -threaded -rtsopts -eventlog "-with-rtsopts=-N -qn1"
+  build-depends:       base
+                     , ghc-debug-client
+                     , ghc-debug-common
+                     , ghc-heap
+                     , containers
+                     , extra
+                     , process
+                     , mtl
+                     , text
+                     , bytestring
+  default-language:    Haskell2010
+  default-extensions: ApplicativeDo
+
 test-suite system-test
   type: exitcode-stdio-1.0
   main-is: TestSetup.hs
