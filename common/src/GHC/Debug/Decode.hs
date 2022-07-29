@@ -221,7 +221,7 @@ decodeArrWords :: (StgInfoTableWithPtr, b)
 decodeArrWords  (infot, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
   bytes <- getWord64le
-  payload <- replicateM (fromIntegral bytes `div` 8) getWord
+  payload <- replicateM (ceiling (fromIntegral bytes / 8)) getWord
   return $ GHC.Debug.Types.Closures.ArrWordsClosure infot (fromIntegral bytes) (map fromIntegral payload)
 
 
