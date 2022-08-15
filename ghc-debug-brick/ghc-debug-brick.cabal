@@ -26,7 +26,7 @@ executable ghc-heap-view
                      , Cursor.List
   -- other-extensions:
   build-depends:       base >=4.16 && <5
-                     , brick
+                     , brick < 1
                      , containers
                      , directory
                      , filepath
