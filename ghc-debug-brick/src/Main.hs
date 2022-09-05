@@ -55,11 +55,12 @@ data Event
 
 drawSetup :: Text -> Text -> GenericList Name Seq.Seq SocketInfo -> Widget Name
 drawSetup herald other_herald vals =
-
       let nKnownDebuggees = Seq.length $ (vals ^. listElementsL)
       in mainBorder "ghc-debug" $ vBox
-        [ txt $ "Select a " <> herald <> " to debug (" <> pack (show nKnownDebuggees) <> " found):"
-        , txt $ "Select " <> other_herald <> " with <TAB>"
+        [ hBox
+          [ txt $ "Select a " <> herald <> " to debug (" <> pack (show nKnownDebuggees) <> " found):"
+          , padLeft Max (txt $ "Toggle " <> other_herald <> " view with <TAB>")
+          ]
         , renderList
             (\elIsSelected socketPath -> hBox
                 [ txt $ if elIsSelected then "*" else " "
@@ -71,6 +72,7 @@ drawSetup herald other_herald vals =
             )
             True
             vals
+        , txt "Exit with <ESC>"
         ]
 
 mainBorder :: Text -> Widget a -> Widget a
@@ -82,30 +84,33 @@ myAppDraw (AppState majorState') =
 
     Setup setupKind' dbgs snaps ->
       case setupKind' of
-        Socket -> drawSetup "process" "snapshot" dbgs
-        Snapshot   -> drawSetup "snapshot" "process" snaps
+        Socket -> drawSetup "process" "snapshots" dbgs
+        Snapshot   -> drawSetup "snapshot" "processes" snaps
 
 
     Connected _socket _debuggee mode' -> case mode' of
 
       RunningMode -> mainBorder "ghc-debug - Running" $ vBox
-        [ txt "Pause (p)"
+        [ txtWrap "Pause (p)"
+        , txtWrap "Exit  (ESC)"
         ]
 
       (PausedMode os@(OperationalState treeMode' fmode _ro _dtree _ _reverseTree _hg)) -> let
         in mainBorder "ghc-debug - Paused" $ vBox
           [ hBox
             [ border $ vBox
-              ([ txt "Resume          (F12)"
-              , txt "Tree            (F1)"
-              , txt "Parent          (<-)"
-              , txt "Child           (->)"
-              , txt "Saved/GC Roots  (F1)"
-              , txt "Write Profile   (F3)"
-              , txt "Find Retainers  (F4)"
-              , txt "Find Retainers (Exact)  (F6)"
-              , txt "Take Snapshot   (F5)"
-              ])
+              ([ txt "Resume                  (^r)"
+               , txt "Tree                    (^t)"
+               , txt "Parent                  (<-)"
+               , txt "Child                   (->)"
+               , txt "Saved/GC Roots          (^s)"
+               , txt "Write Profile           (^w)"
+               , txt "Find Retainers          (^f)"
+               , txt "Find Retainers (Exact)  (^e)"
+               , txt "Find Closures (Exact)   (^c)"
+               , txt "Take Snapshot           (^x)"
+               , txt "Exit                    (ESC)"
+               ])
             , -- Current closure details
               borderWithLabel (txt "Closure Details") $ pauseModeTree (renderClosureDetails . ioTreeSelection) os
             ]
@@ -192,7 +197,7 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
   _ -> case majorState' of
     Setup st knownDebuggees' knownSnapshots' -> case brickEvent of
 
-      VtyEvent (Vty.EvKey KEsc []) -> halt appState
+      VtyEvent (Vty.EvKey KEsc _) -> halt appState
       VtyEvent event -> case event of
         -- Connect to the selected debuggee
         Vty.EvKey (KChar '\t') [] -> do
@@ -247,9 +252,10 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
     Connected _socket' debuggee' mode' -> case mode' of
 
       RunningMode -> case brickEvent of
-        -- Pause the debuggee
-        VtyEvent (Vty.EvKey KEsc []) ->
+        -- Exit
+        VtyEvent (Vty.EvKey KEsc _) ->
           halt appState
+        -- Pause the debuggee
         VtyEvent (Vty.EvKey (KChar 'p') []) -> do
           liftIO $ pause debuggee'
 --          _ <- liftIO $ initialiseViews
@@ -282,14 +288,13 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         AppEvent (HeapGraphReady hg) -> do
           continue (appState & majorState . mode . pausedMode . heapGraph .~ Just hg)
 
-        -- Resume the debuggee
-        VtyEvent (Vty.EvKey (KFun 12) _) -> do
-          liftIO $ resume debuggee'
-          continue (appState & majorState . mode .~ RunningMode)
-
-        VtyEvent (Vty.EvKey KEsc []) -> do
-          liftIO $ resume debuggee'
-          continue $ initialAppState
+        -- Resume the debuggee if '^r', exit if ESC
+        VtyEvent (Vty.EvKey (KChar 'r') [Vty.MCtrl]) -> do
+            liftIO $ resume debuggee'
+            continue (appState & majorState . mode .~ RunningMode)
+        VtyEvent (Vty.EvKey (KEsc) _) -> do
+            liftIO $ resume debuggee'
+            continue $ initialAppState
 
         _ -> liftHandler (majorState . mode) os PausedMode (handleMain debuggee')
               appState (() <$ brickEvent)
@@ -457,8 +462,8 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
       case brickEvent of
 
         -- Change Modes
-        VtyEvent (Vty.EvKey (KFun 1) _) -> continue $ os & treeMode .~ SavedAndGCRoots
-        VtyEvent (Vty.EvKey (KFun 2) _)
+        VtyEvent (Vty.EvKey (KChar 's') [Vty.MCtrl]) -> continue $ os & treeMode .~ SavedAndGCRoots
+        VtyEvent (Vty.EvKey (KChar 't') [Vty.MCtrl])
           -- Only switch if the dominator view is ready
           | Just {} <- domTree -> continue $ os & treeMode .~ Dominator
 {-        VtyEvent (Vty.EvKey (KFun 3) _)
@@ -472,19 +477,19 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
             continue $ os & treeMode .~ Reverse
                           & treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
                           -}
-        VtyEvent (Vty.EvKey (KFun 8) _) ->
+        VtyEvent (Vty.EvKey (KChar 'c') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
 
-        VtyEvent (Vty.EvKey (KFun 3) _) ->
+        VtyEvent (Vty.EvKey (KChar 'w') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FProfile emptyTextCursor)
 
-        VtyEvent (Vty.EvKey (KFun 4) _) ->
+        VtyEvent (Vty.EvKey (KChar 'f') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FRetainer emptyTextCursor)
 
-        VtyEvent (Vty.EvKey (KFun 6) _) ->
+        VtyEvent (Vty.EvKey (KChar 'e') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FRetainerExact emptyTextCursor)
 
-        VtyEvent (Vty.EvKey (KFun 5) _) ->
+        VtyEvent (Vty.EvKey (KChar 'x') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FSnapshot emptyTextCursor)
 
         -- Navigate the tree of closures
@@ -542,7 +547,7 @@ dispatchFooterInput dbg FProfile tc os = do
 dispatchFooterInput dbg FRetainer tc os = do
    let roots = mapMaybe go (map snd (currentRoots (view rootsFrom os)))
        go (CP p) = Just p
-       go (SP p)   = Nothing
+       go (SP _)   = Nothing
    cps <- liftIO $ retainersOfConstructor (Just roots) dbg (T.unpack (rebuildTextCursor tc))
    let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
    res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
