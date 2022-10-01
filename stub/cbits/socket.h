@@ -17,6 +17,6 @@ class Socket {
   public:
     Socket(int fd);
     /* read len bytes into the given buffer */
-    void read(char *buf, size_t len);
+    size_t read(char *buf, size_t len);
     void write(const char *buf, size_t len);
 };

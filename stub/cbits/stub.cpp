@@ -104,25 +104,26 @@ class Response {
     void flush(response_code status) {
         if (status != RESP_OKAY_CONTINUES || this->tail != this->buf + sizeof(Header)) {
             size_t len = this->tail - this->buf;
-            trace("LEN: %lu", len);
+            trace("bytes in response payload: %lu\n", len);
             uint32_t len_payload;
             uint16_t status_payload;
             len_payload=htonl(len);
             status_payload = htons(status);
-            trace("STATUS: %d\n", status);
+            trace("responding with status: %d\n", status);
             // Header is the length
             this->sock.write((char *) &len_payload, sizeof(uint32_t));
             // Then status
             this->sock.write((char *) &status_payload, sizeof(uint16_t));
             // then the body, usually empty
-    trace("FLUSHING(%lu)( ", len);
-    for (int i = 0; i < len; i++)
-    {
-      trace("%02X", buf[i]);
-    }
-    trace("\n");
+            trace("responding with body of length %lu: ( ", len);
+            for (int i = 0; i < len; i++)
+            {
+                trace("%02X", buf[i]);
+            }
+            trace(" )\n");
             this->sock.write(this->buf, len);
             this->tail = this->buf;
+            trace("response written to socket\n\n");
         }
     }
 
@@ -175,7 +176,7 @@ class Response {
     }
 
     void finish(enum response_code status) {
-        trace("FINISH: %d\n", status);
+        trace("finishing with code: %d\n", status);
         this->flush(status);
     }
 
@@ -191,6 +192,7 @@ static StgStablePtr rts_saved_closure = NULL;
 
 extern "C"
 void pause_mutator() {
+  trace("pausing mutator\n");
   pid_t pid;
   if (use_fork){
     pid = fork();
@@ -214,11 +216,13 @@ void pause_mutator() {
 
 extern "C"
 void resume_mutator() {
-  //trace("Resuming %p %p\n", r_paused.pausing_task, r_paused.capabilities);
+  trace("resuming mutator\n");
   if (use_fork){
+    trace("exiting child\n");
     // Exit, the parent is blocked until we are finished.
     exit(0);
   } else {
+    trace("resuming rts\n");
     rts_resume(r_paused);
     paused = false;
   }
@@ -260,7 +264,7 @@ static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, Stg
     uint32_t b = 0;
     uint32_t size_payload;
     size_payload=htonl(size);
-    trace("SIZE %lu", size);
+    trace("SIZE %llu", size);
     resp.write((uint32_t) size_payload);
 
     for (uint32_t i = 0; i < size; b++) {
@@ -280,7 +284,7 @@ static void write_small_bitmap(Response& resp, StgWord bitmap, StgWord size) {
     // Small bitmap
     uint32_t size_payload;
     size_payload=htonl(size);
-    trace("SIZE %lu", size);
+    trace("SIZE %llu", size);
     resp.write((uint32_t) size_payload);
     while (size > 0) {
         resp.write((uint8_t) ! (bitmap & 1));
@@ -361,12 +365,11 @@ void list_blocks_callback(void *user, bdescr * bd){
 
 /* return non-zero on error */
 static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
-    trace("HANDLE: %d\n", cmd_len);
+    trace("handling command of length: %d\n", cmd_len);
     Parser p(buf, cmd_len);
     Response resp(sock);
-    trace("P %lu\n", p.available());
     uint32_t cmd = ntohl(p.get<uint32_t>());
-    trace("CMD: %d\n", cmd);
+    trace("read CommandId: %d\n", cmd);
     switch (cmd) {
       case CMD_VERSION:
         uint32_t ver_payload;
@@ -379,19 +382,21 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         break;
 
       case CMD_PAUSE:
+        trace("handling pause command\n");
+        trace("paused already?: %s\n", paused ? "yes" : "no");
         use_fork = (bool)ntohl(p.get<uint8_t>());
-        trace("PAUSE: %d", paused);
-        trace("PAUSE(FORK): %d", use_fork);
         if (paused) {
-            trace("ALREADY");
             resp.finish(RESP_ALREADY_PAUSED);
         } else {
+            trace("fork?: %s\n", use_fork ? "yes" : "no");
             pause_mutator();
             resp.finish(RESP_OKAY);
         }
         break;
 
       case CMD_RESUME:
+        trace("handling resume command\n");
+        trace("already running?: %s\n", paused ? "no" : "yes");
         if (!paused) {
             resp.finish(RESP_NOT_PAUSED);
         } else if (r_poll_pause_resp){
@@ -641,23 +646,29 @@ static void handle_connection(const unsigned int sock_fd) {
     Socket sock(sock_fd);
     char *buf = new char[MAX_CMD_SIZE];
     while (true) {
+        trace("handler is waiting for a request\n");
         uint32_t cmdlen_n, cmdlen;
 
-        sock.read((char *)&cmdlen_n, 4);
-        cmdlen = ntohl(cmdlen_n);
+        size_t n_read = sock.read((char *)&cmdlen_n, 4);
+
+        // If the read returns 0, consider it a disconnect
+        if (n_read == 0) {
+            trace("handler is done\n");
+            return;
+        }
 
         cmdlen = ntohl(cmdlen_n);
+
         char *large_buf = buf;
         bool use_large_buf = cmdlen > MAX_CMD_SIZE;
         if (use_large_buf) {
           large_buf = new char[cmdlen];
         }
 
-        trace("LEN: %d\n", cmdlen);
+        trace("reading cmd of length: %d\n", cmdlen);
         sock.read(large_buf, cmdlen);
-        trace("CONT:%s\n", buf);
+        trace("leftover: %s\n", buf);
         try {
-            trace("LEN2: %d\n", cmdlen);
             handle_command(sock, large_buf, cmdlen);
         } catch (Parser::EndOfInput e) {
             barf("error");
@@ -701,55 +712,58 @@ static void handle_connection(const unsigned int sock_fd) {
 
 extern "C"
 void start(const char* socket_path) {
-    trace("starting\n");
+    trace("starting with socket path: %s\n", socket_path);
     struct sockaddr_un local, remote;
 
     if (strlen(socket_path) >= sizeof(local.sun_path)) {
         barf("socket_path too long: \"%s\"", socket_path);
     }
 
-    int s = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (s == -1) {
+    // Open the socket for listening
+    int listenHdl = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (listenHdl == -1) {
         barf("socket failed");
     }
 
-    // Bind socket
-    {
-        local.sun_family = AF_UNIX;
-        strncpy(local.sun_path, socket_path, sizeof(local.sun_path));
-        unlink(local.sun_path);
-        if (bind(s, (struct sockaddr *) &local, sizeof(local)) != 0) {
-            barf("bind failed");
-        }
+    // Bind the socket to an address
+    local.sun_family = AF_UNIX;
+    strncpy(local.sun_path, socket_path, sizeof(local.sun_path));
+    unlink(local.sun_path);
+    if (bind(listenHdl, (struct sockaddr *) &local, sizeof(local)) != 0) {
+        barf("bind failed");
     }
 
-    if (listen(s, 1) != 0) {
+    // Listen for connections
+    if (listen(listenHdl, 1) != 0) {
         barf("listen failed");
     }
     fflush(stdout);
+
     while (true) {
+        // Wait for client connection
         socklen_t len = sizeof(remote);
-        int s2 = accept(s, (struct sockaddr *) &remote, &len);
-        if (s2 == -1) {
-          barf("accept failed %s", strerror(errno));
+        int commHdl = accept(listenHdl, (struct sockaddr *) &remote, &len);
+        if (commHdl == -1) {
+            barf("accept failed %s", strerror(errno));
         }
-        handle_connection(s2);
+        
+        // Handle and on disconnect listen for more connections
+        handle_connection(commHdl);
     }
 }
 
 extern "C"
 StgWord saveClosures(StgWord n, HsStablePtr *sps)
 {
-    struct savedObjectsState *ps = &g_savedObjectState;
     StgWord i;
 
     if(n > maxSavedObjects)
         return maxSavedObjects;
 
     for (i = 0; i < n; i++) {
-        ps->objects[i] = sps[i];
+        g_savedObjectState.objects[i] = sps[i];
     }
-    ps->n_objects = i;
+    g_savedObjectState.n_objects = i;
     return 0;
 }
 

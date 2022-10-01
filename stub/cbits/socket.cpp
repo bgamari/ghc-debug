@@ -8,15 +8,21 @@ SocketError::SocketError(int err_no, std::string what)
 Socket::Socket(int fd)
   : fd(fd) { }
 
-void Socket::read(char *buf, size_t len) {
+size_t Socket::read(char *buf, size_t len) {
+    int n_read = 0;
     while (len > 0) {
         ssize_t ret = ::read(this->fd, (void *) buf, len);
         if (ret < 0) {
             throw SocketError(errno, "read");
+        } else if (ret == 0) {
+            // if read() returns 0 it should be considered a disconnect
+            return 0;
         }
         len -= ret;
         buf += ret;
+        n_read += ret;
     }
+    return n_read;
 }
 
 void Socket::write(const char *buf, size_t len) {
