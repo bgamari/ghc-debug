@@ -246,7 +246,12 @@ tracePar :: [ClosurePtr] -> DebugM ()
 tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
     nop = const (return ())
-    funcs = TraceFunctionsIO nop nop clos (const (const (return ()))) nop
+    funcs = TraceFunctionsIO nop stack clos (const (const (return ()))) nop
+
+    stack :: GenStackFrames ClosurePtr -> DebugM ()
+    stack fs =
+      let frames = getFrames fs
+      in mapM_ (getSourceInfo . tableId . frame_info) frames
 
     clos :: ClosurePtr -> SizedClosure -> ()
               -> DebugM ((), (), DebugM () -> DebugM ())
