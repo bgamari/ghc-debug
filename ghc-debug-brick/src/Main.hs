@@ -138,8 +138,6 @@ myAppDraw (AppState majorState') =
       ++
       [ txt $ "Exclusive Size   "
             <> maybe "" (pack . show @Int . GD.getSize) (Just $ _excSize cd) <> " bytes"
-      , txt $ "Retained Size    "
-            <> maybe "" (pack . show @Int . GD.getRetainerSize) (_retainerSize cd) <> " bytes"
       , fill ' '
       ]
   renderClosureDetails Nothing = emptyWidget
