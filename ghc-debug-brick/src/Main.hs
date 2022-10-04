@@ -107,7 +107,9 @@ myAppDraw (AppState majorState') =
                , txt "Write Profile           (^w)"
                , txt "Find Retainers          (^f)"
                , txt "Find Retainers (Exact)  (^e)"
-               , txt "Find Closures (Exact)   (^c)"
+-- Secret as a bit buggy with confusing behaviour about setting the
+-- roots for subsequent operations.
+--               , txt "Find Closures (Exact)   (^c)"
                , txt "Take Snapshot           (^x)"
                , txt "Exit                    (ESC)"
                ])
