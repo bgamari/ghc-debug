@@ -101,7 +101,11 @@ data ClosureDetails pap s c = ClosureDetails
   | InfoDetails { _info :: InfoInfo }
   | LabelNode { _label :: Text }
 
-data TreeMode = Dominator | SavedAndGCRoots | Reverse | Retainer (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
+data TreeMode = Dominator
+              | SavedAndGCRoots
+              | Reverse
+              | Retainer (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
+              | Searched (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
 
 data FooterMode = FooterInfo
                 | FooterMessage Text
@@ -158,6 +162,7 @@ pauseModeTree k (OperationalState mode _ _footer dom roots reverseA _) = case mo
   SavedAndGCRoots -> k roots
   Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
   Retainer r -> k r
+  Searched r -> k r
 
 makeLenses ''AppState
 makeLenses ''MajorState

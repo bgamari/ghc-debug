@@ -107,9 +107,7 @@ myAppDraw (AppState majorState') =
                , txt "Write Profile           (^w)"
                , txt "Find Retainers          (^f)"
                , txt "Find Retainers (Exact)  (^e)"
--- Secret as a bit buggy with confusing behaviour about setting the
--- roots for subsequent operations.
---               , txt "Find Closures (Exact)   (^c)"
+               , txt "Find Closures (Exact)   (^c)"
                , txt "Take Snapshot           (^x)"
                , txt "Exit                    (ESC)"
                ])
@@ -123,6 +121,7 @@ myAppDraw (AppState majorState') =
                 SavedAndGCRoots -> "Root Closures"
                 Reverse -> "Reverse Edges"
                 Retainer {} -> "Retainers"
+                Searched {} -> "Search Results"
               )
               (pauseModeTree renderIOTree os)
           , hBorder
@@ -342,19 +341,21 @@ myAppHandleEvent eventChan appState@(AppState majorState') brickEvent = case bri
         return $ (mkIOTree debuggee' manalysis (savedClosures' ++ rootClosures') getChildren id
                  , fmap toPtr <$> (raw_roots ++ raw_saved))
         where
-          getChildren :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr
-                      -> IO
-                           [(String, ListItem PayloadCont ConstrDesc StackCont ClosurePtr)]
-          getChildren d c = do
-            children <- closureReferences d c
-            traverse (traverse (fillListItem d)) children
 
-          fillListItem :: Debuggee
-                       -> ListItem PayloadCont ConstrDescCont StackCont ClosurePtr
-                       -> IO (ListItem PayloadCont ConstrDesc StackCont ClosurePtr)
-          fillListItem _ (ListOnlyInfo x) = return $ ListOnlyInfo x
-          fillListItem d(ListFullClosure cd) = ListFullClosure <$> fillConstrDesc d cd
-          fillListItem _ ListData = return ListData
+
+getChildren :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr
+            -> IO
+                 [(String, ListItem PayloadCont ConstrDesc StackCont ClosurePtr)]
+getChildren d c = do
+  children <- closureReferences d c
+  traverse (traverse (fillListItem d)) children
+
+fillListItem :: Debuggee
+             -> ListItem PayloadCont ConstrDescCont StackCont ClosurePtr
+             -> IO (ListItem PayloadCont ConstrDesc StackCont ClosurePtr)
+fillListItem _ (ListOnlyInfo x) = return $ ListOnlyInfo x
+fillListItem d(ListFullClosure cd) = ListFullClosure <$> fillConstrDesc d cd
+fillListItem _ ListData = return ListData
 
 
 mkIOTree :: Show c => Debuggee
@@ -508,6 +509,10 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
             newTree <- handleIOTreeEvent event t
             continue (os & treeMode .~ Retainer newTree)
 
+          Searched t -> do
+            newTree <- handleIOTreeEvent event t
+            continue (os & treeMode .~ Searched newTree)
+
         _ -> continue os
 
 inputFooterHandler :: Debuggee
@@ -537,10 +542,10 @@ dispatchFooterInput dbg FSearch tc os = do
    res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
    let new_roots = map (second toPtr) cps'
        root_details  = res
+       tree = mkIOTree dbg Nothing res getChildren id
    continue (os & resetFooter
-                & rootsFrom .~ SearchedRoots new_roots
-                & treeMode .~ SavedAndGCRoots
-                & treeSavedAndGCRoots %~ setIOTreeRoots root_details)
+                & treeMode .~ Searched tree
+                )
 dispatchFooterInput dbg FProfile tc os = do
    liftIO $ profile dbg (T.unpack (rebuildTextCursor tc))
    continue (os & resetFooter)
