@@ -273,8 +273,6 @@ toPtr (Stack sc _)   = SP sc
 
 data Ptr = CP ClosurePtr | SP StackCont deriving (Eq, Ord)
 
-deriving instance Eq StackCont
-deriving instance Ord StackCont
 
 dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr)
 dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceClosure cp)

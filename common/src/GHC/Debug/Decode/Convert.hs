@@ -28,7 +28,8 @@ convertClosure itb g =
     GHC.MVarClosure _ a2 a3 a4         -> MVarClosure itb a2 a3 a4
     GHC.MutVarClosure _ a2             -> MutVarClosure itb a2
     GHC.BlockingQueueClosure _ a2 a3 a4 a5 -> BlockingQueueClosure itb a2 a3 a4 a5
-    GHC.TSOClosure _ a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 -> TSOClosure itb a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16
+ --   GHC.TSOClosure _ a2 a3 a4 a5 a6 a7 _ a8 a9 a10 a11 a12 a13 a14 a15 a16 -> TSOClosure itb a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16
+    GHC.TSOClosure _ a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 a16 -> TSOClosure itb a2 a3 a4 a5 a6 a7 Nothing a8 a9 a10 a11 a12 a13 a14 a15 a16
 --    GHC.StackClosure _ a2 a3 a4 a5      -> StackClosure itb a2 a3 a4 (a2, (StackPtr a5))
 {-
     GHC.IntClosure a1 a2                -> IntClosure a1 a2

@@ -43,7 +43,7 @@ emptyRequestCache = RequestCache HM.empty
 -- amount of input.
 
 getResponseBinary :: Request a -> Get a
-getResponseBinary RequestVersion       = getWord32be
+getResponseBinary RequestVersion       = Version <$> get <*> get
 getResponseBinary (RequestPause {})    = get
 getResponseBinary RequestResume        = get
 getResponseBinary RequestRoots         = get
@@ -60,7 +60,7 @@ getResponseBinary RequestAllBlocks = get
 getResponseBinary RequestBlock {}  = get
 
 putResponseBinary :: Request a -> a -> Put
-putResponseBinary RequestVersion w = putWord32be w
+putResponseBinary RequestVersion (Version w1 w2) = put w1 >> put w2
 putResponseBinary (RequestPause {}) w  = put w
 putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs

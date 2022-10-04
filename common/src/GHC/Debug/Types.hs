@@ -22,6 +22,7 @@ module GHC.Debug.Types(module T
                       , CommandId(..)
                       , SourceInformation(..)
                       , ClosureType(..)
+                      , Version(..)
 
                       -- * Serialisation functions
                       , getIPE
@@ -47,6 +48,7 @@ import Data.Hashable
 
 import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
+import GHC.Debug.Types.Version
 import GHC.Debug.Utils
 import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
@@ -71,7 +73,7 @@ instance Binary ForkOrPause where
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
     -- | Request protocol version
-    RequestVersion :: Request Word32
+    RequestVersion :: Request Version
     -- | Pause the debuggee.
     RequestPause :: ForkOrPause -> Request ()
     -- | Resume the debuggee.
@@ -333,7 +335,7 @@ getRequest = do
 
 
 getResponse :: Request a -> Get a
-getResponse RequestVersion       = getWord32be
+getResponse RequestVersion       = Version <$> get <*> get
 getResponse RequestPause {}      = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get

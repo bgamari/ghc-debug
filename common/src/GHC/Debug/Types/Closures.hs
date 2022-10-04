@@ -91,7 +91,7 @@ type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont Closu
 type ConstrDescCont = InfoTablePtr
 
 -- | Information needed to decode a PAP payload
-data PayloadCont = PayloadCont ClosurePtr [Word64] deriving Show
+data PayloadCont = PayloadCont ClosurePtr [Word64] deriving (Show, Eq)
 
 type DebugClosureWithSize = DebugClosureWithExtra Size
 
@@ -297,6 +297,7 @@ data DebugClosure pap string s b
       , trec :: !b
       , blocked_exceptions :: !b
       , bq :: !b
+      , threadLabel :: !(Maybe b)
       -- values
       , what_next :: GHC.WhatNext
       , why_blocked :: GHC.WhyBlocked
@@ -377,7 +378,7 @@ type PapPayload = GenPapPayload ClosurePtr
 -- | Information needed to decode a set of stack frames
 data StackCont = StackCont StackPtr -- Address of start of frames
                            RawStack -- The raw frames
-                           deriving Show
+                           deriving (Show, Eq, Ord)
 
 type StackFrames = GenStackFrames ClosurePtr
 newtype GenStackFrames b = GenStackFrames { getFrames :: [DebugStackFrame b] }
@@ -473,8 +474,8 @@ instance Quadtraversable DebugClosure where
       MutVarClosure a1 b -> MutVarClosure a1 <$> g b
       BlockingQueueClosure a1 b1 b2 b3 b4 ->
         BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
-      TSOClosure a1 b1 b2 b3 b4 b5 b6 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
-        (\c1 c2 c3 c4 c5 c6 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6
+      TSOClosure a1 b1 b2 b3 b4 b5 b6 b7 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
+        (\c1 c2 c3 c4 c5 c6 c7 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 c7 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6 <*> traverse g b7
       StackClosure a1 a2 a3 a4 a5 -> StackClosure a1 a2 a3 a4 <$> f a5
       WeakClosure a1 a2 a3 a4 a5 a6 ->
         WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6

@@ -5,6 +5,8 @@
 {-# LANGUAGE UnliftedFFITypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Low-level functions for decoding a closure representation from the raw
 -- bytes
 module GHC.Debug.Decode ( decodeClosure
@@ -27,6 +29,7 @@ import qualified GHC.Exts.Heap.InfoTable as Itbl
 import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
 
 import GHC.Debug.Types.Ptr
+import GHC.Debug.Types.Version
 import GHC.Debug.Types.Closures
 import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
@@ -36,6 +39,7 @@ import Data.Binary
 import Control.Monad
 import Data.Void
 import Control.DeepSeq
+import GHC.Exts.Heap.FFIClosures
 
 import qualified Data.ByteString as B
 
@@ -224,9 +228,52 @@ decodeArrWords  (infot, _) (_, rc) = decodeFromBS rc $ do
   payload <- replicateM (ceiling (fromIntegral bytes / 8)) getWord
   return $ GHC.Debug.Types.Closures.ArrWordsClosure infot (fromIntegral bytes) (map fromIntegral payload)
 
+tsoVersionChanged :: Version
+tsoVersionChanged = Version 905 20220925
 
-decodeClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeClosure i@(itb, _) c
+decodeTSO :: Version
+          -> (StgInfoTableWithPtr, RawInfoTable)
+          -> (a, RawClosure)
+          -> SizedClosure
+decodeTSO ver it@(infot, _) c@(_, rc) = decodeFromBS rc $ do
+  _itbl <- skipClosureHeader
+  link <- getClosurePtr
+  global_link <- getClosurePtr
+  tsoStack <- getClosurePtr
+  what_next <- parseWhatNext <$> getWord16le
+  why_blocked <- parseWhyBlocked <$> getWord16le
+  flags <- parseTsoFlags <$> getWord32le
+  _block_info <- getClosurePtr
+  threadId <- getWord64le
+  saved_errno <- getWord32le
+  dirty       <- getWord32le
+
+  _bound       <- getClosurePtr
+  _cap         <- getClosurePtr
+  trec           <- getClosurePtr
+  threadLabel <-
+    if ver >= tsoVersionChanged
+      then do
+        thread_label <- getClosurePtr
+        return $ if thread_label == mkClosurePtr 0 then Nothing else Just thread_label
+      else return Nothing
+  blocked_exceptions <- getClosurePtr
+  bq             <- getClosurePtr
+  alloc_limit    <- getInt64le
+  tot_stack_size <- getWord32le
+  let res :: Closure = (GHC.Debug.Types.Closures.TSOClosure
+            { info = infot
+            , _link = link
+            , prof = Nothing
+            , .. })
+  return res
+
+
+
+
+
+decodeClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeClosure ver i@(itb, _) c
   -- MP: It was far easier to implement the decoding of these closures in
   -- ghc-heap using binary rather than patching GHC and going through that
   -- dance. I think in the future it's better to do this for all the
@@ -239,6 +286,7 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = MUT_PRIM }) <- decodedTable itb = decodeMutPrim i c
   | (StgInfoTable { tipe = TREC_CHUNK }) <- decodedTable itb = decodeTrecChunk i c
   | (StgInfoTable { tipe = BLOCKING_QUEUE }) <- decodedTable itb = decodeBlockingQueue i c
+  | (StgInfoTable { tipe = TSO }) <- decodedTable itb = decodeTSO ver i c
   | (StgInfoTable { tipe = STACK }) <- decodedTable itb = decodeStack i c
   | (StgInfoTable { tipe = AP_STACK }) <- decodedTable itb = decodeAPStack i c
   | (StgInfoTable { tipe = ty }) <- decodedTable itb
@@ -253,7 +301,14 @@ decodeClosure i@(itb, _) c
   | (StgInfoTable { tipe = ty }) <- decodedTable itb
   , THUNK <= ty && ty <= THUNK_0_2 =
       decodeStandardLayout (() <$ getWord) (ThunkClosure itb) i c
-decodeClosure (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
+decodeClosure _ rit rc =
+  decodeWithLibrary rit rc
+
+
+decodeWithLibrary :: (StgInfoTableWithPtr, RawInfoTable)
+                      -> (a, RawClosure)
+                      -> SizedClosure
+decodeWithLibrary (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)

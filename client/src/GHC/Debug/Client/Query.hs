@@ -34,7 +34,7 @@ module GHC.Debug.Client.Query
 
 import           Control.Exception
 import           GHC.Debug.Types
-import           GHC.Debug.Decode
+import qualified GHC.Debug.Decode as D
 import           GHC.Debug.Decode.Stack
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.BlockCache
@@ -91,7 +91,14 @@ dereferenceClosureDirect c = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
     raw_it <- request (RequestInfoTable it)
-    return $ decodeClosure raw_it (c, raw_c)
+    decodeClosure raw_it (c, raw_c)
+
+decodeClosure :: (StgInfoTableWithPtr, RawInfoTable)
+              -> (ClosurePtr, RawClosure)
+              -> DebugM SizedClosure
+decodeClosure it c = do
+  ver <- version
+  return $ D.decodeClosure ver it c
 
 dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
 dereferenceClosures cs = mapM dereferenceClosure cs
@@ -159,7 +166,7 @@ dereferenceClosure cp
         else do
           let it = getInfoTblPtr rc
           st_it <- request (RequestInfoTable it)
-          return $ decodeClosure st_it (cp, rc)
+          decodeClosure st_it (cp, rc)
 
 -- | Fetch all the blocks from the debuggee and add them to the block cache
 precacheBlocks :: DebugM [RawBlock]
@@ -183,7 +190,7 @@ savedObjects :: DebugM [ClosurePtr]
 savedObjects = request RequestSavedObjects
 
 -- | Query the debuggee for the protocol version
-version :: DebugM Word32
+version :: DebugM Version
 version = request RequestVersion
 
 dereferenceInfoTable :: InfoTablePtr -> DebugM StgInfoTable

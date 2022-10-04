@@ -370,8 +370,11 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
     switch (cmd) {
       case CMD_VERSION:
         uint32_t ver_payload;
-        ver_payload=htonl(0);
+        uint32_t ver_payload1;
+        ver_payload=htonl(__GLASGOW_HASKELL__) ;
+        ver_payload1=htonl(__GLASGOW_HASKELL_PATCHLEVEL1__) ;
         resp.write(ver_payload);
+        resp.write(ver_payload1);
         resp.finish(RESP_OKAY);
         break;
 

@@ -18,6 +18,7 @@ import Control.Monad.Trans
 snapshot :: FilePath -> DebugM ()
 snapshot fp = do
   precacheBlocks
+  version
   rs <- gcRoots
   _so <- savedObjects
   tracePar rs
