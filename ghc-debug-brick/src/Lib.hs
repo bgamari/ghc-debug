@@ -69,6 +69,7 @@ module Lib
 
     -- * Retainers
   , retainersOfConstructor
+  , retainersOfAddress
   , retainersOfConstructorExact
 
     -- * Snapshot
@@ -84,6 +85,7 @@ module Lib
   , StackCont
   , PayloadCont
   , ClosurePtr
+  , readClosurePtr
   , HG.StackHI
   , HG.PapHI
   , HG.HeapGraphIndex
@@ -225,6 +227,13 @@ snapshot dbg fp = do
   dir <- snapshotDirectory
   createDirectoryIfMissing True dir
   GD.makeSnapshot dbg (dir </> fp)
+
+retainersOfAddress :: Maybe [ClosurePtr] -> Debuggee -> [ClosurePtr] -> IO [[Closure]]
+retainersOfAddress mroots dbg address = do
+  run dbg $ do
+    roots <- maybe GD.gcRoots return mroots
+    stack <- GD.findRetainersOf (Just 100) roots address
+    traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 retainersOfConstructor :: Maybe [ClosurePtr] -> Debuggee -> String -> IO [[Closure]]
 retainersOfConstructor mroots dbg con_name = do

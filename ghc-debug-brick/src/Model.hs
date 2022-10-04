@@ -111,9 +111,10 @@ data FooterMode = FooterInfo
                 | FooterMessage Text
                 | FooterInput FooterInputMode TextCursor
 
-data FooterInputMode = FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
+data FooterInputMode = FAddress | FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
 
 formatFooterMode :: FooterInputMode -> Text
+formatFooterMode FAddress = "address (0x..): "
 formatFooterMode FSearch = "search: "
 formatFooterMode FProfile = "filename: "
 formatFooterMode FRetainer = "constructor name: "

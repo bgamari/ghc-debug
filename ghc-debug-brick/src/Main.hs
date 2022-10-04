@@ -108,6 +108,7 @@ myAppDraw (AppState majorState') =
                , txt "Find Retainers          (^f)"
                , txt "Find Retainers (Exact)  (^e)"
                , txt "Find Closures (Exact)   (^c)"
+               , txt "Find Address            (^p)"
                , txt "Take Snapshot           (^x)"
                , txt "Exit                    (ESC)"
                ])
@@ -481,6 +482,9 @@ handleMainWindowEvent _dbg os@(OperationalState treeMode'  _footerMode _curRoots
         VtyEvent (Vty.EvKey (KChar 'c') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FSearch emptyTextCursor)
 
+        VtyEvent (Vty.EvKey (KChar 'p') [Vty.MCtrl]) ->
+          continue $ os & footerMode .~ (FooterInput FAddress emptyTextCursor)
+
         VtyEvent (Vty.EvKey (KChar 'w') [Vty.MCtrl]) ->
           continue $ os & footerMode .~ (FooterInput FProfile emptyTextCursor)
 
@@ -540,12 +544,23 @@ dispatchFooterInput dbg FSearch tc os = do
    cps <- map head <$> (liftIO $ retainersOfConstructor Nothing dbg (T.unpack (rebuildTextCursor tc)))
    let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
    res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
-   let new_roots = map (second toPtr) cps'
-       root_details  = res
-       tree = mkIOTree dbg Nothing res getChildren id
+   let tree = mkIOTree dbg Nothing res getChildren id
    continue (os & resetFooter
                 & treeMode .~ Searched tree
                 )
+dispatchFooterInput dbg FAddress tc os = do
+   let address = T.unpack (rebuildTextCursor tc)
+   case readClosurePtr address of
+    Just cp -> do
+      cps <- map head <$> (liftIO $ retainersOfAddress Nothing dbg [cp])
+      let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+      res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
+      let tree = mkIOTree dbg Nothing res getChildren id
+      continue (os & resetFooter
+                   & treeMode .~ Searched tree
+               )
+    Nothing -> continue (os & resetFooter)
+
 dispatchFooterInput dbg FProfile tc os = do
    liftIO $ profile dbg (T.unpack (rebuildTextCursor tc))
    continue (os & resetFooter)

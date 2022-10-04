@@ -22,6 +22,7 @@ module GHC.Debug.Types.Ptr( -- * InfoTables
                           -- * Closures
                           , ClosurePtr(..,ClosurePtr)
                           , mkClosurePtr
+                          , readClosurePtr
                           , RawClosure(..)
                           , rawClosureSize
                           , getInfoTblPtr
@@ -79,7 +80,7 @@ import Data.Binary.Get
 import Data.Binary.Put
 import System.Endian
 
-import Numeric (showHex)
+import Numeric (showHex, readHex)
 import Data.Coerce
 import Data.Bits
 import GHC.Stack
@@ -118,6 +119,12 @@ pattern ClosurePtr p <- UntaggedClosurePtr p
 
 mkClosurePtr :: Word64 -> ClosurePtr
 mkClosurePtr = untagClosurePtr . UntaggedClosurePtr
+
+readClosurePtr :: String -> Maybe ClosurePtr
+readClosurePtr ('0':'x':s) = case readHex s of
+                               [(res, "")] -> Just (mkClosurePtr res)
+                               _ -> Nothing
+readClosurePtr _ = Nothing
 
 instance Binary ClosurePtr where
   put (ClosurePtr p) = putWord64be (toBE64 p)
