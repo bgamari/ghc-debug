@@ -54,6 +54,7 @@ findRetainers limit rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM fun
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
+              , srtTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
               , visitedVal = const (return ())
@@ -81,28 +82,28 @@ findRetainers limit rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM fun
             Just 0 -> return ()
             _ -> local (cp:) k
 
-addLocationToStack :: [ClosurePtr] -> DebugM [(SizedClosureC, Maybe SourceInformation)]
+addLocationToStack :: [ClosurePtr] -> DebugM [(SizedClosureP, Maybe SourceInformation)]
 addLocationToStack r = do
   cs <- dereferenceClosures r
-  cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+  cs' <- mapM dereferenceToClosurePtr cs
   locs <- mapM getSourceLoc cs'
   return $ (zip cs' locs)
   where
     getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
 
-addLocationToStack' :: [ClosurePtr] -> DebugM [(ClosurePtr, SizedClosureC, Maybe SourceInformation)]
+addLocationToStack' :: [ClosurePtr] -> DebugM [(ClosurePtr, SizedClosureP, Maybe SourceInformation)]
 addLocationToStack' r = do
   cs <- dereferenceClosures r
-  cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+  cs' <- mapM dereferenceToClosurePtr cs
   locs <- mapM getSourceLoc cs'
   return $ (zip3 r cs' locs)
   where
     getSourceLoc c = getSourceInfo (tableId (info (noSize c)))
 
-displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
+displayRetainerStack :: [(String, [(SizedClosureP, Maybe SourceInformation)])] -> IO ()
 displayRetainerStack rs = do
       let disp (d, l) =
-            (ppClosure ""  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
+            (ppClosure  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
             where
               tdisplay sl = infoName sl ++ ":" ++ infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
           do_one k (l, stack) = do
@@ -111,10 +112,10 @@ displayRetainerStack rs = do
             mapM (putStrLn . disp) stack
       zipWithM_ do_one [0 :: Int ..] rs
 
-displayRetainerStack' :: [(String, [(ClosurePtr, SizedClosureC, Maybe SourceInformation)])] -> IO ()
+displayRetainerStack' :: [(String, [(ClosurePtr, SizedClosureP, Maybe SourceInformation)])] -> IO ()
 displayRetainerStack' rs = do
       let disp (p, d, l) =
-            show p ++ ": " ++ (ppClosure ""  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
+            show p ++ ": " ++ (ppClosure  (\_ -> show) 0 . noSize $ d) ++  " <" ++ maybe "nl" tdisplay l ++ ">"
             where
               tdisplay sl = infoName sl ++ ":" ++ infoType sl ++ ":" ++ infoModule sl ++ ":" ++ infoPosition sl
           do_one k (l, stack) = do

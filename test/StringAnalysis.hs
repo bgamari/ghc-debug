@@ -56,7 +56,8 @@ import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BS
 import Control.Monad.Extra
 import Data.Char
-
+import Data.Bitraversable
+import Control.Monad
 --main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> pp e)
 
 main = snapshotRun "/home/matt/.local/share/ghc-debug/debuggee/snapshots/hls-mercury-7" string_prog
@@ -93,6 +94,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
+              , srtTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
               , visitedVal = const (return ())
@@ -134,9 +136,9 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
       k
       where
         process sc = do
-          s' <- lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure sc
+          s' <- lift $ quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure sc
           pts <- lift $ mapM dereferenceClosure (allClosures (noSize s'))
-          pts' <- lift $ mapM (quadtraverse pure dereferenceConDesc pure pure) pts
+          pts' <- lift $ mapM addConstrDesc pts
           checked <- lift $ filterM (\(_, c) -> check_bin (noSize c)) (zip (allClosures (noSize s')) pts')
           case checked of
             -- No children are Bin, don't care
@@ -192,14 +194,7 @@ printResult m = do
 arrWordsAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ _)
 arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr

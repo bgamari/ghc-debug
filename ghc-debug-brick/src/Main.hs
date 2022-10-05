@@ -48,7 +48,6 @@ import Model
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
   | DominatorTreeReady DominatorAnalysis -- A signal when the dominator tree has been computed
-  | ReverseAnalysisReady ReverseAnalysis
   | HeapGraphReady (HeapGraph GD.Size)
 
 
@@ -93,7 +92,7 @@ myAppDraw (AppState majorState') =
         , withAttr menuAttr $ vLimit 1 $ hBox [txt "(p): Pause | (ESC): Exit", fill ' ']
         ]]
 
-      (PausedMode os@(OperationalState treeMode' kbmode fmode _ro _dtree _ _reverseTree _hg)) -> let
+      (PausedMode os@(OperationalState treeMode' kbmode fmode _ro _dtree _ _hg)) -> let
         in kbOverlay kbmode $ [mainBorder "ghc-debug - Paused" $ vBox
           [ -- Current closure details
               joinBorders $ borderWithLabel (txt "Closure Details") $
@@ -105,7 +104,6 @@ myAppDraw (AppState majorState') =
               (txt $ case treeMode' of
                 Dominator -> "Dominator Tree"
                 SavedAndGCRoots -> "Root Closures"
-                Reverse -> "Reverse Edges"
                 Retainer {} -> "Retainers"
                 Searched {} -> "Search Results"
               )
@@ -137,7 +135,7 @@ myAppDraw (AppState majorState') =
       , txt "Exit                    (ESC)"
       ]
 
-  renderClosureDetails :: Maybe (ClosureDetails pap s c) -> Widget Name
+  renderClosureDetails :: Maybe ClosureDetails -> Widget Name
   renderClosureDetails (Just cd@(ClosureDetails {})) =
     vLimit 9 $
     -- viewport Connected_Paused_ClosureDetails Both $
@@ -271,7 +269,6 @@ myAppHandleEvent eventChan brickEvent = do
             put $ appState & majorState . knownDebuggees .~ knownDebuggees''
                                 & majorState . knownSnapshots .~ knownSnapshots''
           DominatorTreeReady {} ->  return ()
-          ReverseAnalysisReady {} -> return ()
           HeapGraphReady {} -> return ()
         _ -> return ()
 
@@ -294,7 +291,6 @@ myAppHandleEvent eventChan brickEvent = do
                                             (DefaultRoots initRoots)
                                             Nothing
                                             rootsTree
-                                            Nothing
                                             Nothing))
 
           _ -> return ()
@@ -308,9 +304,6 @@ myAppHandleEvent eventChan brickEvent = do
             -- adding the new information.
             -- rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
             put (appState & majorState . mode . pausedMode . treeDominator .~ Just dt)
-
-          AppEvent (ReverseAnalysisReady ra) -> do
-            put (appState & majorState . mode . pausedMode . treeReverse .~ Just ra)
 
           AppEvent (HeapGraphReady hg) -> do
             put (appState & majorState . mode . pausedMode . heapGraph .~ Just hg)
@@ -372,27 +365,29 @@ myAppHandleEvent eventChan brickEvent = do
           where
 
 
-getChildren :: Debuggee -> DebugClosure PayloadCont ConstrDesc StackCont ClosurePtr
+getChildren :: Debuggee -> DebugClosure SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
             -> IO
-                 [(String, ListItem PayloadCont ConstrDesc StackCont ClosurePtr)]
+                 [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
 getChildren d c = do
   children <- closureReferences d c
   traverse (traverse (fillListItem d)) children
 
 fillListItem :: Debuggee
-             -> ListItem PayloadCont ConstrDescCont StackCont ClosurePtr
-             -> IO (ListItem PayloadCont ConstrDesc StackCont ClosurePtr)
+             -> ListItem SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+             -> IO (ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)
 fillListItem _ (ListOnlyInfo x) = return $ ListOnlyInfo x
 fillListItem d(ListFullClosure cd) = ListFullClosure <$> fillConstrDesc d cd
 fillListItem _ ListData = return ListData
 
 
-mkIOTree :: Show c => Debuggee
+mkIOTree :: Debuggee
          -> Maybe Analysis
-         -> [ClosureDetails pap s c]
-         -> (Debuggee -> DebugClosure pap ConstrDesc s c -> IO [(String, ListItem pap ConstrDesc s c)])
-         -> ([ClosureDetails pap s c] -> [ClosureDetails pap s c])
-         -> IOTree (ClosureDetails pap s c) Name
+         -> [ClosureDetails]
+         -> (Debuggee -> DebugClosure
+                  SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+ -> IO [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)])
+         -> ([ClosureDetails] -> [ClosureDetails])
+         -> IOTree ClosureDetails Name
 mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
         (\c -> do
@@ -488,7 +483,7 @@ vreplicate t =
       render (hLimit (c ^. availWidthL - (length depth * 2 + 4)) $ vLimit (c ^. availHeightL) $ body)
 -}
 
-renderInlineClosureDesc :: ClosureDetails pap s c -> [Widget n]
+renderInlineClosureDesc :: ClosureDetails -> [Widget n]
 renderInlineClosureDesc (LabelNode t) = [txtLabel t]
 renderInlineClosureDesc (InfoDetails info') =
   [txtLabel (_labelInParent info'), txt "   ", txt (_pretty info')]
@@ -500,20 +495,20 @@ renderInlineClosureDesc closureDesc =
                         <> "   "
                         <> _pretty (_info closureDesc)
                     ]
-completeClosureDetails :: Show c => Debuggee -> Maybe Analysis
-                                            -> (Text, DebugClosure pap ConstrDescCont s c)
-                                            -> IO (ClosureDetails pap s c)
+completeClosureDetails :: Debuggee -> Maybe Analysis
+                                            -> (Text, DebugClosure SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
+                                            -> IO ClosureDetails
 
 completeClosureDetails dbg manalysis (label', clos)  =
   getClosureDetails dbg manalysis label' . ListFullClosure  =<< fillConstrDesc dbg clos
 
 
 
-getClosureDetails :: Show c => Debuggee
+getClosureDetails :: Debuggee
                             -> Maybe Analysis
                             -> Text
-                            -> ListItem pap ConstrDesc s c
-                            -> IO (ClosureDetails pap s c)
+                            -> ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+                            -> IO ClosureDetails
 getClosureDetails debuggee' _ t (ListOnlyInfo info_ptr) = do
   info' <- getInfoInfo debuggee' t info_ptr
   return $ InfoDetails info'
@@ -522,7 +517,7 @@ getClosureDetails debuggee' manalysis label' (ListFullClosure c) = do
   let excSize' = closureExclusiveSize c
       retSize' = closureRetainerSize <$> manalysis <*> pure c
   sourceLoc <- maybe (return Nothing) (infoSourceLocation debuggee') (closureInfoPtr c)
-  let pretty' = closurePretty c
+  pretty' <- closurePretty debuggee' c
   return ClosureDetails
     { _closure = c
     , _info = InfoInfo {
@@ -569,7 +564,7 @@ handleMain dbg e = do
 handleMainWindowEvent :: Debuggee
                       -> Handler OperationalState
 handleMainWindowEvent _dbg brickEvent = do
-      os@(OperationalState treeMode' _kbMode _footerMode _curRoots domTree rootsTree reverseA _hg) <- get
+      os@(OperationalState treeMode' _kbMode _footerMode _curRoots domTree rootsTree _hg) <- get
       case brickEvent of
         -- Change Modes
         VtyEvent (Vty.EvKey (KChar '?') []) -> put $ os & keybindingsMode .~ KeybindingsShown
@@ -614,10 +609,6 @@ handleMainWindowEvent _dbg brickEvent = do
           SavedAndGCRoots -> do
             newTree <- handleIOTreeEvent event rootsTree
             put (os & treeSavedAndGCRoots .~ newTree)
-          Reverse -> do
-            newTree <- traverseOf (_Just . reverseIOTree) (handleIOTreeEvent event) reverseA
-            put (os & treeReverse .~ newTree)
-
           Retainer t -> do
             newTree <- handleIOTreeEvent event t
             put (os & treeMode .~ Retainer newTree)
@@ -697,11 +688,11 @@ dispatchFooterInput dbg FSnapshot form = do
    liftIO $ snapshot dbg (T.unpack (formState form))
    put (os & resetFooter)
 
-mkRetainerTree :: Debuggee -> [[ClosureDetails PayloadCont StackCont ClosurePtr]] -> IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name
+mkRetainerTree :: Debuggee -> [[ClosureDetails]] -> IOTree ClosureDetails Name
 mkRetainerTree dbg stacks = do
   let stack_map = [ (cp, rest) | stack <- stacks, Just (cp, rest) <- [List.uncons stack]]
       roots = map fst stack_map
-      info_map :: M.Map Ptr [(String, ListItem PayloadCont ConstrDesc StackCont ClosurePtr)]
+      info_map :: M.Map Ptr [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
       info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((show n), ListFullClosure (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
 
       lookup_c dbg' dc = do

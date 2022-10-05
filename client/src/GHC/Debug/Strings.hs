@@ -63,6 +63,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
+              , srtTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
               , visitedVal = const (return ())
@@ -88,7 +89,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
         process :: ClosurePtr -> SizedClosure
                 -> (RWST Bool () (Map.Map String (S.Set ClosurePtr)) DebugM) ()
         process p_cp clos = do
-          clos' <- lift $ quadtraverse pure dereferenceConDesc return return (noSize clos)
+          clos' <- lift $ quintraverse pure pure dereferenceConDesc return return (noSize clos)
           checked <- lift $ check_bin clos'
           if checked
             then do
@@ -141,6 +142,7 @@ arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
+              , srtTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
               , visitedVal = const (return ())

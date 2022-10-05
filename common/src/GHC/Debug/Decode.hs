@@ -183,8 +183,8 @@ decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
             st_marking
             (StackCont st_sp raw_stack))
 
-decodeFromBS :: RawClosure -> Get (DebugClosure pap string s b)
-                           -> DebugClosureWithExtra Size pap string s b
+decodeFromBS :: RawClosure -> Get (DebugClosure srt pap string s b)
+                           -> DebugClosureWithExtra Size srt pap string s b
 decodeFromBS (RawClosure rc) parser =
   case runGetOrFail parser (BSL.fromStrict rc) of
     Left err -> error ("DEC:" ++ show err ++ printBS rc)
@@ -221,7 +221,7 @@ decodeStandardLayout extra k (infot, _) (_, rc) = decodeFromBS rc $ do
   return $ k pts (map fromIntegral cwords)
 
 decodeArrWords :: (StgInfoTableWithPtr, b)
-               -> (a, RawClosure) -> DebugClosureWithExtra Size pap string s b1
+               -> (a, RawClosure) -> DebugClosureWithExtra Size src pap string s b1
 decodeArrWords  (infot, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
   bytes <- getWord64le
@@ -301,10 +301,10 @@ decodeClosure ver i@(itb, _) c
       decodeStandardLayout (return ()) (\pts ws -> ConstrClosure itb pts ws (tableId itb)) i c
   | (StgInfoTable { tipe = ty }) <- decodedTable itb
   , FUN <= ty && ty <= FUN_STATIC =
-      decodeStandardLayout (return ()) (FunClosure itb) i c
+      decodeStandardLayout (return ()) (FunClosure itb (tableId itb)) i c
   | (StgInfoTable { tipe = ty }) <- decodedTable itb
   , THUNK <= ty && ty <= THUNK_0_2 =
-      decodeStandardLayout (() <$ getWord) (ThunkClosure itb) i c
+      decodeStandardLayout (() <$ getWord) (ThunkClosure itb (tableId itb)) i c
 decodeClosure _ rit rc =
   decodeWithLibrary rit rc
 
@@ -334,7 +334,7 @@ decodeWithLibrary (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerform
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
         --
-        return $ DCS s . quadmap absurd
+        return $ DCS s . quinmap id absurd
                         id
                         absurd
                         mkClosurePtr . convertClosure itb

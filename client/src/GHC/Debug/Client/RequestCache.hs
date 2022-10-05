@@ -48,6 +48,7 @@ getResponseBinary RequestRoots         = get
 getResponseBinary (RequestClosure {}) = get
 getResponseBinary (RequestInfoTable itps) =
       (\(it, r) -> (StgInfoTableWithPtr itps it, r)) <$> getInfoTable
+getResponseBinary (RequestSRT {}) = get
 getResponseBinary (RequestStackBitmap {}) = get
 getResponseBinary (RequestFunBitmap {}) = get
 getResponseBinary (RequestConstrDesc _)  = getConstrDescCache
@@ -64,6 +65,7 @@ putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs
 putResponseBinary (RequestClosure {}) rcs = put rcs
 putResponseBinary (RequestInfoTable {}) (_, r) = putInfoTable r
+putResponseBinary (RequestSRT {}) rcs = put rcs
 putResponseBinary (RequestStackBitmap {}) pbm = put pbm
 putResponseBinary (RequestFunBitmap {}) pbm = put pbm
 putResponseBinary (RequestConstrDesc _) cd  = putConstrDescCache cd

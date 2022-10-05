@@ -25,6 +25,10 @@
 #error You must use a patched version of cabal-install which includes - https://github.com/haskell/cabal/pull/7183
 #endif
 
+#if !defined(TABLES_NEXT_TO_CODE)
+#error TABLES_NEXT_TO_CODE not defined
+#endif
+
 // This used to be 4096 but that was too small
 #define MAX_CMD_SIZE 10000
 
@@ -48,6 +52,30 @@
  *
  */
 
+namespace {
+    bool isFUN(StgHalfWord flags) {
+        return !isTHUNK(flags) && hasSRT(flags);
+    }
+#ifndef ip_STACK_FRAME
+    // ghc has this now, but it's new
+    bool ip_STACK_FRAME(StgInfoTable* info) {
+      switch(info->type) {
+      case RET_SMALL:
+      case RET_BIG:
+      case RET_FUN:
+      case UPDATE_FRAME:
+      case CATCH_FRAME:
+      case UNDERFLOW_FRAME:
+      case STOP_FRAME:
+      case ATOMICALLY_FRAME:
+      case CATCH_RETRY_FRAME:
+      case CATCH_STM_FRAME: return true;
+      default: return false;
+      }
+    }
+#endif
+}
+
 enum commands {
     CMD_VERSION = 1,
     CMD_PAUSE   = 2,
@@ -63,7 +91,8 @@ enum commands {
     CMD_SOURCE_INFO = 12,
     CMD_BLOCKS = 14,
     CMD_BLOCK = 15,
-    CMD_FUN_BITMAP = 16
+    CMD_FUN_BITMAP = 16,
+    CMD_GET_SRT = 17
 };
 
 enum response_code {
@@ -469,6 +498,38 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
                 trace("GET_CLOSURE_WRITE1 %lu\n", len);
                 resp.write(len_payload);
                 resp.write((const char *) info, len);
+            }
+            resp.finish(RESP_OKAY);
+        }
+        break;
+
+      case CMD_GET_SRT:
+        // TODO: SRTs are immutable so we needn't pause for this request
+        if (!paused) {
+            resp.finish(RESP_NOT_PAUSED);
+        } else {
+            trace("GET_SRT\n");
+            uint16_t n_raw = p.get<uint16_t>();
+            uint16_t n = htons(n_raw);
+            for (; n > 0; n--) {
+                trace("GET_SRT_GET_INFO %d\n", n);
+                StgInfoTable *ptr_end = (StgInfoTable *) p.get<uint64_t>();
+                StgInfoTable *info = INFO_PTR_TO_STRUCT(ptr_end);
+                StgHalfWord flags = ipFlags(info);
+                StgClosure* srt = nullptr;
+                if(ip_SRT(info) && info->srt) { // Is this info table of a type which CAN have an SRT, and does it actually have an SRT?
+                  if (isFUN(flags)) {
+                    StgFunInfoTable* funinfo = FUN_INFO_PTR_TO_STRUCT(ptr_end);
+                    srt = GET_FUN_SRT(funinfo);
+                  } else if (isTHUNK(flags)) {
+                    StgThunkInfoTable* thunkinfo = THUNK_INFO_PTR_TO_STRUCT(ptr_end);
+                    srt = GET_SRT(thunkinfo);
+                  } else if (ip_STACK_FRAME(info)) {
+                    StgRetInfoTable* retinfo = RET_INFO_PTR_TO_STRUCT(ptr_end);
+                    srt = GET_SRT(retinfo);
+                  }
+                }
+                resp.write((uint64_t)srt);
             }
             resp.finish(RESP_OKAY);
         }

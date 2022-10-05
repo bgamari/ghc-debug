@@ -19,6 +19,7 @@ import Control.Concurrent.Async
 import Control.Concurrent
 import Control.Monad.Extra
 
+import Data.Maybe
 import Data.Word
 import Data.IORef
 import GHC.Clock
@@ -32,12 +33,6 @@ import Test.Hspec
 spec :: SpecWith ()
 spec = do
   describe "request" $ do
-    describe "RequestVersion" $
-      it "should return the correct version" $
-        withStartedDebuggee "debug-test" $ \ _ d -> do
-          version <- run d version
-          version `shouldBe` 0
-
     describe "RequestRoots" $
       it "should return a non-empty result" $
         withStartedDebuggee "debug-test" $ \ _ d -> do
@@ -82,6 +77,18 @@ spec = do
           let itptrs = map (tableId . info . noSize) closures
           its <- run d $ mapM dereferenceInfoTable itptrs
           length its `shouldBe` 1
+
+    describe "RequestSRT" $
+      it "should return decodable SRT" $
+        withStartedDebuggee "srts-test-prog" $ \ h d -> do
+          waitForSync $ Server.stdout h
+          pausePoll d
+          sos <- run d savedObjects
+          closures <- run d (dereferenceClosures sos)
+          let itptrs = map (tableId . info . noSize) closures
+          srts <- run d $ catMaybes <$> mapM (fmap getSrt . dereferenceSRT) itptrs
+          srts `shouldSatisfy`  notNull
+
 
     describe "RequestConstrDesc" $
       it "should return ConstrDesc of saved value (I# 1)" $

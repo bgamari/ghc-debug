@@ -49,13 +49,16 @@ module GHC.Debug.Client
   , savedObjects
   , precacheBlocks
   , dereferenceClosure
+  , dereferenceToClosurePtr
+  , addConstrDesc
   , dereferenceClosures
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
   , dereferenceInfoTable
+  , dereferenceSRT
 
-  , Quadtraversable(..)
+  , Quintraversable(..)
 
   -- * Building a Heap Graph
   , buildHeapGraph
@@ -94,11 +97,13 @@ import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.Query
 import qualified GHC.Debug.Types.Graph as HG
 import Data.List.NonEmpty (NonEmpty)
+import Data.Bitraversable
+import Control.Monad
 
 derefFuncM :: HG.DerefFunction DebugM Size
 derefFuncM c = do
   c' <- dereferenceClosure c
-  quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure c'
+  quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure c'
 
 -- | Build a heap graph starting from the given root. The first argument
 -- controls how many levels to recurse. You nearly always want to set this

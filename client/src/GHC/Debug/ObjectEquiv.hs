@@ -86,7 +86,7 @@ trimMap o = if checkSize o > limit
 checkSize :: ObjectEquivState -> Int
 checkSize (ObjectEquivState e1 _ _) = PS.size e1
 
-type PtrClosure = DebugClosureWithSize PapPayload ConstrDesc StackFrames ClosurePtr
+type PtrClosure = DebugClosureWithSize SrtPayload PapPayload ConstrDesc StackFrames ClosurePtr
 
 -- | General function for performing a heap census in constant memory
 censusObjectEquiv :: [ClosurePtr] -> DebugM ObjectEquivState
@@ -94,6 +94,7 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
+              , srtTrace = const (return ())
               , stackTrace = const (return ())
               , closTrace = closAccum
               , visitedVal = const (return ())
@@ -110,10 +111,10 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
       -- for this cp
       -- Step 1: Decode a bit more of the object, so we can see all the
       -- pointers.
-      s' <- lift $ quadtraverse dereferencePapPayload dereferenceConDesc dereferenceStack pure s
+      s' <- lift $ quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc dereferenceStack pure s
       -- Step 2: Replace all the pointers in the closure by things they are
       -- equivalent to we have already seen.
-      s''  <- quadtraverse (traverse rep_c) pure (traverse rep_c) rep_c s'
+      s''  <- quintraverse (traverse rep_c) (traverse rep_c) pure (traverse rep_c) rep_c s'
       -- Step 3: Have we seen a closure like this one before?
       modify' (addEquiv cp s'')
 
@@ -153,7 +154,7 @@ printObjectEquiv c = do
   let cmp (_, b,_) = b
       res = sortBy (flip (comparing cmp)) (PS.toList c)
       showLine (k, p, v) =
-        concat [show v, ":", show p,":", ppClosure "" (\_ -> show) 0 (noSize k)]
+        concat [show v, ":", show p,":", ppClosure (\_ -> show) 0 (noSize k)]
   mapM_ (putStrLn . showLine) res
 --  writeFile "profile/profile_out.txt" (unlines $ "key, total, count, max, avg" : (map showLine res))
 

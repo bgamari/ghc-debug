@@ -41,6 +41,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import Data.Word
 import System.IO
+import Data.Functor
 
 import Data.Binary
 import Data.Binary.Put
@@ -84,6 +85,12 @@ data Request a where
     RequestClosure :: ClosurePtr -> Request RawClosure
     -- | Request an info table
     RequestInfoTable :: InfoTablePtr -> Request (StgInfoTableWithPtr, RawInfoTable)
+
+    -- | Request the SRT of an info table. Some closures, like constructors, can never have SRTs.
+    -- Thunks, functions and stack frames may have SRTs.
+    -- Returns Nothing when the closure does not have an SRT.
+    RequestSRT :: InfoTablePtr -> Request (Maybe ClosurePtr)
+
     -- | Wait for the debuggee to pause itself and then
     -- execute an action. It currently impossible to resume after
     -- a pause caused by a poll.
@@ -124,6 +131,7 @@ eq1request r1 r2 =
     RequestRoots   -> case r2 of {RequestRoots -> True; _ -> False }
     RequestClosure cs -> case r2 of {(RequestClosure cs') -> cs == cs'; _ -> False }
     RequestInfoTable itp -> case r2 of { (RequestInfoTable itp') ->  itp == itp'; _ -> False }
+    RequestSRT itp -> case r2 of { (RequestSRT itp') ->  itp == itp'; _ -> False }
     RequestPoll           -> case r2 of { RequestPoll -> True; _ -> False }
     RequestSavedObjects    -> case r2 of {RequestSavedObjects -> True; _ -> False }
     RequestStackBitmap p o      -> case r2 of {(RequestStackBitmap p' o') -> p == p' && o == o'; _ -> False }
@@ -154,6 +162,7 @@ isImmutableRequest r =
   case r of
     RequestVersion {} -> True
     RequestInfoTable {} -> True
+    RequestSRT {} -> True
     RequestSourceInfo {} -> True
     RequestConstrDesc {} -> True
     _ -> False
@@ -170,6 +179,7 @@ instance Hashable (Request a) where
     RequestRoots   -> s `hashWithSalt` cmdRequestRoots
     RequestClosure cs -> s `hashWithSalt` cmdRequestClosures `hashWithSalt` cs
     RequestInfoTable itp -> s `hashWithSalt` cmdRequestInfoTables `hashWithSalt` itp
+    RequestSRT itp        -> s `hashWithSalt` cmdRequestSRT `hashWithSalt` itp
     RequestPoll           -> s `hashWithSalt` cmdRequestPoll
     RequestSavedObjects    -> s `hashWithSalt` cmdRequestSavedObjects
     RequestStackBitmap p o -> s `hashWithSalt` cmdRequestStackBitmap `hashWithSalt` p `hashWithSalt` o
@@ -192,6 +202,7 @@ requestCommandId r = case r of
     RequestRoots {}   -> cmdRequestRoots
     RequestClosure {}  -> cmdRequestClosures
     RequestInfoTable {}  -> cmdRequestInfoTables
+    RequestSRT {}        -> cmdRequestSRT
     RequestPoll {}         -> cmdRequestPoll
     RequestSavedObjects {} -> cmdRequestSavedObjects
     RequestStackBitmap {}       -> cmdRequestStackBitmap
@@ -243,6 +254,9 @@ cmdRequestBlock = CommandId 15
 cmdRequestFunBitmap :: CommandId
 cmdRequestFunBitmap = CommandId 16
 
+cmdRequestSRT :: CommandId
+cmdRequestSRT  = CommandId 17
+
 data AnyReq = forall req . AnyReq !(Request req)
 
 instance Hashable AnyReq where
@@ -272,6 +286,10 @@ putRequest (RequestClosure cs)  =
     put cs
 putRequest (RequestInfoTable ts) =
   putCommand cmdRequestInfoTables $ do
+    putWord16be 1
+    put ts
+putRequest (RequestSRT ts) =
+  putCommand cmdRequestSRT $ do
     putWord16be 1
     put ts
 putRequest (RequestStackBitmap sp o)       =
@@ -311,6 +329,10 @@ getRequest = do
           --itbs <- replicateM (fromIntegral n) get
           itb <- get
           return (AnyReq (RequestInfoTable itb))
+      | cmd == cmdRequestSRT -> do
+          _n <- getWord16be
+          itb <- get
+          return (AnyReq (RequestSRT itb))
       | cmd == cmdRequestStackBitmap -> do
           sp <- get
           o  <- getWord32be
@@ -341,6 +363,10 @@ getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosure {}) = get
 getResponse (RequestInfoTable itbp) = (\(it, r) -> (StgInfoTableWithPtr itbp it, r)) <$> getInfoTable
+getResponse (RequestSRT {}) = do
+  cptr <- get
+  pure $ guard (cptr /= UntaggedClosurePtr 0) $> cptr
+
 --    zipWith (\p (it, r) -> (StgInfoTableWithPtr p it, r)) itps
 --      <$> replicateM (length itps) getInfoTable
 getResponse (RequestStackBitmap {}) = get

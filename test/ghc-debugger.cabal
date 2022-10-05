@@ -54,8 +54,8 @@ test-suite system-test
     , tasty
     , tasty-hspec
     , process
-    , ghc-debug-client == 0.2.1.0
-    , ghc-debug-common == 0.2.1.0
+    , ghc-debug-client == 0.3.0.0
+    , ghc-debug-common == 0.3.0.0
     , directory
     , async
     , extra
@@ -73,6 +73,7 @@ test-suite system-test
                     , ghc-debugger:save-ipe-pause
                     , ghc-debugger:clock
                     , ghc-debugger:cycles
+                    , ghc-debugger:srts-test-prog
 
 executable clock
   main-is:             Clock.hs
@@ -110,6 +111,15 @@ executable save-ipe-pause
                      , containers
                      , extra
                      , process
+                     , ghc-debug-stub
+  default-language:    Haskell2010
+
+executable srts-test-prog
+  main-is:             srts.hs
+  hs-source-dirs:
+      test-progs
+  ghc-options:         -threaded -O0 -finfo-table-map -fdistinct-constructor-tables
+  build-depends:       base
                      , ghc-debug-stub
   default-language:    Haskell2010
 

@@ -92,8 +92,8 @@ data InfoInfo = InfoInfo
   , _closureType :: Maybe Text
   , _constructor :: Maybe Text }
 
-data ClosureDetails pap s c = ClosureDetails
-  { _closure :: DebugClosure pap ConstrDesc s c
+data ClosureDetails = ClosureDetails
+  { _closure :: DebugClosure SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
   , _retainerSize :: Maybe RetainerSize
   , _excSize :: Size
   , _info :: InfoInfo
@@ -103,9 +103,9 @@ data ClosureDetails pap s c = ClosureDetails
 
 data TreeMode = Dominator
               | SavedAndGCRoots
-              | Reverse
-              | Retainer (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
-              | Searched (IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name)
+--              | Reverse
+              | Retainer (IOTree (ClosureDetails) Name)
+              | Searched (IOTree (ClosureDetails) Name)
 
 data FooterMode = FooterInfo
                 | FooterMessage Text
@@ -145,9 +145,9 @@ data OperationalState = OperationalState
     , _rootsFrom  :: RootsOrigin
     , _treeDominator :: Maybe DominatorAnalysis
     -- ^ Tree corresponding to Dominator mode
-    , _treeSavedAndGCRoots :: IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name
+    , _treeSavedAndGCRoots :: IOTree (ClosureDetails) Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
-    , _treeReverse :: Maybe ReverseAnalysis
+--    , _treeReverse :: Maybe ReverseAnalysis
     -- ^ Tree corresponding to Dominator mode
     , _heapGraph :: Maybe (HeapGraph Size)
     -- ^ Raw heap graph
@@ -155,17 +155,17 @@ data OperationalState = OperationalState
 
 data DominatorAnalysis =
   DominatorAnalysis { _getDominatorAnalysis :: Analysis
-                    , _getDominatorTree :: IOTree (ClosureDetails PayloadCont StackCont ClosurePtr) Name
+                    , _getDominatorTree :: IOTree (ClosureDetails) Name
                     }
 
-data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails PapHI StackHI (Maybe HeapGraphIndex)) Name
-                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure PapHI ConstrDesc StackHI (Maybe HeapGraphIndex)) }
+--data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails SrtHI PapHI StackHI (Maybe HeapGraphIndex)) Name
+--                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure SrtHI PapHI ConstrDesc StackHI (Maybe HeapGraphIndex)) }
 
-pauseModeTree :: (forall pap s c . IOTree (ClosureDetails pap s c) Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState mode _kb _footer _from dom roots reverseA _graph) = case mode of
+pauseModeTree :: (IOTree ClosureDetails Name -> r) -> OperationalState -> r
+pauseModeTree k (OperationalState mode _kb _footer _from dom roots _graph) = case mode of
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots
-  Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
+--  Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
   Retainer r -> k r
   Searched r -> k r
 
@@ -176,4 +176,3 @@ makeLenses ''ConnectedMode
 makeLenses ''OperationalState
 makeLenses ''SocketInfo
 makeLenses ''DominatorAnalysis
-makeLenses ''ReverseAnalysis

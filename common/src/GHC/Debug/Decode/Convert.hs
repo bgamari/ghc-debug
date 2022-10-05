@@ -15,11 +15,11 @@ import Data.Void
 -- N.B. This only handles cases not already handled by
 -- 'GHC.Debug.Decode.decodeClosure'. Eventually this codepath should be
 -- retired.
-convertClosure :: (Num a, Eq a, Show a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure Void InfoTablePtr Void a
+convertClosure :: (Num a, Eq a, Show a) => StgInfoTableWithPtr -> GHC.GenClosure a -> DebugClosure InfoTablePtr Void InfoTablePtr Void a
 convertClosure itb g =
   case g of
     -- N.B. decodeClosure doesn't handle THUNK_STATIC
-    GHC.ThunkClosure _ a2 a3           -> ThunkClosure itb a2 a3
+    GHC.ThunkClosure _ a2 a3           -> ThunkClosure itb (tableId itb) a2 a3
     GHC.SelectorClosure _ a2           -> SelectorClosure itb a2
     GHC.BCOClosure _ a2 a3 a4 a5 a6 a7 -> BCOClosure itb a2 a3 a4 a5 a6 a7
     GHC.BlackholeClosure _ a2          -> BlackholeClosure itb a2

@@ -30,7 +30,7 @@ traceFrom :: [ClosurePtr] -> DebugM ()
 traceFrom cps = runIdentityT (traceFromM funcs cps)
   where
     nop = const (return ())
-    funcs = TraceFunctions nop nop clos (const (return ())) nop
+    funcs = TraceFunctions nop nop nop clos (const (return ())) nop
 
     clos :: ClosurePtr -> SizedClosure -> (IdentityT DebugM) ()
               ->  (IdentityT DebugM) ()

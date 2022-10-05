@@ -2,7 +2,7 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE BangPatterns #-}
 -- | Functions to support the constant space traversal of a heap.
-module GHC.Debug.Trace ( traceFromM, TraceFunctions(..) ) where
+module GHC.Debug.Trace ( traceFromM, TraceFunctions(..), justClosures ) where
 
 import           GHC.Debug.Types
 import GHC.Debug.Client.Monad
@@ -47,11 +47,17 @@ checkVisit cp mref = do
 
 data TraceFunctions m =
       TraceFunctions { papTrace :: !(GenPapPayload ClosurePtr -> m DebugM ())
-      , stackTrace :: !(GenStackFrames ClosurePtr -> m DebugM ())
+      , srtTrace   :: !(GenSrtPayload ClosurePtr -> m DebugM ())
+      , stackTrace :: !(GenStackFrames SrtCont ClosurePtr -> m DebugM ())
       , closTrace :: !(ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ())
       , visitedVal :: !(ClosurePtr -> (m DebugM) ())
       , conDescTrace :: !(ConstrDesc -> m DebugM ())
       }
+
+justClosures :: C m => (ClosurePtr -> SizedClosure -> m DebugM () -> m DebugM ()) -> TraceFunctions m
+justClosures f = TraceFunctions nop nop nop f nop nop
+  where
+    nop = const (return ())
 
 
 
@@ -85,7 +91,7 @@ traceClosureFromM !k = go
         else do
         sc <- lift $ lift $ dereferenceClosure cp
         ReaderT $ \st -> closTrace k cp sc
-         (runReaderT (() <$ quadtraverse gop gocd gos go sc) st)
+         (runReaderT (() <$ quintraverse gosrt gop gocd gos go sc) st)
 
 
     gos st = do
@@ -100,4 +106,9 @@ traceClosureFromM !k = go
     gop p = do
       p' <- lift $ lift $ dereferencePapPayload p
       lift $ papTrace k p'
+      () <$ traverse go p'
+
+    gosrt p = do
+      p' <- lift $ lift $ dereferenceSRT p
+      lift $ srtTrace k p'
       () <$ traverse go p'

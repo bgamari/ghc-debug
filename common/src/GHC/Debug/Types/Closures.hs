@@ -22,6 +22,7 @@ module GHC.Debug.Types.Closures (
       Closure
     , SizedClosure
     , SizedClosureC
+    , SizedClosureP
     , DebugClosure(..)
     , TRecEntry(..)
     -- * Wrappers
@@ -51,10 +52,14 @@ module GHC.Debug.Types.Closures (
     , ConstrDesc(..)
     , ConstrDescCont
     , parseConstrDesc
+    -- * SRT field representation
+    , GenSrtPayload(..)
+    , SrtPayload
+    , SrtCont
 
     -- * Traversing functions
-    , Quadtraversable(..)
-    , quadmap
+    , Quintraversable(..)
+    , quinmap
     ) where
 
 import Prelude -- See note [Why do we import Prelude here?]
@@ -76,15 +81,19 @@ import Data.Char
 
 import Control.Applicative
 import Data.Monoid
+import Data.Bitraversable
+import Data.Bifunctor
+import Data.Bifoldable
 
 
 ------------------------------------------------------------------------
 -- Closures
 
 
-type Closure = DebugClosure PayloadCont ConstrDescCont StackCont ClosurePtr
-type SizedClosure = DebugClosureWithSize PayloadCont ConstrDescCont StackCont ClosurePtr
-type SizedClosureC = DebugClosureWithSize PayloadCont ConstrDesc StackCont ClosurePtr
+type Closure = DebugClosure SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+type SizedClosure = DebugClosureWithSize SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+type SizedClosureC = DebugClosureWithSize SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+type SizedClosureP = DebugClosureWithSize SrtPayload PapPayload ConstrDesc StackCont ClosurePtr
 
 -- | Information needed to decode a 'ConstrDesc'
 type ConstrDescCont = InfoTablePtr
@@ -94,8 +103,8 @@ data PayloadCont = PayloadCont ClosurePtr [Word64] deriving (Show, Eq)
 
 type DebugClosureWithSize = DebugClosureWithExtra Size
 
-data DebugClosureWithExtra x pap string s b = DCS { extraDCS :: x
-                                              , unDCS :: DebugClosure pap string s b }
+data DebugClosureWithExtra x srt pap string s b = DCS { extraDCS :: x
+                                              , unDCS :: DebugClosure srt pap string s b }
     deriving (Show, Ord, Eq)
 
 -- | Exclusive size
@@ -113,14 +122,14 @@ newtype RetainerSize = RetainerSize { getRetainerSize :: Int }
   deriving (Semigroup, Monoid) via (Sum Int)
 
 
-noSize :: DebugClosureWithSize pap string s b -> DebugClosure pap string s b
+noSize :: DebugClosureWithSize srt pap string s b -> DebugClosure srt pap string s b
 noSize = unDCS
 
-dcSize :: DebugClosureWithSize pap string s b -> Size
+dcSize :: DebugClosureWithSize srt pap string s b -> Size
 dcSize = extraDCS
 
-instance Quadtraversable (DebugClosureWithExtra x) where
-  quadtraverse f g h i (DCS x v) = DCS x <$> quadtraverse f g h i v
+instance Quintraversable (DebugClosureWithExtra x) where
+  quintraverse f g h i j (DCS x v) = DCS x <$> quintraverse f g h i j v
 
 data StgInfoTableWithPtr = StgInfoTableWithPtr {
                               tableId :: InfoTablePtr
@@ -148,7 +157,7 @@ instance Eq StgInfoTableWithPtr where
 -- See
 -- <https://gitlab.haskell.org/ghc/ghc/wikis/commentary/rts/storage/heap-objects>
 -- for more information.
-data DebugClosure pap string s b
+data DebugClosure srt pap string s b
   = -- | A data constructor
     ConstrClosure
         { info       :: !StgInfoTableWithPtr
@@ -160,6 +169,7 @@ data DebugClosure pap string s b
     -- | A function
   | FunClosure
         { info       :: !StgInfoTableWithPtr
+        , srt        :: !(srt)
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
         }
@@ -167,6 +177,7 @@ data DebugClosure pap string s b
     -- | A thunk, an expression not obviously in head normal form
   | ThunkClosure
         { info       :: !StgInfoTableWithPtr
+        , srt        :: !(srt)
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
         }
@@ -374,20 +385,49 @@ newtype GenPapPayload b = GenPapPayload { getValues :: [FieldValue b] }
 
 type PapPayload = GenPapPayload ClosurePtr
 
+newtype GenSrtPayload b = GenSrtPayload { getSrt :: Maybe b }
+  deriving (Functor, Foldable, Traversable, Show, Ord, Eq)
+
+type SrtPayload = GenSrtPayload ClosurePtr
+
+type SrtCont = InfoTablePtr
+
 -- | Information needed to decode a set of stack frames
 data StackCont = StackCont StackPtr -- Address of start of frames
                            RawStack -- The raw frames
                            deriving (Show, Eq, Ord)
 
-type StackFrames = GenStackFrames ClosurePtr
-newtype GenStackFrames b = GenStackFrames { getFrames :: [DebugStackFrame b] }
+type StackFrames = GenStackFrames SrtCont ClosurePtr
+newtype GenStackFrames srt b = GenStackFrames { getFrames :: [DebugStackFrame srt b] }
   deriving (Functor, Foldable, Traversable, Show, Ord, Eq)
 
-data DebugStackFrame b
+instance Bifoldable GenStackFrames where
+  bifoldMap f g (GenStackFrames frames) = foldMap (bifoldMap f g) frames
+
+instance Bitraversable GenStackFrames where
+  bitraverse f g (GenStackFrames frames) = GenStackFrames <$> traverse (bitraverse f g) frames
+
+instance Bifunctor GenStackFrames where
+  bimap f g (GenStackFrames frames) = GenStackFrames (fmap (bimap f g) frames)
+
+
+
+data DebugStackFrame srt b
   = DebugStackFrame
         { frame_info :: !StgInfoTableWithPtr
+        , frame_srt        :: srt
         , values     :: [FieldValue b]
         } deriving (Traversable, Functor, Foldable, Show, Ord, Eq)
+
+
+instance Bifunctor DebugStackFrame where
+  bimap f g (DebugStackFrame itbl srt v) = DebugStackFrame itbl (f srt) (fmap (fmap g) v)
+
+instance Bifoldable DebugStackFrame where
+  bifoldMap f g (DebugStackFrame _ srt v) = f srt <> foldMap (foldMap g) v
+
+instance Bitraversable DebugStackFrame where
+  bitraverse f g (DebugStackFrame itbl srt v) = DebugStackFrame itbl <$> f srt <*> traverse (traverse g) v
 
 
 
@@ -427,37 +467,39 @@ parseConstrDesc input =
                 (top, _:bot) -> parseModOcc (top : acc) bot
     parseModOcc acc str = (acc, str)
 
-class Quadtraversable m where
-  quadtraverse ::
+class Quintraversable m where
+  quintraverse ::
     Applicative f => (a -> f b)
                   -> (c -> f d)
                   -> (e -> f g)
                   -> (h -> f i)
-                  -> m a c e h
-                  -> f (m b d g i)
+                  -> (j -> f k)
+                  -> m a c e h j
+                  -> f (m b d g i k)
 
-quadmap :: forall a b c d e f g h t . Quadtraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> t a c e g -> t b d f h
-quadmap = coerce
-  (quadtraverse :: (a -> Identity b)
+quinmap :: forall a b c d e f g h i j t . Quintraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> (i -> j) -> t a c e g i -> t b d f h j
+quinmap = coerce
+  (quintraverse :: (a -> Identity b)
               -> (c -> Identity d)
               -> (e -> Identity f)
               -> (g -> Identity h)
-              -> t a c e g -> Identity (t b d f h))
+              -> (i -> Identity j)
+              -> t a c e g i -> Identity (t b d f h j))
 
-allClosures :: DebugClosure (GenPapPayload c) a (GenStackFrames c) c -> [c]
-allClosures c = getConst $ quadtraverse (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
+allClosures :: DebugClosure (GenSrtPayload c) (GenPapPayload c) a (GenStackFrames (GenSrtPayload c) c) c -> [c]
+allClosures c = getConst $ quintraverse (traverse (Const . (:[]))) (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b
                   | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable, Ord, Eq)
 
 
-instance Quadtraversable DebugClosure where
-  quadtraverse p h f g c =
+instance Quintraversable DebugClosure where
+  quintraverse srt p h f g c =
     case c of
       ConstrClosure a1 bs ds str ->
         (\cs cstr -> ConstrClosure a1 cs ds cstr) <$> traverse g bs <*> h str
-      FunClosure a1 bs ws -> (\cs -> FunClosure a1 cs ws) <$> traverse g bs
-      ThunkClosure a1 bs ws -> (\cs -> ThunkClosure a1 cs ws) <$> traverse g bs
+      FunClosure a1 srt_p bs ws -> (\srt' cs -> FunClosure a1 srt' cs ws) <$> srt srt_p <*> traverse g bs
+      ThunkClosure a1 srt_p bs ws -> (\srt' cs -> ThunkClosure a1 srt' cs ws) <$> srt srt_p <*> traverse g bs
       SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
       PAPClosure a1 a2 a3 a4 a5 -> PAPClosure a1 a2 a3 <$> g a4 <*> p a5
       APClosure a1 a2 a3 a4 a5 -> APClosure a1 a2 a3 <$> g a4 <*> p a5

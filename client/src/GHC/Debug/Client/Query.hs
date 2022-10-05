@@ -25,11 +25,13 @@ module GHC.Debug.Client.Query
   , dereferenceClosure
   , dereferenceClosureDirect
   , dereferenceClosureC
+  , dereferenceToClosurePtr
+  , addConstrDesc
   , dereferenceStack
   , dereferencePapPayload
   , dereferenceConDesc
   , dereferenceInfoTable
-
+  , dereferenceSRT
   ) where
 
 import           Control.Exception
@@ -78,9 +80,17 @@ pauseThen e d =
 
 
 dereferenceClosureC :: ClosurePtr -> DebugM SizedClosureC
-dereferenceClosureC cp = do
-  c <- dereferenceClosure cp
-  quadtraverse pure dereferenceConDesc pure pure c
+dereferenceClosureC cp = addConstrDesc =<< dereferenceClosure cp
+
+addConstrDesc :: SizedClosure -> DebugM SizedClosureC
+addConstrDesc c =
+  quintraverse pure pure dereferenceConDesc pure pure c
+
+-- Derefence other structures so we just have 'ClosurePtr' at leaves.
+dereferenceToClosurePtr :: SizedClosure -> DebugM SizedClosureP
+dereferenceToClosurePtr c = do
+  quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc pure pure c
+
 
 -- | Decode a closure corresponding to the given 'ClosurePtr'
 -- You should not use this function directly unless you know what you are
@@ -195,3 +205,5 @@ version = request RequestVersion
 dereferenceInfoTable :: InfoTablePtr -> DebugM StgInfoTable
 dereferenceInfoTable it = decodedTable . fst <$> request (RequestInfoTable it)
 
+dereferenceSRT :: InfoTablePtr -> DebugM SrtPayload
+dereferenceSRT it = GenSrtPayload <$> request (RequestSRT it)

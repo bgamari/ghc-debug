@@ -33,7 +33,7 @@ decodeStack decodeInfoTable getBitmap rs = do
 
 getFrame :: PtrBitmap
          -> StgInfoTableWithPtr
-         -> Get (DebugStackFrame ClosurePtr)
+         -> Get (DebugStackFrame SrtCont ClosurePtr)
 getFrame st_bitmap itbl =
     case tipe (decodedTable itbl) of
       RET_BCO ->
@@ -49,7 +49,7 @@ getFrame st_bitmap itbl =
         --traceShowM (headerSize ty, ty, st_bitmap, itbl)
         _itblPtr <- replicateM (headerSize ty) getWord64le
         fields <- traversePtrBitmap decodeField st_bitmap
-        return (DebugStackFrame itbl fields)
+        return (DebugStackFrame itbl (tableId itbl) fields)
   where
     decodeField True  = SPtr . mkClosurePtr <$> getWord
     decodeField False = SNonPtr <$> getWord

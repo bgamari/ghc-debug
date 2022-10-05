@@ -134,7 +134,7 @@ workerThread n k worker_active ref go oc = DebugM $ do
               sc <- dereferenceClosure cp
               (a', s, cont) <- closTrace k cp sc a
               unsafeLiftIO $ modifyIORef' ref (s <>)
-              cont (() <$ quadtraverse (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
+              cont (() <$ quintraverse (gosrt r a') (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
 
     goc r c@(ClosurePtrWithInfo _i cp) =
       let mkey = getMBlockKey cp
@@ -156,6 +156,11 @@ workerThread n k worker_active ref go oc = DebugM $ do
     gop r a p = do
       p' <- dereferencePapPayload p
       papTrace k p'
+      () <$ traverse (goc r . ClosurePtrWithInfo a) p'
+
+    gosrt r a p = do
+      p' <- dereferenceSRT p
+      srtTrace k p'
       () <$ traverse (goc r . ClosurePtrWithInfo a) p'
 
 
@@ -193,7 +198,8 @@ checkVisit cp st = do
 
 data TraceFunctionsIO a s =
       TraceFunctionsIO { papTrace :: !(GenPapPayload ClosurePtr -> DebugM ())
-      , stackTrace :: !(GenStackFrames ClosurePtr -> DebugM ())
+      , srtTrace :: !(GenSrtPayload ClosurePtr -> DebugM ())
+      , stackTrace :: !(GenStackFrames SrtCont ClosurePtr -> DebugM ())
       , closTrace :: !(ClosurePtr -> SizedClosure -> a -> DebugM (a, s, DebugM () -> DebugM ()))
       , visitedVal :: !(ClosurePtr -> a -> DebugM s)
       , conDescTrace :: !(ConstrDesc -> DebugM ())
@@ -243,9 +249,9 @@ tracePar :: [ClosurePtr] -> DebugM ()
 tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
     nop = const (return ())
-    funcs = TraceFunctionsIO nop stack clos (const (const (return ()))) nop
+    funcs = TraceFunctionsIO nop nop stack clos (const (const (return ()))) nop
 
-    stack :: GenStackFrames ClosurePtr -> DebugM ()
+    stack :: GenStackFrames SrtCont ClosurePtr -> DebugM ()
     stack fs =
       let stack_frames = getFrames fs
       in mapM_ (getSourceInfo . tableId . frame_info) stack_frames

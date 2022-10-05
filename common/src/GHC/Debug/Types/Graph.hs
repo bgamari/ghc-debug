@@ -13,6 +13,7 @@ module GHC.Debug.Types.Graph( -- * Types
                             , HeapGraphIndex
                             , PapHI
                             , StackHI
+                            , SrtHI
                             -- * Building a heap graph
                             , DerefFunction
                             , buildHeapGraph
@@ -52,6 +53,7 @@ import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Closures
 import qualified Data.List.NonEmpty as NE
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Bitraversable
 
 -- | For heap graphs, i.e. data structures that also represent sharing and
 -- cyclic structures, these are the entries. If the referenced value is
@@ -62,13 +64,14 @@ import Data.List.NonEmpty (NonEmpty(..))
 -- have a slot for arbitrary data, for the user's convenience.
 data HeapGraphEntry a = HeapGraphEntry {
         hgeClosurePtr :: ClosurePtr,
-        hgeClosure :: DebugClosure PapHI ConstrDesc StackHI (Maybe HeapGraphIndex),
+        hgeClosure :: DebugClosure SrtHI PapHI ConstrDesc StackHI (Maybe HeapGraphIndex),
         hgeData :: a}
     deriving (Show, Functor, Foldable, Traversable)
 type HeapGraphIndex = ClosurePtr
 
-type StackHI = GenStackFrames (Maybe HeapGraphIndex)
+type StackHI = GenStackFrames (GenSrtPayload (Maybe HeapGraphIndex)) (Maybe HeapGraphIndex)
 type PapHI =  GenPapPayload (Maybe HeapGraphIndex)
+type SrtHI =  GenSrtPayload (Maybe HeapGraphIndex)
 
 -- | The whole graph. The suggested interface is to only use 'lookupHeapGraph',
 -- as the internal representation may change. Nevertheless, we export it here:
@@ -115,7 +118,7 @@ buildHeapGraph deref limit initialBox =
 -- dereferenced, but also, not such a big deal. It could lead to additional
 -- requests to the debuggee which are not necessary and causes a mismatch
 -- with the step-by-step decoding functions in `Client.hs`
-type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a PapPayload ConstrDesc StackFrames ClosurePtr)
+type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a SrtPayload PapPayload ConstrDesc (GenStackFrames SrtPayload ClosurePtr) ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
@@ -166,7 +169,7 @@ generalBuildHeapGraph deref limit hg addBoxes = do
                 -- get into an infinite loop with cycles in the heap.
                 rec modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
                     -- Add the resulting closure below to the map (above):
-                    DCS e c' <- quadtraverse (traverse new_add) pure (traverse new_add) new_add c
+                    DCS e c' <- quintraverse (traverse new_add) (traverse new_add) pure (bitraverse (traverse new_add) new_add) new_add c
                 return (Just cp)
 
 -- | Pretty-prints a HeapGraph. The resulting string contains newlines. Example
@@ -211,7 +214,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
     ppEntry prec hge
         | Just s <- isString (hgeClosure hge) = show s
         | Just l <- isList (hgeClosure hge)   = "[" ++ intercalate "," (map (ppRef 0) l) ++ "]"
-        | otherwise = ppClosure (printData (hgeData hge)) ppRef prec (hgeClosure hge)
+        | otherwise = ppClosure ppRef prec (hgeClosure hge)
       where
         _app [a] = a  ++ "()"
         _app xs = addBraces (10 <= prec) (unwords xs)
@@ -225,7 +228,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
         | cp `elem` bindings = Nothing
         | otherwise         = IM.lookup (fromIntegral i) m
 
-    isList :: DebugClosure p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe [Maybe HeapGraphIndex]
+    isList :: DebugClosure srt p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe [Maybe HeapGraphIndex]
     isList c
         | isNil c =
             return []
@@ -236,7 +239,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
             t' <- isList (hgeClosure e)
             return $ (:) h t'
 
-    isString :: DebugClosure p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe String
+    isString :: DebugClosure srt p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe String
     isString e = do
         list <- isList e
         -- We do not want to print empty lists as "" as we do not know that they
@@ -262,19 +265,19 @@ braceize :: [String] -> String
 braceize [] = ""
 braceize xs = "{" ++ intercalate "," xs ++ "}"
 
-isChar :: DebugClosure p ConstrDesc s c -> Maybe Char
+isChar :: DebugClosure srt p ConstrDesc s c -> Maybe Char
 isChar ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "C#"}, dataArgs = [ch], ptrArgs = []} = Just (chr (fromIntegral ch))
 isChar _ = Nothing
 
-isNil :: DebugClosure p ConstrDesc s c -> Bool
+isNil :: DebugClosure srt p ConstrDesc s c -> Bool
 isNil ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "[]"}, dataArgs = _, ptrArgs = []} = True
 isNil _ = False
 
-isCons :: DebugClosure p ConstrDesc s c -> Maybe (c, c)
+isCons :: DebugClosure srt p ConstrDesc s c -> Maybe (c, c)
 isCons ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = ":"}, dataArgs = [], ptrArgs = [h,t]} = Just (h,t)
 isCons _ = Nothing
 
-isTup :: DebugClosure p ConstrDesc s c -> Maybe [c]
+isTup :: DebugClosure srt p ConstrDesc s c -> Maybe [c]
 isTup ConstrClosure{ dataArgs = [], ..} =
     if length (name constrDesc) >= 3 &&
        head (name constrDesc) == '(' && last (name constrDesc) == ')' &&
@@ -289,8 +292,8 @@ isTup _ = Nothing
 -- using 'Data.Foldable.map' or, if you need to do IO, 'Data.Foldable.mapM'.
 --
 -- The parameter gives the precedendence, to avoid avoidable parenthesises.
-ppClosure :: String -> (Int -> c -> String) -> Int -> DebugClosure p ConstrDesc s c -> String
-ppClosure herald showBox prec c = case c of
+ppClosure :: (Int -> c -> String) -> Int -> DebugClosure (GenSrtPayload c) p ConstrDesc s c -> String
+ppClosure showBox prec c = case c of
     _ | Just ch <- isChar c -> app
         ["C#", show ch]
     _ | Just (h,t) <- isCons c -> addBraces (5 <= prec) $
@@ -300,7 +303,11 @@ ppClosure herald showBox prec c = case c of
     ConstrClosure {..} -> app $
         name constrDesc : map (showBox 10) ptrArgs ++ map show dataArgs
     ThunkClosure {..} -> app $
-        "_thunk(" : herald : ")" : map (showBox 10) ptrArgs ++ map show dataArgs
+        let srt_string = case getSrt srt of
+                            Nothing -> []
+                            Just s  -> ["{", showBox 10 s, "}"]
+        in ["_thunk" ++ unwords srt_string] ++ map (showBox 10) ptrArgs ++ map show dataArgs
+
     SelectorClosure {..} -> app
         ["_sel", showBox 10 selectee]
     IndClosure {..} -> app
@@ -329,7 +336,10 @@ ppClosure herald showBox prec c = case c of
     MVarClosure {..} -> app
         ["MVar", showBox 10 value]
     FunClosure {..} ->
-        "_fun" ++ braceize (map (showBox 0) ptrArgs ++ map show dataArgs)
+        let srt_string = case getSrt srt of
+                            Nothing -> []
+                            Just s  -> ["{", showBox 10 s, "}"]
+        in "_fun" ++ (unwords srt_string) ++  braceize (map (showBox 0) ptrArgs ++ map show dataArgs)
     BlockingQueueClosure {} ->
         "_blockingQueue"
     OtherClosure {} ->

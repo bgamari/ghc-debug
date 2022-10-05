@@ -70,9 +70,9 @@ testProgPath progName = do
   where
     shellCmd = shell $ "which " ++ progName
 
---main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p33 e) --  >> outputRequestLog e)
+main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> p16 e) --  >> outputRequestLog e)
 
-main = snapshotRun "/tmp/ghc-debug-cache" (typePointsFromToGML "out.gml") --(tyConAppAnalysis)
+-- main = snapshotRun "/tmp/ghc-debug-cache" (typePointsFromToGML "out.gml") --(tyConAppAnalysis)
 
 
 --
@@ -133,7 +133,6 @@ p35 :: Debuggee -> IO ()
 p36 :: Debuggee -> IO ()
 p37 :: Debuggee -> IO ()
 p38 :: Debuggee -> IO ()
-p39 :: Debuggee -> IO ()
 p40 :: Debuggee -> IO ()
 p41 :: Debuggee -> IO ()
 p42 :: Debuggee -> IO ()
@@ -310,7 +309,7 @@ doAnalysis rs (l, ptrs) = do
     [] -> traceWrite "EMPTY RETAINERS" >> return Nothing
     (r:_) -> do
       cs <- dereferenceClosures r
-      cs' <- mapM (quadtraverse pure dereferenceConDesc pure pure) cs
+      cs' <- mapM addConstrDesc cs
       locs <- mapM getSourceLoc cs'
       return $ Just (zip cs' locs)
   return ((l,) <$> stack)
@@ -362,7 +361,7 @@ censusClosureTypeF p = closureCensusBy go
     go :: ClosurePtr -> SizedClosure
        -> DebugM (Maybe (BlockPtr, CensusStats))
     go cp s | p cp = do
-      d <- quadtraverse pure dereferenceConDesc pure pure s
+      d <- addConstrDesc s
       let siz :: Size
           siz = dcSize d
           v =  mkCS siz
@@ -439,6 +438,7 @@ p38 e = do
   u <- pauseThen e $ unfoldingAnalysis
   printCensusByClosureType u
 
+{-
 p39 e = do
   pause e
   (hg, rs) <- runTrace e $ do
@@ -450,6 +450,7 @@ p39 e = do
     return (hg, rs)
   putStrLn $ ppHeapGraph (show . getSize) hg
   displayRetainerStack (catMaybes [rs])
+  -}
 
 
 p40 e = forM_ [0..] $ \i -> do
@@ -499,14 +500,7 @@ printResult m = do
 benAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
 benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoContext (Map.empty)
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = visited
-              , conDescTrace = const (return ())
-
-            }
+    funcs = (justClosures closAccum) { visitedVal = visited }
 
     -- Already visited the closure, but if it's still an IND_STATIC
     -- closure, we still want to count it (because we are counting
@@ -534,7 +528,7 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
             OneContext p -> k
             _ -> k
       | otherwise = do
-          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          s' <- lift $ addConstrDesc sc
           let ty = closureToKey (noSize s')
           local (consContext (ty, getSourceLoc s'))  k
 
@@ -542,14 +536,7 @@ benAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) NoC
 thunkAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
 thunkAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
@@ -568,14 +555,7 @@ thunkAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) (
 arrWordsAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
 arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
@@ -593,14 +573,7 @@ arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots
 sebAnalysis :: [ClosurePtr] -> DebugM (Map.Map _ Count)
 sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
@@ -608,7 +581,7 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
                -> (RWST () () (Map.Map _ Count) DebugM) ()
                -> (RWST () () (Map.Map _ Count) DebugM) ()
     closAccum cp sc k = do
-          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          s' <- lift $ addConstrDesc sc
           let ty = closureToKey (noSize s')
           --when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Internal.Parser:InputFieldsParser") $ do
 --          when (ty == "graphql-engine-1.0.0-inplace:Hasura.GraphQL.Parser.Schema:Definition") $ do
@@ -664,8 +637,8 @@ follow (x:xs) cp = do
     ConstrClosure _ ps _ _ -> do
       follow xs (ps !! x)
     _ -> do
-      c' <- quadtraverse pure dereferenceConDesc pure pure (noSize sc)
-      error (ppClosure "" (\_ _ -> "") 0 c')
+      c' <- dereferenceToClosurePtr sc
+      error (ppClosure (\_ _ -> "") 0 (noSize c'))
 
 
 getDescriptionName :: ClosurePtr -> SizedClosure -> DebugM (Maybe ByteString)
@@ -681,8 +654,8 @@ getDescriptionName cp sc = do
     _ -> return Nothing
   where
         follow p = do
-          sc' <- noSize <$> (dereferenceClosure p)
-          case sc' of
+          sc' <- (dereferenceClosure p)
+          case noSize sc' of
             IndClosure _ p -> follow p
             ConstrClosure _ ps _ cd -> do
               s <- noSize <$> (dereferenceClosure (head ps))
@@ -692,21 +665,14 @@ getDescriptionName cp sc = do
                 _ -> error "No ArrWords"
 
             c -> do
-              c' <- quadtraverse pure dereferenceConDesc pure pure c
-              error (ppClosure "" (\_ _ -> "") 0 c')
+              c' <- dereferenceToClosurePtr sc'
+              error (ppClosure (\_ _ -> "") 0 (noSize c'))
 
 -- | Analays the TyConApp[IND_STATIC, _] closures
 descriptionNames :: [ClosurePtr] -> DebugM (Map.Map _ Count)
 descriptionNames rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () (Map.empty)
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
@@ -730,14 +696,7 @@ descriptionNames rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots
 getAllPtrs :: [ClosurePtr] -> DebugM [(ClosurePtr, ByteString)]
 getAllPtrs rroots = (\(_, (_, r), _) -> r) <$> runRWST (traceFromM funcs rroots) () (0, [])
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     -- First time we have visited a closure
     closAccum  :: ClosurePtr
@@ -745,7 +704,7 @@ getAllPtrs rroots = (\(_, (_, r), _) -> r) <$> runRWST (traceFromM funcs rroots)
                -> (RWST () () (Int, [(ClosurePtr, ByteString)]) DebugM) ()
                -> (RWST () () (Int, [(ClosurePtr, ByteString)]) DebugM) ()
     closAccum cp sc k = do
-          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          s' <- lift $ addConstrDesc sc
           (!n, cs) <- get
           mname <- lift $ getDescriptionName cp sc
           case mname of
@@ -787,21 +746,14 @@ unfoldingAnalysis = do
 
 findUnfoldings rroots = execStateT (traceFromM funcs rroots) []
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     closAccum  :: ClosurePtr
                -> SizedClosure
                -> StateT [ClosurePtr] DebugM ()
                -> StateT [ClosurePtr] DebugM ()
     closAccum cp sc k = do
-          s' <- lift $ quadtraverse pure dereferenceConDesc pure pure sc
+          s' <- lift $ addConstrDesc sc
           let ty = closureToKey (noSize s')
           when (ty == "ghc:GHC.Core:CoreUnfolding") $ do
             modify' (cp :)
@@ -824,14 +776,7 @@ instance Semigroup Biggest where
 -- This is probably going to be something like an ARR_WORDS closure usually
 bigBoyAnalysis rroots = execStateT (traceFromM funcs rroots) NoBiggest
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     closAccum  :: ClosurePtr
                -> SizedClosure
@@ -1253,14 +1198,7 @@ thunks_f rroots = findRetainers (Just 100) rroots go
 
 findTcModResult rroots = execStateT (traceFromM funcs rroots) []
   where
-    funcs = TraceFunctions {
-               papTrace = const (return ())
-              , stackTrace = const (return ())
-              , closTrace = closAccum
-              , visitedVal = const (return ())
-              , conDescTrace = const (return ())
-
-            }
+    funcs = justClosures closAccum
 
     closAccum  :: ClosurePtr
                -> SizedClosure
