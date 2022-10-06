@@ -32,25 +32,25 @@ module IOTree
   , viewIsCollapsed
   ) where
 
+import           Brick
 import           Control.Applicative
 import           Control.Monad.IO.Class
 import           Data.Maybe (fromMaybe)
 import qualified Data.List as List
 import           GHC.Stack
-
 import qualified Graphics.Vty.Input.Events as Vty
-import Graphics.Vty.Input.Events (Key(..))
-import Brick
+import           Graphics.Vty.Input.Events (Key(..))
+
 
 -- A tree style list where items can be expanded and collapsed
 data IOTree node name = IOTree
     { _name :: name
     , _roots :: [IOTreeNode node name]
     , _getChildren :: (node -> IO [node])
-    , _renderRow :: RowState     -- Is row expanded
-                 -> Bool         -- Is row selected
-                 -> RowCtx       -- innermost context
-                 -> [RowCtx]     -- per level of tree depth, is row last in subtree?
+    , _renderRow :: RowState     -- is row expanded?
+                 -> Bool         -- is row selected?
+                 -> RowCtx       -- is current node last in subtree?
+                 -> [RowCtx]     -- per level of tree depth, are parent nodes last in subtree?
                  -> node         -- the node to render
                  -> Widget name
     -- Render some extra info as the first child of each node
@@ -58,6 +58,9 @@ data IOTree node name = IOTree
     -- ^ Indices along the path to the current selection. Empty list means no
     -- selection.
     }
+
+data RowState = Expanded Bool | Collapsed
+data RowCtx = NotLastRow | LastRow
 
 setIOTreeRoots :: [node] -> IOTree node name ->  IOTree node name
 setIOTreeRoots newRoots iot = iot { _roots = (nodeToTreeNode (_getChildren iot) <$> newRoots) }
@@ -130,9 +133,6 @@ renderIOTree (IOTree widgetName rs _ renderRow pathTop)
     rowCtx = if null ns then LastRow else NotLastRow
     row state = (if selected then visible else id) $ renderRow state selected rowCtx depth node'
     rowsRest = renderTree (minorIx + 1) depth ns path
-
-data RowState = Expanded Bool | Collapsed
-data RowCtx = NotLastRow | LastRow
 
 handleIOTreeEvent :: Vty.Event -> IOTree node name -> EventM name s (IOTree node name)
 handleIOTreeEvent e tree

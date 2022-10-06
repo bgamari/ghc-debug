@@ -20,10 +20,8 @@ import System.FilePath
 import Data.Text(Text, pack)
 
 import Brick.Forms
-import Brick.Types (BrickEvent)
 import Brick.Widgets.List
 import IOTree
-import TextCursor
 
 import Namespace
 import Common

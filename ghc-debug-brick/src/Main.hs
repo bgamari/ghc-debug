@@ -13,6 +13,13 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Main where
+
+import Brick
+import Brick.BChan
+import Brick.Forms
+import Brick.Widgets.Border
+import Brick.Widgets.Center (centerLayer, hCenter)
+import Brick.Widgets.List
 import Control.Applicative
 import Control.Monad (forever)
 import Control.Monad.IO.Class
@@ -22,8 +29,7 @@ import qualified Data.List as List
 import Data.Ord (comparing)
 import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
-import Graphics.Vty(defaultConfig, mkVty, defAttr, blue, white, black, yellow, red, withStyle, dim, reverseVideo, standout, bold, vertCat, string, text', imageHeight, green, imageWidth)
-import qualified Graphics.Vty.Input.Events as Vty
+import qualified Graphics.Vty as Vty
 import Graphics.Vty.Input.Events (Key(..))
 import Lens.Micro.Platform
 import System.Directory
@@ -34,19 +40,10 @@ import qualified Data.Map as M
 import Data.Bifunctor
 import Data.Maybe
 
-import IOTree
-import TextCursor
-import Brick
-import Brick.BChan
-import Brick.Widgets.Border
-import Brick.Widgets.List
-
 import GHC.Debug.Client.Search as GD
+import IOTree
 import Lib as GD
-
 import Model
-import Brick.Widgets.Center (centerLayer, hCenter)
-import Brick.Forms
 
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
@@ -184,9 +181,7 @@ footer m = vLimit 1 $
  case m of
    FooterMessage t -> txt t
    FooterInfo -> withAttr menuAttr $ hBox [txt "(↑↓): select item | (→): expand | (←): collapse | (?): full keybindings", fill ' ']
-   FooterInput im form ->
-     renderForm form
---   txtLabel (formatFooterMode im) <+> withAttr inputAttr (drawTextCursor t)
+   FooterInput _im form -> renderForm form
 
 footerInput :: FooterInputMode -> FooterMode
 footerInput im =
@@ -420,30 +415,6 @@ mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_Closu
             vdecorate state ctx depth body -- body (T.concat context)
         )
 
-{-
-border_ :: Maybe (Widget n) -> Widget n -> Widget n
-border_ label wrapped =
-    Widget (hSize wrapped) (vSize wrapped) $ do
-      c <- getContext
-
-      middleResult <- render $ hLimit (c^.availWidthL - 2)
-                             $ vLimit (c^.availHeightL - 2)
-                             $ wrapped
-
-      let tl = joinableBorder (Edges False True False True)
-          tr = joinableBorder (Edges False True True False)
-          bl = joinableBorder (Edges True False False True)
-          br = joinableBorder (Edges True False True False)
-          top = tl <+> maybe hBorder hBorderWithLabel label <+> tr
-          bottom = bl <+> hBorder <+> br
-          middle = vBorder <+> (Widget Fixed Fixed $ return middleResult) <+> vBorder
-          total = top <=> middle <=> bottom
-
-      render $ hLimit (middleResult^.imageL.to imageWidth + 2)
-             $ vLimit (middleResult^.imageL.to imageHeight + 2)
-             $ total
--}
-
 -- | Draw the tree structure around the row item. Inspired by the
 -- 'border' functions in brick.
 --
@@ -495,15 +466,15 @@ vdecorate state ctx depth body =
         total = leftPart <+> middlePart <+> rightPart
 
     render $
-      hLimit (bodyResult ^. imageL . to imageWidth + decorationWidth) $
-      vLimit (bodyResult ^. imageL . to imageHeight) $
+      hLimit (bodyResult ^. imageL . to Vty.imageWidth + decorationWidth) $
+      vLimit (bodyResult ^. imageL . to Vty.imageHeight) $
       total
 
 vreplicate :: Text -> Widget n
 vreplicate t =
   Widget Fixed Greedy $ do
     c <- getContext
-    return $ emptyResult & imageL .~ vertCat (replicate (c ^. availHeightL) (text' (c ^. attrL) t))
+    return $ emptyResult & imageL .~ Vty.vertCat (replicate (c ^. availHeightL) (Vty.text' (c ^. attrL) t))
 {-
   hBox
     [ withAttr treeAttr $ Widget Fixed Fixed $ do
@@ -690,7 +661,7 @@ dispatchFooterInput dbg FAddress form = do
    case readClosurePtr address of
     Just cp -> do
       cps <- map head <$> (liftIO $ retainersOfAddress Nothing dbg [cp])
-      let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+      let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
       res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
       let tree = mkIOTree dbg Nothing res getChildren id
       put (os & resetFooter
@@ -751,12 +722,12 @@ myAppStartEvent = return ()
 
 myAppAttrMap :: AppState -> AttrMap
 myAppAttrMap _appState =
-  attrMap (withStyle (white `on` black) dim)
-    [ (menuAttr, withStyle (white `on` blue) bold)
-    , (inputAttr, black `on` green)
-    , (labelAttr, withStyle (fg white) bold)
-    , (highlightAttr, black `on` yellow) -- withStyle defAttr reverseVideo
-    , (treeAttr, fg red)
+  attrMap (Vty.withStyle (Vty.white `on` Vty.black) Vty.dim)
+    [ (menuAttr, Vty.withStyle (Vty.white `on` Vty.blue) Vty.bold)
+    , (inputAttr, Vty.black `on` Vty.green)
+    , (labelAttr, Vty.withStyle (fg Vty.white) Vty.bold)
+    , (highlightAttr, Vty.black `on` Vty.yellow)
+    , (treeAttr, fg Vty.red)
     ]
 
 menuAttr :: AttrName
@@ -787,7 +758,7 @@ main = do
     writeBChan eventChan PollTick
     -- 2s
     threadDelay 2_000_000
-  let buildVty = mkVty defaultConfig
+  let buildVty = Vty.mkVty Vty.defaultConfig
   initialVty <- buildVty
   let app :: App AppState Event Name
       app = App
