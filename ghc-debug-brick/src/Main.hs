@@ -158,18 +158,26 @@ myAppDraw (AppState majorState') =
 
   renderInfoInfo :: InfoInfo -> [Widget Name]
   renderInfoInfo info' =
-      [ txtLabel "SourceLocation   "
-            <+> txt (maybe "" renderSourceInformation (_sourceLocation info'))
+    maybe [] renderSourceInformation (_sourceLocation info')
       -- TODO these aren't actually implemented yet
       -- , txt $ "Type             "
       --       <> fromMaybe "" (_closureType =<< cd)
       -- , txt $ "Constructor      "
       --       <> fromMaybe "" (_constructor =<< cd)
+
+  renderSourceInformation :: SourceInformation -> [Widget Name]
+  renderSourceInformation (SourceInformation name cty ty label' modu loc) =
+      [ labelled "Name" $ vLimit 1 (str name)
+      , labelled "Closure type" $ vLimit 1 (str (show cty))
+      , labelled "Type" $ vLimit 3 (str ty)
+      , labelled "Label" $ vLimit 1 (str label')
+      , labelled "Module" $ vLimit 1 (str modu)
+      , labelled "Location" $ vLimit 1 (str loc)
       ]
 
-  renderSourceInformation :: SourceInformation -> T.Text
-  renderSourceInformation (SourceInformation name cty ty label' modu loc) =
-      T.pack $ unlines [name, show cty, ty, label', modu, loc]
+  labelled :: Text -> Widget Name -> Widget Name
+  labelled lbl w =
+    hLimit 17 (txtLabel lbl <+> vLimit 1 (fill ' ')) <+> w <+> vLimit 1 (fill ' ')
 
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
