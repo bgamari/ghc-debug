@@ -342,7 +342,7 @@ myAppHandleEvent eventChan brickEvent = do
   --        _ <- mkDominatorTreeIO hg
   --        _ <- mkReversalTreeIO hg
           return ()
-  
+
         -- This is really slow on big heaps, needs to be made more efficient
         -- or some progress/timeout indicator
         {-
@@ -351,7 +351,7 @@ myAppHandleEvent eventChan brickEvent = do
           !rootClosures' <- liftIO $ mapM (getClosureDetails debuggee' (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
           let domIoTree = mkIOTree (Just analysis) rootClosures'
                         (getChildren analysis)
-  
+
                         (List.sortOn (Ord.Down . _retainerSize))
           writeBChan eventChan (DominatorTreeReady (DominatorAnalysis analysis domIoTree))
           where
@@ -359,14 +359,14 @@ myAppHandleEvent eventChan brickEvent = do
               cs <- closureDominatees debuggee' analysis c
               fmap (("",)) <$> mapM (fillConstrDesc debuggee') cs
               -}
-  
-  
+
+
   --      mkReversalTreeIO hg = forkIO $ do
   --        let !revg = mkReverseGraph hg
   --        let revIoTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
   --        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis revIoTree (lookupHeapGraph hg)))
-  
-  
+
+
         mkSavedAndGCRootsIOTree manalysis = do
           raw_roots <- take 1000 . map ("GC Roots",) <$> GD.rootClosures debuggee'
           rootClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_roots
