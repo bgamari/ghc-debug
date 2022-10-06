@@ -1,5 +1,9 @@
 # Revision history for convention
 
+## 0.3.0.0 -- 2022-10-06
+
+* No changes.
+
 ## 0.2.0.0 -- 2021-12-06
 
 * Add a snapshots convention folder.
