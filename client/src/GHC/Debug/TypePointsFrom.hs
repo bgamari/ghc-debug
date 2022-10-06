@@ -148,6 +148,7 @@ getKey itblp = do
       Nothing -> getKeyFallback itblp itbl
       Just s -> return $ show (tipe itbl) ++ ":" ++ renderSourceInfo s
 
+getKeyFallback :: ConstrDescCont -> StgInfoTable -> DebugM String
 getKeyFallback itbp itbl = do
     case tipe itbl of
       t | CONSTR <= t && t <= CONSTR_NOCAF   -> do

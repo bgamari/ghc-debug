@@ -14,8 +14,6 @@ import GHC.Debug.Types
 import Unsafe.Coerce
 import Data.Binary
 import Control.Monad
-import Data.Binary.Put
-import Data.Binary.Get
 
 newtype RequestCache = RequestCache (HM.HashMap AnyReq AnyResp)
 

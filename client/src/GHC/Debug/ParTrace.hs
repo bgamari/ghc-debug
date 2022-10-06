@@ -250,8 +250,8 @@ tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
 
     stack :: GenStackFrames ClosurePtr -> DebugM ()
     stack fs =
-      let frames = getFrames fs
-      in mapM_ (getSourceInfo . tableId . frame_info) frames
+      let stack_frames = getFrames fs
+      in mapM_ (getSourceInfo . tableId . frame_info) stack_frames
 
     clos :: ClosurePtr -> SizedClosure -> ()
               -> DebugM ((), (), DebugM () -> DebugM ())

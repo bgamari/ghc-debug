@@ -23,10 +23,10 @@ findRetainersOf limit cps bads = findRetainers limit cps (\cp _ -> return (cp `S
     bad_set = Set.fromList bads
 
 findRetainersOfConstructor :: Maybe Int -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
-findRetainersOfConstructor limit roots con_name =
-  findRetainers limit roots go
+findRetainersOfConstructor limit rroots con_name =
+  findRetainers limit rroots go
   where
-    go cp sc =
+    go _ sc =
       case noSize sc of
         ConstrClosure _ _ _ cd -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
@@ -34,16 +34,16 @@ findRetainersOfConstructor limit roots con_name =
         _ -> return $ False
 
 findRetainersOfConstructorExact :: Maybe Int -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
-findRetainersOfConstructorExact limit roots clos_name =
-  findRetainers limit roots go
+findRetainersOfConstructorExact limit rroots clos_name =
+  findRetainers limit rroots go
   where
-    go cp sc = do
+    go _ sc = do
       loc <- getSourceInfo (tableId (info (noSize sc)))
       case loc of
         Nothing -> return False
-        Just loc ->
+        Just cur_loc ->
 
-          return $ (infoName loc) == clos_name
+          return $ (infoName cur_loc) == clos_name
 
 -- | From the given roots, find any path to one of the given pointers.
 -- Note: This function can be quite slow! The first argument is a limit to

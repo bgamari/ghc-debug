@@ -39,7 +39,6 @@ import           GHC.Debug.Decode.Stack
 import GHC.Debug.Client.Monad
 import           GHC.Debug.Client.BlockCache
 import Control.Monad.State
-import Data.Word
 
 import Debug.Trace
 
