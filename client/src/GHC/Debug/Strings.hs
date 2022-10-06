@@ -29,7 +29,7 @@ import Data.List
 
 -- | Find all the strings and then print out how many duplicates there are
 stringProgram :: Debuggee -> IO ()
---arrWordsProgram :: Debuggee -> IO ()
+arrWordsProgram :: Debuggee -> IO ()
 stringProgram = programX length stringAnalysis
 arrWordsProgram = programX (fromIntegral . BS.length) arrWordsAnalysis
 
@@ -81,14 +81,13 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
           cd' <- lift $ dereferenceConDesc cd
           case cd' of
             ConstrDesc _ _ cd2 | cd2 == ":" -> do
-              process cp sc k
+              process cp sc
             _ -> local (const False) k
         _  -> local (const False) k
       where
         process :: ClosurePtr -> SizedClosure
                 -> (RWST Bool () (Map.Map String (S.Set ClosurePtr)) DebugM) ()
-                -> (RWST Bool () (Map.Map String (S.Set ClosurePtr)) DebugM) ()
-        process cp clos k = do
+        process p_cp clos = do
           clos' <- lift $ quadtraverse pure dereferenceConDesc return return (noSize clos)
           checked <- lift $ check_bin clos'
           if checked
@@ -97,13 +96,13 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
               if parent_is_cons
                 then local (const True) k
                 else do
-                  ds <- lift $ decodeString cp
-                  modify' (Map.insertWith (<>) ds (S.singleton cp))
+                  ds <- lift $ decodeString p_cp
+                  modify' (Map.insertWith (<>) ds (S.singleton p_cp))
                   local (const True) k
             else local (const False) k
 
-        process_2 cp = do
-          cp' <- dereferenceClosure cp
+        process_2 p_cp = do
+          cp' <- dereferenceClosure p_cp
           case noSize cp' of
             (ConstrClosure _ _ _ cd) -> do
               (ConstrDesc _ _ cn) <- dereferenceConDesc cd
