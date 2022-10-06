@@ -23,6 +23,7 @@ module IOTree
   , viewPath
   , viewSelect
   , viewUp
+  , viewUp'
   , viewUnsafeDown
   , viewPrevSibling
   , viewNextSibling
@@ -99,7 +100,7 @@ ioTree name rootNodes getChildrenIO renderRow
     , _roots = nodeToTreeNode getChildrenIO <$> rootNodes
     , _getChildren = getChildrenIO
     , _renderRow = renderRow
-    , _selection = []
+    , _selection = if null rootNodes then [] else [0]
     -- ^ TODO we could take the initial path but we'd have to expand through to
     -- that path with IO
     }
@@ -142,7 +143,7 @@ handleIOTreeEvent e tree
         (view', cs) <- viewExpand view
         return $ if null cs then view' else viewUnsafeDown view' 0
     Vty.EvKey KDown _ -> return $ next view
-    Vty.EvKey KLeft _ -> return $ viewCollapse $ fromMaybe view (viewUp view)
+    Vty.EvKey KLeft _ -> return $ viewCollapse $ fromMaybe view (viewUp' view)
     Vty.EvKey KUp _ -> return $ prev view
     Vty.EvKey KPageDown _ -> return $ List.foldl' (flip ($)) view (replicate 15 next)
     Vty.EvKey KPageUp _ -> return $ List.foldl' (flip ($)) view (replicate 15 prev)
@@ -207,6 +208,12 @@ viewUp t = case t of
   Root{} -> Nothing
   Node mkParent _ t' -> Just (mkParent t')
 
+-- | move up the tree, but never to the root
+viewUp' :: IOTreeView node name -> Maybe (IOTreeView node name)
+viewUp' t = case viewUp t of
+  Just Root{} -> Nothing
+  x -> x
+
 -- | Move down to a child in the tree. Index must be in range. Must be expanded.
 viewUnsafeDown :: HasCallStack => IOTreeView node name -> Int -> IOTreeView node name
 viewUnsafeDown view i
@@ -220,7 +227,7 @@ viewUnsafeDown view i
 
 viewPrevVisible :: HasCallStack => IOTreeView node name -> Maybe (IOTreeView node name)
 viewPrevVisible view = case viewPrevSibling view of
-  Nothing -> viewUp view
+  Nothing -> viewUp' view
   Just nextSib -> Just (viewLastVisibleChild nextSib)
   where
   viewLastVisibleChild view' = if viewIsCollapsed view'
