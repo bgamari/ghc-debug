@@ -19,6 +19,8 @@ import System.Directory
 import System.FilePath
 import Data.Text(Text, pack)
 
+import Brick.Forms
+import Brick.Types (BrickEvent)
 import Brick.Widgets.List
 import IOTree
 import TextCursor
@@ -109,9 +111,12 @@ data TreeMode = Dominator
 
 data FooterMode = FooterInfo
                 | FooterMessage Text
-                | FooterInput FooterInputMode TextCursor
+                | FooterInput FooterInputMode (Form Text () Name)
 
 data FooterInputMode = FAddress | FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
+
+data KeybindingsMode = KeybindingsShown
+                     | KeybindingsHidden
 
 formatFooterMode :: FooterInputMode -> Text
 formatFooterMode FAddress = "address (0x..): "
@@ -137,6 +142,7 @@ currentRoots (SearchedRoots cp) = cp
 
 data OperationalState = OperationalState
     { _treeMode :: TreeMode
+    , _keybindingsMode :: KeybindingsMode
     , _footerMode :: FooterMode
     , _rootsFrom  :: RootsOrigin
     , _treeDominator :: Maybe DominatorAnalysis
@@ -158,7 +164,7 @@ data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetail
                                           , _convertPtr :: ClosurePtr -> Maybe (DebugClosure PapHI ConstrDesc StackHI (Maybe HeapGraphIndex)) }
 
 pauseModeTree :: (forall pap s c . IOTree (ClosureDetails pap s c) Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState mode _ _footer dom roots reverseA _) = case mode of
+pauseModeTree k (OperationalState mode _kb _footer _from dom roots reverseA _graph) = case mode of
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots
   Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA

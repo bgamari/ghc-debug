@@ -8,6 +8,8 @@
 module IOTree
   ( IOTree
   , IOTreePath
+  , RowState(..)
+  , RowCtx(..)
   , ioTree
   , setIOTreeRoots
   , getIOTreeRoots
@@ -44,15 +46,11 @@ data IOTree node name = IOTree
     { _name :: name
     , _roots :: [IOTreeNode node name]
     , _getChildren :: (node -> IO [node])
-    , _renderRow :: Bool         -- Is row selected
-                 -> Int          -- Tree depth
+    , _renderRow :: RowState     -- Is row expanded
+                 -> Bool         -- Is row selected
+                 -> RowCtx       -- innermost context
+                 -> [RowCtx]     -- per level of tree depth, is row last in subtree?
                  -> node         -- the node to render
-                 -> Widget name
-    -- ^ Render a single row
-    , _renderFirstChild
-                 :: Int             -- Tree depth (of the children)
-                 -> node         -- the (parent) node
-                 -> [node]       -- the children
                  -> Widget name
     -- Render some extra info as the first child of each node
     , _selection :: [Int]
@@ -87,24 +85,20 @@ ioTree
   -- ^ Root nodes
   -> (node -> IO [node])
   -- ^ Get child nodes of a node
-  -> (Bool         -- Is row selected
-      -> Int          -- Tree depth
+  -> (RowState        -- is row expanded or collapsed?
+      -> Bool         -- Is row selected
+      -> RowCtx       -- innermost context
+      -> [RowCtx]     -- Tree depth
       -> node         -- the node to render
       -> Widget name)
   -- ^ Row renderer (should add it's own indent based on depth)
-  -> (Int             -- Tree depth (of the children)
-      -> node         -- the (parent) node
-      -> [node]       -- the children
-      -> Widget name)
-    -- Render some extra info as the first child of each node
   -> IOTree node name
-ioTree name rootNodes getChildrenIO renderRow renderFirstChild
+ioTree name rootNodes getChildrenIO renderRow
   = IOTree
     { _name = name
     , _roots = nodeToTreeNode getChildrenIO <$> rootNodes
     , _getChildren = getChildrenIO
     , _renderRow = renderRow
-    , _renderFirstChild = renderFirstChild
     , _selection = []
     -- ^ TODO we could take the initial path but we'd have to expand through to
     -- that path with IO
@@ -115,28 +109,31 @@ nodeToTreeNode :: (node -> IO [node]) -> node -> IOTreeNode node name
 nodeToTreeNode k n = IOTreeNode n (Left (fmap (nodeToTreeNode k) <$> k n))
 
 renderIOTree :: (Show name, Ord name) => IOTree node name -> Widget name
-renderIOTree (IOTree widgetName rs _ renderRow renderFirstChild pathTop)
-  = viewport widgetName Both $ vBox $ renderTree 0 0 rs pathTop
+renderIOTree (IOTree widgetName rs _ renderRow pathTop)
+  = viewport widgetName Vertical $ vBox $ renderTree 0 [] rs pathTop
   where
   -- Render the tree of nodes
   renderTree _ _ [] _ = []
   renderTree minorIx depth (IOTreeNode node' csE : ns) path = case csE of
     -- Collapsed
-    Left _ -> row : rowsRest
+    Left _ -> row Collapsed : rowsRest
     -- Expanded
-    Right cs -> row
-                  : renderFirstChild (depth + 1) node' (_node <$> cs)
-                  : renderTree 0 (depth + 1) cs (if childIsSelected then drop 1 path else [])
+    Right cs -> row (Expanded (null cs))
+                  : renderTree 0 (rowCtx : depth) cs (if childIsSelected then drop 1 path else [])
                     ++ rowsRest
     where
     childIsSelected = case path of
       x:_ -> x == minorIx
       _ -> False
     selected = path == [minorIx]
-    row = (if selected then visible else id) $ renderRow selected depth node'
+    rowCtx = if null ns then LastRow else NotLastRow
+    row state = (if selected then visible else id) $ renderRow state selected rowCtx depth node'
     rowsRest = renderTree (minorIx + 1) depth ns path
 
-handleIOTreeEvent :: Vty.Event -> IOTree node name -> EventM name (IOTree node name)
+data RowState = Expanded Bool | Collapsed
+data RowCtx = NotLastRow | LastRow
+
+handleIOTreeEvent :: Vty.Event -> IOTree node name -> EventM name s (IOTree node name)
 handleIOTreeEvent e tree
   = liftIO
   $ forIOTreeViewSelection tree
@@ -144,10 +141,15 @@ handleIOTreeEvent e tree
     Vty.EvKey KRight _ -> do
         (view', cs) <- viewExpand view
         return $ if null cs then view' else viewUnsafeDown view' 0
-    Vty.EvKey KDown _ -> return $ fromMaybe view (viewNextVisible view)
+    Vty.EvKey KDown _ -> return $ next view
     Vty.EvKey KLeft _ -> return $ viewCollapse $ fromMaybe view (viewUp view)
-    Vty.EvKey KUp _ -> return $ fromMaybe view (viewPrevVisible view)
+    Vty.EvKey KUp _ -> return $ prev view
+    Vty.EvKey KPageDown _ -> return $ List.foldl' (flip ($)) view (replicate 15 next)
+    Vty.EvKey KPageUp _ -> return $ List.foldl' (flip ($)) view (replicate 15 prev)
     _ -> return view
+    where
+      next v = fromMaybe v (viewNextVisible v)
+      prev v = fromMaybe v (viewPrevVisible v)
 
 -- | Toggle (expanded/collapsed) at the current selection.
 ioTreeToggle :: IOTree node name -> IO (IOTree node name)
@@ -205,7 +207,7 @@ viewUp t = case t of
   Root{} -> Nothing
   Node mkParent _ t' -> Just (mkParent t')
 
--- | Move down to a cild in the tree. Index must be in range. Must be expanded.
+-- | Move down to a child in the tree. Index must be in range. Must be expanded.
 viewUnsafeDown :: HasCallStack => IOTreeView node name -> Int -> IOTreeView node name
 viewUnsafeDown view i
   | viewIsCollapsed view = error "viewUnsafeDown: view must be expanded"

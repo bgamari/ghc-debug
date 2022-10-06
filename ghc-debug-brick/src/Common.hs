@@ -7,13 +7,9 @@ import qualified Brick.Types as T
 import Lens.Micro
 import Namespace
 
-type Handler' s k =
-  s
-  -> T.BrickEvent Name ()
-  -> T.EventM Name (T.Next k)
-
-type Handler s = Handler' s s
-
+type Handler s =
+     T.BrickEvent Name ()
+  -> T.EventM Name s ()
 
 -- | liftHandler lifts a handler which only operates on its own state into
 -- a larger state. It won't work if the handler needs to modify something
@@ -24,9 +20,8 @@ liftHandler
   -> (c -> a) -- How to inject the new state
   -> Handler c -- Handler for inner state
   -> Handler s
-liftHandler l c i h st ev = do
-  let update s = set l (i s) st
-  fmap update <$> h c ev
+liftHandler l c i h ev = do
+  T.zoom (lens (const c) (\ s c' -> set l (i c') s)) (h ev)
 
 -- Missing instance from brick
 deriving instance Functor (T.BrickEvent n)

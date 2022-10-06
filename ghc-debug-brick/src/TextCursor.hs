@@ -5,7 +5,7 @@ import Data.Maybe ( fromMaybe )
 import Cursor.Text
 import Cursor.Types
 
-import Brick hiding (continue, halt)
+import Brick hiding (halt)
 import qualified Graphics.Vty as V
 
 import Namespace
@@ -14,26 +14,26 @@ import Namespace
 drawTextCursor :: TextCursor -> Widget Name
 drawTextCursor tc =
   showCursor Footer (Location (textCursorIndex tc, 0))
-    $ txt (rebuildTextCursor tc)
+    $ txt (rebuildTextCursor tc) <+> fill ' '
 
-handleTextCursorEvent :: (TextCursor -> EventM Name (Next k))
+handleTextCursorEvent :: (TextCursor -> s -> s)
                       -> TextCursor
                       -> BrickEvent n e
-                      -> EventM Name (Next k)
-handleTextCursorEvent k tc e =
+                      -> EventM Name s ()
+handleTextCursorEvent k tc e = do
     case e of
         VtyEvent ve ->
             case ve of
                 V.EvKey key _mods ->
-                    let mDo func = k . fromMaybe tc $ func tc
+                    let mDo func = modify (k tc)
                     in case key of
                            V.KChar c -> mDo $ textCursorInsert c
                            V.KLeft -> mDo textCursorSelectPrev
                            V.KRight -> mDo textCursorSelectNext
                            V.KBS -> mDo (dullMDelete . textCursorRemove)
-                           V.KHome -> k $ textCursorSelectStart tc
-                           V.KEnd -> k $ textCursorSelectEnd tc
+                           V.KHome -> modify (k (textCursorSelectStart tc))
+                           V.KEnd -> modify (k (textCursorSelectEnd tc))
                            V.KDel -> mDo (dullMDelete . textCursorDelete)
-                           _ -> k tc
-                _ -> k tc
-        _ -> k tc
+                           _ -> return ()
+                _ -> return ()
+        _ -> return ()

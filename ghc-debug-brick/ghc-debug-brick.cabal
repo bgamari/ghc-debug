@@ -23,7 +23,7 @@ executable ghc-debug-brick
                      , Cursor.Text
                      , Cursor.List
   build-depends:       base >=4.16 && <5
-                     , brick < 1
+                     , brick ^>= 1.3
                      , containers
                      , directory
                      , filepath
