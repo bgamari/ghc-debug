@@ -21,6 +21,7 @@ import System.IO
 import Data.IORef
 import Data.List
 import Data.Ord
+import Control.Tracer
 
 import GHC.Debug.Client.BlockCache
 import GHC.Debug.Client.RequestCache
@@ -37,6 +38,7 @@ data Debuggee = Debuggee { -- Keep track of how many of each request we make
                          , debuggeeBlockCache :: IORef BlockCache
                          , debuggeeRequestCache :: MVar RequestCache
                          , debuggeeHandle :: Maybe (MVar Handle)
+                         , debuggeeTrace :: Tracer IO String
                          }
 
 data FetchStats = FetchStats { _networkRequests :: !Int, _cachedRequests :: !Int }
@@ -88,7 +90,10 @@ instance DebugMonad DebugM where
   type DebugEnv DebugM = Debuggee
   request = DebugM . simpleReq
   requestBlock = blockReq
-  traceMsg = DebugM . liftIO . putStrLn
+  traceMsg s = DebugM $ do
+    Debuggee{..} <- ask
+    liftIO $ traceWith debuggeeTrace s
+
   printRequestLog e = do
     case debuggeeRequestCount e of
       Just hm_ref -> do
@@ -96,9 +101,9 @@ instance DebugMonad DebugM where
       Nothing -> putStrLn "No request log in Simple(TM) mode"
   runDebug = runSimple
   runDebugTrace e a = (,[]) <$> runDebug e a
-  newEnv m = case m of
-               SnapshotMode f -> mkSnapshotEnv f
-               SocketMode h -> mkHandleEnv h
+  newEnv t m = case m of
+               SnapshotMode f -> mkSnapshotEnv t f
+               SocketMode h -> mkHandleEnv t h
 
   loadCache fp = DebugM $ do
     (Snapshot _ new_req_cache) <- lift $ decodeFile fp
@@ -127,23 +132,26 @@ initBlockCacheFromReqCache new_req_cache  =
 runSimple :: Debuggee -> DebugM a -> IO a
 runSimple d (DebugM a) = runReaderT a d
 
-mkEnv :: (RequestCache, BlockCache) -> Maybe Handle -> IO Debuggee
-mkEnv (req_c, block_c) h = do
+mkEnv :: Tracer IO String
+      -> (RequestCache, BlockCache)
+      -> Maybe Handle
+      -> IO Debuggee
+mkEnv trace_msg (req_c, block_c) h = do
   let enable_stats = False
   mcount <- if enable_stats then Just <$> newIORef HM.empty else return Nothing
   bc <- newIORef  block_c
   rc <- newMVar req_c
   mhdl <-  traverse newMVar h
-  return $ Debuggee mcount bc rc mhdl
+  return $ Debuggee mcount bc rc mhdl trace_msg
 
-mkHandleEnv :: Handle -> IO Debuggee
-mkHandleEnv h = mkEnv (emptyRequestCache, emptyBlockCache) (Just h)
+mkHandleEnv :: Tracer IO String -> Handle -> IO Debuggee
+mkHandleEnv trace_msg h = mkEnv trace_msg (emptyRequestCache, emptyBlockCache) (Just h)
 
-mkSnapshotEnv :: FilePath -> IO Debuggee
-mkSnapshotEnv fp = do
+mkSnapshotEnv :: Tracer IO String -> FilePath -> IO Debuggee
+mkSnapshotEnv trace_msg fp = do
   Snapshot _ req_c <- decodeFile fp
   let block_c = initBlockCacheFromReqCache req_c
-  mkEnv (req_c, block_c) Nothing
+  mkEnv trace_msg (req_c, block_c) Nothing
 
 -- TODO: Sending multiple pauses will clear the cache, should keep track of
 -- the pause state and only clear caches if the state changes.

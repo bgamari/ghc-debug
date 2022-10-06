@@ -34,6 +34,7 @@ executable ghc-debug-brick
                      , ghc-debug-convention == 0.2.0.0
                      , unordered-containers
                      , exceptions
+                     , contra-tracer
   hs-source-dirs:    src
   default-language:    Haskell2010
   ghc-options: -threaded -Wall

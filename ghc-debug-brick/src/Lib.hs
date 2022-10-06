@@ -111,6 +111,7 @@ import Data.Tree
 import Control.Monad
 import System.FilePath
 import System.Directory
+import Control.Tracer
 
 data Analysis = Analysis
   { analysisDominatorRoots :: ![ClosurePtr]
@@ -186,10 +187,11 @@ debuggeeRun exeName socketName = GD.debuggeeRun exeName socketName
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect socketName = GD.debuggeeConnect socketName
+debuggeeConnect socketName = GD.debuggeeConnectWithTracer debugTracer socketName
+
 
 snapshotConnect :: FilePath -> IO Debuggee
-snapshotConnect snapshotName = GD.snapshotInit snapshotName
+snapshotConnect snapshotName = GD.snapshotInitWithTracer debugTracer snapshotName
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()

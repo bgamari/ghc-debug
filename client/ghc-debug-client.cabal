@@ -60,7 +60,8 @@ library
                        language-dot ^>= 0.1,
                        ghc-prim ^>= 0.8,
                        stm ^>= 2.5,
-                       bytestring
+                       bytestring,
+                       contra-tracer
 
   hs-source-dirs:      src
   default-language:    Haskell2010

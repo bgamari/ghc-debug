@@ -24,10 +24,10 @@ import Data.Array.BitArray.IO hiding (map)
 import Control.Monad.Reader
 import Data.Word
 import GHC.Debug.Client.Monad.Simple
+import GHC.Debug.Client.Monad.Class
 import Control.Concurrent.Async
 import Data.IORef
 import Control.Exception.Base
-import Debug.Trace
 import Control.Concurrent.STM
 
 threads :: Int
@@ -35,9 +35,6 @@ threads = 64
 
 type InChan = TChan
 type OutChan = TChan
-
-unsafeLiftIO :: IO a -> DebugM a
-unsafeLiftIO = DebugM . liftIO
 
 -- | State local to a thread, there are $threads spawned, each which deals
 -- with (address `div` 8) % threads. Each thread therefore:
@@ -219,7 +216,7 @@ data TraceFunctionsIO a s =
 -- lower.
 traceParFromM :: Monoid s => TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 traceParFromM k cps = do
-  traceM ("SPAWNING: " ++ show threads)
+  traceMsg ("SPAWNING: " ++ show threads)
   (init_mblocks, work_actives, start)  <- unzip3 <$> mapM (\b -> do
                                     (ti, working, start) <- initThread b k
                                     return ((fromIntegral b, ti), working, start)) [0 .. threads - 1]

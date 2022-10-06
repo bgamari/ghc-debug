@@ -13,7 +13,6 @@ import Data.Array.BitArray.IO
 import Control.Monad.Reader
 import Data.IORef
 import Data.Word
-import System.IO
 
 newtype VisitedSet = VisitedSet (IM.IntMap (IOBitArray Word16))
 
@@ -27,7 +26,7 @@ getKeyPair cp =
       offset = getBlockOffset cp `div` 8
   in (bk, fromIntegral offset)
 
-checkVisit :: ClosurePtr -> IORef TraceState -> IO Bool
+checkVisit :: ClosurePtr -> IORef TraceState -> IO (Maybe Int, Bool)
 checkVisit cp mref = do
   st <- readIORef mref
   let VisitedSet v = visited st
@@ -38,12 +37,11 @@ checkVisit cp mref = do
       na <- newArray (0, fromIntegral (blockMask `div` 8)) False
       writeArray na offset True
       writeIORef mref (TraceState (VisitedSet (IM.insert bk na v)) (num_visited + 1))
-      when (num_visited `mod` 10_000 == 0) $ hPutStrLn stderr ("Traced: " ++ show num_visited)
-      return False
+      return (Just num_visited, False)
     Just bm -> do
       res <- readArray bm offset
       unless res (writeArray bm offset True)
-      return res
+      return (Nothing, res)
 
 
 
@@ -79,7 +77,9 @@ traceClosureFromM !k = go
   where
     go cp = do
       mref <- ask
-      b <- lift $ lift $ unsafeLiftIO (checkVisit cp mref)
+      (mnum_visited, b) <- lift $ lift $ unsafeLiftIO (checkVisit cp mref)
+      forM_ mnum_visited $ \num_visited ->
+        lift $ lift $ when (num_visited `mod` 10_000 == 0) $ traceMsg ("Traced: " ++ show num_visited)
       if b
         then lift $ visitedVal k cp
         else do

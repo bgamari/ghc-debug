@@ -5,6 +5,7 @@ module GHC.Debug.Client.Monad.Class where
 import Data.Typeable
 import GHC.Debug.Client.BlockCache
 import GHC.Debug.Types
+import Control.Tracer
 import System.IO
 
 class (MonadFail m, Monad m) => DebugMonad m where
@@ -15,7 +16,7 @@ class (MonadFail m, Monad m) => DebugMonad m where
   printRequestLog :: DebugEnv m -> IO ()
   runDebug :: DebugEnv m -> m a -> IO a
   runDebugTrace :: DebugEnv m -> m a -> IO (a, [String])
-  newEnv :: Mode -> IO (DebugEnv m)
+  newEnv :: Tracer IO String -> Mode -> IO (DebugEnv m)
 
   saveCache :: FilePath -> m ()
   loadCache :: FilePath -> m ()

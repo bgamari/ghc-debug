@@ -20,9 +20,11 @@ module GHC.Debug.Client.Monad
   , withDebuggeeConnect
   , debuggeeRun
   , debuggeeConnect
+  , debuggeeConnectWithTracer
   , debuggeeClose
   -- * Snapshot run
   , snapshotInit
+  , snapshotInitWithTracer
   , snapshotRun
     -- * Logging
   , outputRequestLog
@@ -36,6 +38,7 @@ import GHC.Debug.Client.Monad.Class
 import GHC.Debug.Types (Request(..))
 import qualified GHC.Debug.Client.Monad.Simple as S
 import System.IO
+import Control.Tracer
 
 type DebugM = S.DebugM
 
@@ -88,19 +91,29 @@ debuggeeRun exeName socketName = do
     -- Now connect to the socket the debuggeeProcess just started
     debuggeeConnect socketName
 
+debuggeeConnect :: FilePath -> IO Debuggee
+debuggeeConnect = debuggeeConnectWithTracer debugTracer
+
 -- | Connect to a debuggee on the given socket. Use @debuggeeClose@ when you're done.
-debuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
+debuggeeConnectWithTracer
+                :: Tracer IO String
+                -> FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect socketName = do
+debuggeeConnectWithTracer tracer socketName = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix socketName)
     hdl <- socketToHandle s ReadWriteMode
-    new_env <- newEnv @DebugM (SocketMode hdl)
+    new_env <- newEnv @DebugM tracer (SocketMode hdl)
     return (Debuggee new_env)
 
 -- | Create a debuggee by loading a snapshot created by 'snapshot'.
 snapshotInit :: FilePath -> IO Debuggee
-snapshotInit fp = Debuggee <$> newEnv @DebugM (SnapshotMode fp)
+snapshotInit = snapshotInitWithTracer debugTracer
+
+snapshotInitWithTracer :: Tracer IO String -> FilePath -> IO Debuggee
+snapshotInitWithTracer tracer fp =
+  Debuggee <$> newEnv @DebugM tracer (SnapshotMode fp)
+
 
 -- | Start an analysis session using a snapshot. This will not connect to a
 -- debuggee. The snapshot is created by 'snapshot'.
