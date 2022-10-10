@@ -11,8 +11,10 @@ ci:
     - nix-shell -p git
     - nix-shell
     - cabal update
-    - cabal build debugger
-    - cabal test
+    - cabal build -w ghc-9.2.4 ghc-debug-brick ghc-debug-common ghc-debug-convention ghc-debug-client ghc-debug-stub
+    - cabal test -w ghc-9.2.4
+    - cabal build -w ghc-9.4.2 ghc-debug-brick ghc-debug-common ghc-debug-convention ghc-debug-client ghc-debug-stub
+    - cabal test -w ghc-9.4.2
 
 pages:
   script:
