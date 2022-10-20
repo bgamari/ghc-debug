@@ -50,7 +50,6 @@ import GHC.Debug.Types.Closures as T
 import GHC.Debug.Types.Ptr as T
 import GHC.Debug.Types.Version
 import GHC.Debug.Utils
-import GHC.Exts.Heap.ClosureTypes
 import GHC.Debug.Decode
 import Control.Concurrent
 
