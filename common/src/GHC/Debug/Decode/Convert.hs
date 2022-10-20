@@ -28,7 +28,7 @@ convertClosure itb g =
     GHC.MVarClosure _ a2 a3 a4         -> MVarClosure itb a2 a3 a4
     GHC.OtherClosure _ a2 a3           -> OtherClosure itb a2 a3
     GHC.WeakClosure _ a2 a3 a4 a5 a6   ->
-#if __GLASGOW_HASKELL__ >= 905
+#if MIN_VERSION_GLASGOW_HASKELL(9,4,2,0)
       let w_link = a6
 #else
       -- nullPtr check
