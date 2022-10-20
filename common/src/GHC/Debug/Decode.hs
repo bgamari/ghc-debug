@@ -225,8 +225,12 @@ decodeArrWords :: (StgInfoTableWithPtr, b)
 decodeArrWords  (infot, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
   bytes <- getWord64le
-  payload <- replicateM (ceiling (fromIntegral bytes / 8)) getWord
+  payload <- replicateM (fromIntegral $ bytes `ceilIntDiv` 8) getWord
   return $ GHC.Debug.Types.Closures.ArrWordsClosure infot (fromIntegral bytes) (map fromIntegral payload)
+
+-- | Compute @ceiling (a/b)@.
+ceilIntDiv :: Integral a => a -> a -> a
+ceilIntDiv a b = (a + b - 1) `div` b
 
 tsoVersionChanged :: Version
 tsoVersionChanged = Version 905 20220925
