@@ -605,7 +605,18 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
           write_string(resp, ip.ty_desc);
           write_string(resp, ip.label);
           write_string(resp, ip.module);
+#if MIN_VERSION_GLASGOW_HASKELL(9,5,0,0)
+          {
+            size_t len_file = strlen(ip.src_file);
+            size_t len_span = strlen(ip.src_span);
+            write_size(resp, len_file + 1 + len_span);
+            resp.write(ip.src_file, len_file);
+            resp.write(":", 1);
+            resp.write(ip.src_span, len_span);
+          }
+#else
           write_string(resp, ip.srcspan);
+#endif
         }
         resp.finish(RESP_OKAY);
         break;
