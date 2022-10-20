@@ -260,12 +260,16 @@ void inform_callback(void *user, PauseToken * p){
   paused = true;
 }
 
-static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, StgWord size) {
-    uint32_t b = 0;
-    uint32_t size_payload;
-    size_payload=htonl(size);
+// Size fields are always uint32_t in network-byte-order.
+static void write_size(Response& resp, StgWord size) {
+    uint32_t size_payload = htonl(size);
     trace("SIZE %llu", size);
     resp.write((uint32_t) size_payload);
+}
+
+static void write_large_bitmap(Response& resp, StgLargeBitmap *large_bitmap, StgWord size) {
+    uint32_t b = 0;
+    write_size(resp, size);
 
     for (uint32_t i = 0; i < size; b++) {
         StgWord bitmap = large_bitmap->bitmap[b];
@@ -282,10 +286,7 @@ static void write_small_bitmap(Response& resp, StgWord bitmap, StgWord size) {
     uint32_t i = 0;
 
     // Small bitmap
-    uint32_t size_payload;
-    size_payload=htonl(size);
-    trace("SIZE %llu", size);
-    resp.write((uint32_t) size_payload);
+    write_size(resp, size);
     while (size > 0) {
         resp.write((uint8_t) ! (bitmap & 1));
         bitmap = bitmap >> 1;
@@ -313,15 +314,10 @@ static void write_fun_bitmap(Response& resp, StgWord size, StgClosure * fun){
 
 
 static void write_string(Response& resp, const char * s){
-    uint32_t len_payload;
-    len_payload=htonl(strlen(s));
-    resp.write(len_payload);
-    trace("SIZE: %lu", strlen(s));
-    uint32_t i;
+    StgWord size = strlen(s);
+    write_size(resp, size);
     trace("WRITING: %s\n", s);
-    for (i = 0; i < strlen(s); i++){
-      resp.write(s[i]);
-    }
+    resp.write(s, size);
 }
 
 
@@ -601,16 +597,15 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
           trace("FOUND\n");
 
           size_t len = 6;
-          uint32_t len_payload = htonl(len);
-          resp.write(len_payload);
+          write_size(resp, len);
 
-        //  Using the function just produces garbage.. no idea why
-        write_string(resp, ip.table_name);
-        write_string(resp, ip.closure_desc);
-        write_string(resp, ip.ty_desc);
-        write_string(resp, ip.label);
-        write_string(resp, ip.module);
-        write_string(resp, ip.srcloc);
+          //  Using the function just produces garbage.. no idea why
+          write_string(resp, ip.table_name);
+          write_string(resp, ip.closure_desc);
+          write_string(resp, ip.ty_desc);
+          write_string(resp, ip.label);
+          write_string(resp, ip.module);
+          write_string(resp, ip.srcspan);
         }
         resp.finish(RESP_OKAY);
         break;
