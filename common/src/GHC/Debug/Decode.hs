@@ -239,7 +239,7 @@ decodeTSO :: Version
           -> (StgInfoTableWithPtr, RawInfoTable)
           -> (a, RawClosure)
           -> SizedClosure
-decodeTSO ver it@(infot, _) c@(_, rc) = decodeFromBS rc $ do
+decodeTSO ver (infot, _) (_, rc) = decodeFromBS rc $ do
   _itbl <- skipClosureHeader
   link <- getClosurePtr
   global_link <- getClosurePtr
