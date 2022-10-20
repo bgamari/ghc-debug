@@ -435,6 +435,7 @@ closureDominatees e analysis (Closure cPtr _) = run e $ do
 closureReferencesAndLabels :: GD.DebugClosure pap string stack pointer -> [(String, Either pointer stack)]
 closureReferencesAndLabels closure = case closure of
   TSOClosure {..} ->
+    [ ("Thread label", Left lbl) | Just lbl <- pure threadLabel ] ++
     [ ("Stack", Left tsoStack)
     , ("Link", Left _link)
     , ("Global Link", Left global_link)
