@@ -304,7 +304,7 @@ data DebugClosure pap string s b
       , flags :: [GHC.TsoFlags]
       , threadId :: Word64
       , saved_errno :: Word32
-      , dirty:: Word32
+      , dirty :: Word32
       , alloc_limit :: Int64
       , tot_stack_size :: Word32
       , prof :: Maybe ProfTypes.StgTSOProfInfo
