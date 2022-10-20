@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeOperators #-}
 
 module GHC.Debug.Types(module T
                       , Request(..)
