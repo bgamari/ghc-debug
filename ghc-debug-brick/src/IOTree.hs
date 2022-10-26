@@ -143,6 +143,7 @@ handleIOTreeEvent e tree
         (view', cs) <- viewExpand view
         return $ if null cs then view' else viewUnsafeDown view' 0
     Vty.EvKey KDown _ -> return $ next view
+    Vty.EvKey KLeft [Vty.MShift] -> return $ viewCollapseAll view
     Vty.EvKey KLeft _ -> return $ viewCollapse $ fromMaybe view (viewUp' view)
     Vty.EvKey KUp _ -> return $ prev view
     Vty.EvKey KPageDown _ -> return $ List.foldl' (flip ($)) view (replicate 15 next)
@@ -282,7 +283,21 @@ viewCollapse t = case t of
     Left _ -> t
     Right cs -> Node mkParent i t'{_children = Left (return cs)}
 
--- | Expand the current node. Returns the children
+-- | Collapse the current node and all the nodes in the the subtree rooted at
+-- the current node.
+viewCollapseAll :: HasCallStack => IOTreeView node name -> IOTreeView node name
+viewCollapseAll tv = case tv of
+    Root t            -> Root (t {_roots = fmap go (_roots t)})
+    Node mkParent i t -> case _children t of
+      Left cs  -> Node mkParent i t {_children = Left $ fmap go <$> cs}
+      Right cs -> Node mkParent i t {_children = Left . pure $ fmap go cs }
+  where
+    go :: IOTreeNode node name -> IOTreeNode node name
+    go tn = case _children tn of
+      Left cs  -> tn {_children = Left $ fmap go <$> cs }
+      Right cs -> tn {_children = Left . pure $ fmap go cs}
+
+-- | Expand the current node. Returns the children of the current node.
 viewExpand :: HasCallStack => IOTreeView node name -> IO (IOTreeView node name, [IOTreeNode node name])
 viewExpand t = case t of
   Root t' -> return (t, _roots t')
