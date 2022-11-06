@@ -1,6 +1,6 @@
 # Profiling Modes
 
-In the `GHC.Debug.Profiling` module there are several profiling modes which
+In the `GHC.Debug.Profile` module there are several profiling modes which
 can be used to get an overview of the heap structure of your application.
 You can use these modes when you're first getting a handle on the memory
 characteristics of your program.
@@ -14,7 +14,7 @@ and where best to direct your efforts.
 
 A simple program which performs a heap census is as follows:
 
-```
+```haskell
 p1 e = do
   pause e
   c <- run e $ do
@@ -63,10 +63,10 @@ to focus your attention on a certain portion of the heap.
 Another pre-canned census type is the 2-level closure type census (`census2LevelClosureType`). This
 census type is more detailed than a normal closure type census because each
 bucket is a combination of the closure type of a closure and the closure type
-of it's pointer arguments. For example, this profiling mode allows you to distinguish
+of its pointer arguments. For example, this profiling mode allows you to distinguish
 lists of different types.
 
-```
+```haskell
 p2 e = do
   pause e
   c <- run e $ do
@@ -92,14 +92,14 @@ ghc:GHC.Iface.Type:IfaceTyConApp[ghc:GHC.Iface.Type:IfaceTyCon,ghc:GHC.Iface.Typ
 ghc:GHC.Iface.Type:IfaceTyConInfo[ghc:GHC.Types.Basic:NotPromoted,ghc:GHC.Iface.Type:IfaceNormalTyCon]:16766592:698608:24:24.0
 ```
 
-Compared the the previous profile you can now see that the majority of list allocations
+Compared to the previous profile you can now see that the majority of list allocations
 are lists which contain types, and specifically `TyConApp` constructors. The top
 band correponds to `:` constructors where the first argument is a `TyConApp` constructor
 and the second argument another `:`. These account for 67mb of all heap allocation.
 
 Looking further down you can also see that `TyConApp` appears twice again, this time
 firstly with the first argument being an `AlgTyCon` but more interestingly secondly with
-`PromotedDataCon` and and argument of `[]`. This second band probably has a high potential
+`PromotedDataCon` and an argument of `[]`. This second band probably has a high potential
 for sharing as it's unlikely there are 942 000 different nullary promoted type constructors.
 In a later chapter of this brilliant documentation, we'll look a bit more deeply into
 the issue of `TyConApp`s.
@@ -115,7 +115,7 @@ Writing your own census is also remarkably easy using the `closureCensusBy`
 helper function. The supplied classification function is applied once to each
 closure on the heap and the result returned.
 
-```
+```haskell
 closureCensusBy :: forall k v . (Semigroup v, Ord k)
                 => (ClosurePtr -> SizedClosure -> DebugM (Maybe (k, v)))
                 -> [ClosurePtr] -> DebugM (Map.Map k v)
@@ -125,7 +125,7 @@ For example, if you want to perform a census of the allocation locations of
 all the `TyConApp` constructors in your application, you can implement this
 using `closureCensusBy`.
 
-```
+```haskell
 tyConAppLoc :: ClosurePtr -> SizedClosure -> DebugM (Maybe (SourceInformation, Count))
 tyConAppLoc cp sc = do
   case noSize sc of
@@ -153,9 +153,9 @@ are investigating how the heap has changed between two parts of your program.
 `censusClosureType` just returns a normal map so can be manipulated easily.
 Taking the difference amounts to first performing a census on the before and after
 snapshots and then taking the difference between the two. The census
-can then be printed using `printCensusByClosureType`.
+can then be printed using `writeCensusByClosureType`.
 
-```
+```haskell
 p44e before after = do
   before_census <- runTrace before $ do
                       precacheBlocks
@@ -177,5 +177,3 @@ iterations it may only increase by 1).
 There is also some support for rendering a profile using `eventlog2html`,
 see the `profile` function for an example of how to do this. Bare in mind that
 profiling using ghc-debug is much slower than the built-in heap profiling modes.
-
-

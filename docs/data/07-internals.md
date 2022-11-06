@@ -21,7 +21,7 @@ For example, constructor closures have the standard layout, an info table follow
 by pointers, followed by data with the addition of a pointer to a description
 for that closure. Therefore it is represented as follows:
 
-```
+```haskell
   ConstrClosure
     { info       :: !StgInfoTableWithPtr
     , ptrArgs    :: ![b]            -- ^ Pointer arguments
@@ -40,7 +40,7 @@ The easiest way to generically interact with a `DebugClosure pap string s b` is
 using the `Quadtraversable` class, which is a generalisation of `Traversable` to
 work with 4 type parameters.
 
-```
+```haskell
 class Quadtraversable m where
   quadtraverse ::
     Applicative f => (a -> f b)
@@ -97,7 +97,7 @@ requests over the socket using the API defined by `GHC.Debug.Types.Request`.
 
 All requests are cached in the `RequestCache`.
 Snapshotting is implemented by serialising the `RequestCache`. Resuming a process
-clears are requests which are invalidated by a pause, such as `RequestClosure` but
+clears all requests which are invalidated by a pause, such as `RequestClosure` but
 doesn't remove entries such as `RequestInfoTable` and `RequestSourceLoc` which
 are unchanged across the execution of a program. This is also a significant performance
 improvement, when querying a live process the first traversal is far slower than subsequent pauses.

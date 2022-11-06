@@ -183,7 +183,7 @@ p2 e = do
 ```
 
 Once the fragmentation per pinned block is calculated, the information is displayed
-in a histogram which shows the percentage each block is utilised. The `printBlockHistogram`
+in a histogram which shows the percentage each block is utilised. The `printBlockCensus`
 function is provided by ghc-debug to print the census but omitted for brevity.
 
 Before the benchmark runs, most blocks are quite full. Fragmentation hasn't occurred

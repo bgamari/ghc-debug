@@ -11,7 +11,7 @@ Functions for dealing with retainers live in `GHC.Debug.Retainers`.
 The first part of the analysis is to find retainer paths to a specific object.
 The `findRetainers` function provides the most general interface.
 
-```
+```haskell
 findRetainers :: Maybe Int
               -> [ClosurePtr]
               -> (ClosurePtr -> SizedClosure -> DebugM Bool)
@@ -34,7 +34,7 @@ of the given roots to an object which was classified by the classification funct
 For example, we can use `findRetainers` to find retainer paths for 100 `TyConApp`
 constructors.
 
-```
+```haskell
 tyConApp rroots = findRetainers (Just 100) rroots go
   where
     go cp sc =
@@ -46,7 +46,7 @@ tyConApp rroots = findRetainers (Just 100) rroots go
 ```
 
 
-In this particular snapshot there are over 100 000 TyConApp objects, but by sampling
+In this particular snapshot there are over 100 000 `TyConApp` objects, but by sampling
 a small number you can still manually inspect the output and work out what's
 going on.
 
@@ -63,22 +63,22 @@ The returned result of `findRetainersOf` is not very useful on its own.
 `addLocationToStack` is a useful function which decorates a retainer stack with
 additional location information.
 
-```
+```haskell
 addLocationToStack :: [ClosurePtr] -> DebugM [(SizedClosureC, Maybe SourceInformation)]
 ```
 
 Then once the locations have been added to the stack, the normal way I render
 the stacks is using `displayRetainerStack` which then allows you to use a `less`
 based interface for inspecting the output. The argument to `displayRetainerStack`
-is the output of `addLocationStack` but with an additional label for each path.
+is the output of `addLocationToStack` but with an additional label for each path.
 
-```
+```haskell
 displayRetainerStack :: [(String, [(SizedClosureC, Maybe SourceInformation)])] -> IO ()
 ```
 
 A complete analysis program combines together these three functions:
 
-```
+```haskell
 p41a e = do
   pause e
   stacks <- runTrace e $ do
@@ -124,6 +124,6 @@ TSO <nl>
 What you can learn from a stack, depends on the stack and also your own domain knowledge of a program.
 This above stack explains that a THUNK which has type `InScopeSet` retains an `IntMap` which
 contains `Id`s and in one of those `Id`s, there is an `IdInfo` field which has thunk of
-type `Unfolding` wehich retains a ... and so on. This information can be verbose but very useful.
+type `Unfolding` which retains a ... and so on. This information can be verbose but very useful.
 You need to look at the source positions and program in order to understand what is going on and whether it is good or bad. Randomly forcing thunks is likely to get you nowhere. We didn't write ghc-debug
 to get people to randomly insert ! patterns - you can now be precise.

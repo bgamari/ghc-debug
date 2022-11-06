@@ -283,7 +283,7 @@ viewCollapse t = case t of
     Left _ -> t
     Right cs -> Node mkParent i t'{_children = Left (return cs)}
 
--- | Collapse the current node and all the nodes in the the subtree rooted at
+-- | Collapse the current node and all the nodes in the subtree rooted at
 -- the current node.
 viewCollapseAll :: HasCallStack => IOTreeView node name -> IOTreeView node name
 viewCollapseAll tv = case tv of

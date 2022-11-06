@@ -23,7 +23,7 @@ the process and then performing further analysis on the snapshot.
 Functions to do with snapshotting can be found in `GHC.Debug.Snapshot`.
 The easiest way to take a snapshot is to use the precanned `makeSnapshot` function.
 
-```
+```haskell
 main = withDebuggeeConnect "/tmp/ghc-debug" (\e -> makeSnapshot e "/tmp/ghc-debug-cache)
 ```
 
@@ -34,7 +34,7 @@ the snapshot to `/tmp/ghc-debug-cache`. Simple.
 
 A `Debuggee` can be created from a snapshot by using the `snapshotRun` function.
 
-```
+```haskell
 main = snapshotRun "/tmp/ghc-debug-cache" p41c
 ```
 

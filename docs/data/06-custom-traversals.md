@@ -17,14 +17,14 @@ to apply to each of the four different pointer types which are present in the AS
 
 * Closure Pointers
 * Stack Pointers
-* PAP Pointers
+* PAP (Partial APplication) Pointers
 * Constr Description Pointers
 
 Most of the time you just care about closure pointers but the interface is general
 enough to deal with these other cases as well. The `GHC.Debug.Trace` module provides
 the generic traversal function called `traceFromM`:
 
-```
+```haskell
 traceFromM :: C m => TraceFunctions m -> [ClosurePtr] -> m DebugM ()
 
 data TraceFunctions m =
@@ -46,7 +46,7 @@ Constant functions are supplied for all the functions apart from the `closTrace`
 which instead performs the dereferencing work for the analysis. The whole analysis
 runs in the `StateT` monad.
 
-```
+```haskell
 census2LevelClosureType :: [ClosurePtr] -> DebugM CensusByClosureType
 census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
   where
@@ -56,7 +56,6 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
               , closTrace = closAccum
               , visitedVal = const (return ())
               , conDescTrace = const (return ())
-
             }
     -- Add cos
     closAccum  :: ClosurePtr
@@ -78,7 +77,6 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
           final_k :: Text
           final_k = k <> "[" <> T.intercalate "," kargs <> "]"
       in Map.insertWith (<>) final_k (mkCS (dcSize d))
-
 ```
 
 ## Parallel Traversal
@@ -87,7 +85,7 @@ The parallel traversal has a slightly different interface to the sequential trav
 to account for the necessary communication and combination of the results of
 running actions on different threads. The `traceParFromM` function is from `GHC.Debug.ParTrace`.
 
-```
+```haskell
 traceParFromM :: Monoid s => TraceFunctionsIO a s -> [ClosurePtrWithInfo a] -> DebugM s
 
 data TraceFunctionsIO a s =
@@ -119,7 +117,7 @@ block cache
 
 As an example, the `parCount` function is implemented using the parallel traversal:
 
-```
+```haskell
 parCount :: [ClosurePtr] -> DebugM CensusStats
 parCount = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where

@@ -29,9 +29,9 @@ is free to move around objects and invalidate pointers.
 -- | A request sent from the debugger to the debuggee parametrized on the result type.
 data Request a where
     -- | Request protocol version
-    RequestVersion :: Request Word32
+    RequestVersion :: Request Version
     -- | Pause the debuggee.
-    RequestPause :: Request ()
+    RequestPause :: ForkOrPause -> Request ()
     -- | Resume the debuggee.
     RequestResume :: Request ()
 ```
@@ -91,8 +91,7 @@ provided script.
 
 ```haskell
 -- | Connects to a debuggee, runs the action, then closes the debuggee.
-withDebuggeeConnect :: FilePath  -- ^ executable name of the debuggee
-                    -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+withDebuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                     -> (Debuggee -> IO a)
                     -> IO a
 ```
