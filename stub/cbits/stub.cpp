@@ -615,7 +615,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.write(ip.src_span, len_span);
           }
 #else
-          write_string(resp, ip.srcspan);
+          write_string(resp, ip.srcloc);
 #endif
         }
         resp.finish(RESP_OKAY);
