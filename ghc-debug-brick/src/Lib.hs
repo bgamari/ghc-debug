@@ -298,7 +298,7 @@ instance Quintraversable DebugClosure where
 
 closureShowAddress :: DebugClosure srt p cd s c -> String
 closureShowAddress (Closure c _) = show c
-closureShowAddress (Stack   s _) = show s
+closureShowAddress (Stack  (StackCont s _) _) = show s
 
 -- | Get the exclusive size (not including any referenced closures) of a closure.
 closureExclusiveSize :: DebugClosure srt p cd s c -> Size
