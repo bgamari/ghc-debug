@@ -396,7 +396,7 @@ fillConstrDesc e closure = do
 
 -- | Pretty print a closure
 closurePretty :: Debuggee -> DebugClosure InfoTablePtr PayloadCont ConstrDesc s ClosurePtr ->  IO String
-closurePretty _ (Stack _ _) = return "STACK"
+closurePretty _ (Stack _ frames) = return $ (show (length frames) ++ " frames")
 closurePretty dbg (Closure _ closure) = run dbg $  do
   closure' <- quintraverse GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
   return $ HG.ppClosure
