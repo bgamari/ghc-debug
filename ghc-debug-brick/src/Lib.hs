@@ -115,6 +115,7 @@ import System.FilePath
 import System.Directory
 import Control.Tracer
 import Data.Bitraversable
+import Data.Text (Text, pack)
 
 data Analysis = Analysis
   { analysisDominatorRoots :: ![ClosurePtr]
@@ -188,13 +189,14 @@ debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
 debuggeeRun exeName socketName = GD.debuggeeRun exeName socketName
 
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
-debuggeeConnect :: FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
+debuggeeConnect :: (Text -> IO ())
+                -> FilePath  -- ^ filename of socket (e.g. @"/tmp/ghc-debug"@)
                 -> IO Debuggee
-debuggeeConnect socketName = GD.debuggeeConnectWithTracer debugTracer socketName
+debuggeeConnect toChan socketName = GD.debuggeeConnectWithTracer (contramap pack $ Tracer (emit toChan)) socketName
 
 
-snapshotConnect :: FilePath -> IO Debuggee
-snapshotConnect snapshotName = GD.snapshotInitWithTracer debugTracer snapshotName
+snapshotConnect :: (Text -> IO ()) -> FilePath -> IO Debuggee
+snapshotConnect toChan snapshotName = GD.snapshotInitWithTracer (contramap pack $ Tracer (emit toChan)) snapshotName
 
 -- | Close the connection to the debuggee.
 debuggeeClose :: Debuggee -> IO ()
@@ -231,7 +233,7 @@ snapshot :: Debuggee -> FilePath -> IO ()
 snapshot dbg fp = do
   dir <- snapshotDirectory
   createDirectoryIfMissing True dir
-  GD.makeSnapshot dbg (dir </> fp)
+  GD.run dbg $ GD.snapshot (dir </> fp)
 
 retainersOfAddress :: Maybe [ClosurePtr] -> Debuggee -> [ClosurePtr] -> IO [[Closure]]
 retainersOfAddress mroots dbg address = do

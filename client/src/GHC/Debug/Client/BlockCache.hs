@@ -20,6 +20,7 @@ import Data.IORef
 import Data.Bits
 import Data.List (sort)
 import Data.Binary
+import Control.Tracer
 
 newtype BlockCache = BlockCache (HM.HashMap Word64 RawBlock)
 
@@ -59,8 +60,8 @@ instance Hashable (BlockCacheRequest a) where
   hashWithSalt s (LookupClosure cpt) = s `hashWithSalt` (1 :: Int) `hashWithSalt` cpt
   hashWithSalt s PopulateBlockCache  = s `hashWithSalt` (2 :: Int)
 
-handleBlockReq :: (forall a . Request a -> IO a) -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
-handleBlockReq do_req ref (LookupClosure cp) = do
+handleBlockReq :: Tracer IO String -> (forall a . Request a -> IO a) -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
+handleBlockReq _ do_req ref (LookupClosure cp) = do
   bc <- readIORef ref
   let mrb = lookupClosure cp bc
   rb <- case mrb of
@@ -71,10 +72,10 @@ handleBlockReq do_req ref (LookupClosure cp) = do
                Just rb -> do
                  return rb
   return (extractFromBlock cp rb)
-handleBlockReq do_req ref PopulateBlockCache = do
+handleBlockReq tracer do_req ref PopulateBlockCache = do
   blocks <- do_req RequestAllBlocks
 --  mapM_ (\rb -> print ("NEW", rawBlockAddr rb)) blocks
-  print ("CACHING", length blocks)
+  traceWith tracer $ "Populating block cache with " ++ show (length blocks) ++ " blocks"
   atomicModifyIORef' ref ((,()) . addBlocks blocks)
   return blocks
 

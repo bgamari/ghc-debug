@@ -20,25 +20,36 @@ import System.FilePath
 import Data.Text(Text, pack)
 
 import Brick.Forms
+import Brick.BChan
+import Brick (EventM)
 import Brick.Widgets.List
 import IOTree
 
 import Namespace
 import Common
 import Lib
+import Control.Concurrent
+
+data Event
+  = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
+  | ProgressMessage Text
+  | ProgressFinished
+  | AsyncFinished (EventM Name OperationalState ())
 
 
-initialAppState :: AppState
-initialAppState = AppState
+initialAppState :: BChan Event -> AppState
+initialAppState event = AppState
   { _majorState = Setup
       { _setupKind = Socket
       , _knownDebuggees = list Setup_KnownDebuggeesList [] 1
       , _knownSnapshots = list Setup_KnownSnapshotsList [] 1
-      }
+      },
+    _appChan = event
   }
 
 data AppState = AppState
   { _majorState :: MajorState
+  , _appChan    :: BChan Event
   }
 
 mkSocketInfo :: FilePath -> IO SocketInfo
@@ -139,7 +150,8 @@ currentRoots (DefaultRoots cp) = cp
 currentRoots (SearchedRoots cp) = cp
 
 data OperationalState = OperationalState
-    { _treeMode :: TreeMode
+    { _running_task :: Maybe ThreadId
+    , _treeMode :: TreeMode
     , _keybindingsMode :: KeybindingsMode
     , _footerMode :: FooterMode
     , _rootsFrom  :: RootsOrigin
@@ -151,6 +163,7 @@ data OperationalState = OperationalState
     -- ^ Tree corresponding to Dominator mode
     , _heapGraph :: Maybe (HeapGraph Size)
     -- ^ Raw heap graph
+    , _event_chan :: BChan Event
     }
 
 data DominatorAnalysis =
@@ -162,7 +175,7 @@ data DominatorAnalysis =
 --                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure SrtHI PapHI ConstrDesc StackHI (Maybe HeapGraphIndex)) }
 
 pauseModeTree :: (IOTree ClosureDetails Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState mode _kb _footer _from dom roots _graph) = case mode of
+pauseModeTree k (OperationalState _ mode _kb _footer _from dom roots _graph _) = case mode of
   Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
   SavedAndGCRoots -> k roots
 --  Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA

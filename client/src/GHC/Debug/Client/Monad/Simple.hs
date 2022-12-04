@@ -184,8 +184,9 @@ simpleReq req = do
 blockReq :: BlockCacheRequest resp -> DebugM resp
 blockReq req = DebugM $ do
   bc  <- asks debuggeeBlockCache
+  tracer  <- asks debuggeeTrace
   env <- ask
-  liftIO $ handleBlockReq (\r -> runReaderT (simpleReq r) env) bc req
+  liftIO $ handleBlockReq tracer (\r -> runReaderT (simpleReq r) env) bc req
 
 newtype DebugM a = DebugM (ReaderT Debuggee IO a)
                    -- Only derive the instances that DebugMonad needs

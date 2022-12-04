@@ -7,8 +7,8 @@ import qualified Brick.Types as T
 import Lens.Micro
 import Namespace
 
-type Handler s =
-     T.BrickEvent Name ()
+type Handler e s =
+     T.BrickEvent Name e
   -> T.EventM Name s ()
 
 -- | liftHandler lifts a handler which only operates on its own state into
@@ -18,8 +18,8 @@ liftHandler
   :: ASetter s s a a -- The mode to modify
   -> c        -- Inner state
   -> (c -> a) -- How to inject the new state
-  -> Handler c -- Handler for inner state
-  -> Handler s
+  -> Handler e c -- Handler for inner state
+  -> Handler e s
 liftHandler l c i h ev = do
   T.zoom (lens (const c) (\ s c' -> set l (i c') s)) (h ev)
 

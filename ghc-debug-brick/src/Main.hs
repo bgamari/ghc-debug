@@ -37,18 +37,11 @@ import System.FilePath
 import Data.Text (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Map as M
-import Data.Bifunctor
 import Data.Maybe
 
-import GHC.Debug.Client.Search as GD
 import IOTree
 import Lib as GD
 import Model
-
-data Event
-  = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
-  | DominatorTreeReady DominatorAnalysis -- A signal when the dominator tree has been computed
-  | HeapGraphReady (HeapGraph GD.Size)
 
 
 drawSetup :: Text -> Text -> GenericList Name Seq.Seq SocketInfo -> Widget Name
@@ -75,7 +68,7 @@ mainBorder title w = -- borderWithLabel (txt title) . padAll 1
   vLimit 1 (withAttr menuAttr $ hCenter $ fill ' ' <+> txt title <+> fill ' ') <=> w
 
 myAppDraw :: AppState -> [Widget Name]
-myAppDraw (AppState majorState') =
+myAppDraw (AppState majorState' _) =
     case majorState' of
 
     Setup setupKind' dbgs snaps ->
@@ -92,7 +85,7 @@ myAppDraw (AppState majorState') =
         , withAttr menuAttr $ vLimit 1 $ hBox [txt "(p): Pause | (ESC): Exit", fill ' ']
         ]]
 
-      (PausedMode os@(OperationalState treeMode' kbmode fmode _ro _dtree _ _hg)) -> let
+      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ro _dtree _ _hg _)) -> let
         in kbOverlay kbmode $ [mainBorder "ghc-debug - Paused" $ vBox
           [ -- Current closure details
               joinBorders $ borderWithLabel (txt "Closure Details") $
@@ -177,7 +170,7 @@ myAppDraw (AppState majorState') =
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
-   FooterMessage t -> txt t
+   FooterMessage t -> withAttr menuAttr $ hBox [txt t, fill ' ']
    FooterInfo -> withAttr menuAttr $ hBox [txt "(↑↓): select item | (→): expand | (←): collapse | (?): full keybindings", fill ' ']
    FooterInput _im form -> renderForm form
 
@@ -216,9 +209,9 @@ updateListFrom dirIO llist = liftIO $ do
                       llist
 
 
-myAppHandleEvent :: BChan Event -> BrickEvent Name Event -> EventM Name AppState ()
-myAppHandleEvent eventChan brickEvent = do
-  appState@(AppState majorState') <- get
+myAppHandleEvent :: BrickEvent Name Event -> EventM Name AppState ()
+myAppHandleEvent brickEvent = do
+  appState@(AppState majorState' eventChan) <- get
   case brickEvent of
     _ -> case majorState' of
       Setup st knownDebuggees' knownSnapshots' -> case brickEvent of
@@ -233,7 +226,7 @@ myAppHandleEvent eventChan brickEvent = do
               Snapshot
                 | Just (_debuggeeIx, socket) <- listSelectedElement knownSnapshots'
                 -> do
-                  debuggee' <- liftIO $ snapshotConnect (view socketLocation socket)
+                  debuggee' <- liftIO $ snapshotConnect (writeBChan eventChan . ProgressMessage . error . show) (view socketLocation socket)
                   put $ appState & majorState .~ Connected
                         { _debuggeeSocket = socket
                         , _debuggee = debuggee'
@@ -243,7 +236,7 @@ myAppHandleEvent eventChan brickEvent = do
                 | Just (_debuggeeIx, socket) <- listSelectedElement knownDebuggees'
                 -> do
                   bracket
-                    (liftIO $ debuggeeConnect (view socketLocation socket))
+                    (liftIO $ debuggeeConnect (writeBChan eventChan . ProgressMessage) (view socketLocation socket))
                     (\debuggee' -> liftIO $ resume debuggee')
                     (\debuggee' ->
                       put $ appState & majorState .~ Connected
@@ -268,8 +261,7 @@ myAppHandleEvent eventChan brickEvent = do
             knownSnapshots'' <- updateListFrom snapshotDirectory knownSnapshots'
             put $ appState & majorState . knownDebuggees .~ knownDebuggees''
                                 & majorState . knownSnapshots .~ knownSnapshots''
-          DominatorTreeReady {} ->  return ()
-          HeapGraphReady {} -> return ()
+          _ -> return ()
         _ -> return ()
 
       Connected _socket' debuggee' mode' -> case mode' of
@@ -285,51 +277,43 @@ myAppHandleEvent eventChan brickEvent = do
             (rootsTree, initRoots) <- liftIO $ mkSavedAndGCRootsIOTree Nothing
             put (appState & majorState . mode .~
                         PausedMode
-                          (OperationalState SavedAndGCRoots
+                          (OperationalState Nothing
+                                            SavedAndGCRoots
                                             KeybindingsHidden
                                             FooterInfo
                                             (DefaultRoots initRoots)
                                             Nothing
                                             rootsTree
-                                            Nothing))
+                                            Nothing
+                                            eventChan ))
+
+
 
           _ -> return ()
 
         PausedMode os -> case brickEvent of
+          _ -> case brickEvent of
+              -- Resume the debuggee if '^r', exit if ESC
+              VtyEvent (Vty.EvKey (KChar 'r') [Vty.MCtrl]) -> do
+                  liftIO $ resume debuggee'
+                  put (appState & majorState . mode .~ RunningMode)
+              VtyEvent (Vty.EvKey (KEsc) _) -> do
+                  case view running_task os of
+                    Just tid -> do
+                      liftIO $ killThread tid
+                      put $ appState & majorState . mode . pausedMode . running_task .~ Nothing
+                                     & majorState . mode . pausedMode %~ resetFooter
+                    Nothing -> do
+                      liftIO $ resume debuggee'
+                      put $ initialAppState (_appChan appState)
 
-            -- Once the computation is finished, store the result of the
-            -- analysis in the state.
-          AppEvent (DominatorTreeReady dt) -> do
-            -- TODO: This should retain the state of the rootsTree, whilst
-            -- adding the new information.
-            -- rootsTree <- mkSavedAndGCRootsIOTree (Just (view getDominatorAnalysis dt))
-            put (appState & majorState . mode . pausedMode . treeDominator .~ Just dt)
-
-          AppEvent (HeapGraphReady hg) -> do
-            put (appState & majorState . mode . pausedMode . heapGraph .~ Just hg)
-
-          -- Resume the debuggee if '^r', exit if ESC
-          VtyEvent (Vty.EvKey (KChar 'r') [Vty.MCtrl]) -> do
-              liftIO $ resume debuggee'
-              put (appState & majorState . mode .~ RunningMode)
-          VtyEvent (Vty.EvKey (KEsc) _) -> do
-              liftIO $ resume debuggee'
-              put $ initialAppState
-
-          -- handle any other more local events; mostly key events
-          _ -> liftHandler (majorState . mode) os PausedMode (handleMain debuggee')
-                 (() <$ brickEvent)
+              -- handle any other more local events; mostly key events
+              _ -> liftHandler (majorState . mode) os PausedMode (handleMain debuggee')
+                     (brickEvent)
 
 
 
         where
-
-        _initialiseViews = forkIO $ do
-          !hg <- initialTraversal debuggee'
-          writeBChan eventChan (HeapGraphReady hg)
-  --        _ <- mkDominatorTreeIO hg
-  --        _ <- mkReversalTreeIO hg
-          return ()
 
         -- This is really slow on big heaps, needs to be made more efficient
         -- or some progress/timeout indicator
@@ -549,22 +533,34 @@ getInfoInfo debuggee' label' infoPtr = do
 
 -- Event handling when the main window has focus
 
-handleMain :: Debuggee -> Handler OperationalState
+handleMain :: Debuggee -> Handler Event OperationalState
 handleMain dbg e = do
   os <- get
-  case view keybindingsMode os of
-    KeybindingsShown ->
-      case e of
-        VtyEvent (Vty.EvKey _ _) -> put $ os & keybindingsMode .~ KeybindingsHidden
-        _ -> put os
-    _ -> case view footerMode os of
-      FooterInput fm form -> inputFooterHandler dbg fm form (handleMainWindowEvent dbg) e
-      _ -> handleMainWindowEvent dbg e
+  case e of
+    AppEvent event -> case event of
+            PollTick -> return ()
+            ProgressMessage t -> do
+              put $ footerMessage t os
+            ProgressFinished  ->
+              put $ os
+                    & running_task .~ Nothing
+                    & resetFooter
+            AsyncFinished action -> action
+    _ | Nothing <- view running_task os ->
+      case view keybindingsMode os of
+        KeybindingsShown ->
+          case e of
+            VtyEvent (Vty.EvKey _ _) -> put $ os & keybindingsMode .~ KeybindingsHidden
+            _ -> put os
+        _ -> case view footerMode os of
+          FooterInput fm form -> inputFooterHandler dbg fm form (handleMainWindowEvent dbg) (() <$ e)
+          _ -> handleMainWindowEvent dbg (() <$ e)
+    _ -> return ()
 
 handleMainWindowEvent :: Debuggee
-                      -> Handler OperationalState
+                      -> Handler () OperationalState
 handleMainWindowEvent _dbg brickEvent = do
-      os@(OperationalState treeMode' _kbMode _footerMode _curRoots domTree rootsTree _hg) <- get
+      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots domTree rootsTree _hg _) <- get
       case brickEvent of
         -- Change Modes
         VtyEvent (Vty.EvKey (KChar '?') []) -> put $ os & keybindingsMode .~ KeybindingsShown
@@ -622,8 +618,8 @@ handleMainWindowEvent _dbg brickEvent = do
 inputFooterHandler :: Debuggee
                    -> FooterInputMode
                    -> Form Text () Name
-                   -> Handler OperationalState
-                   -> Handler OperationalState
+                   -> Handler () OperationalState
+                   -> Handler () OperationalState
 inputFooterHandler dbg m form _k re@(VtyEvent e) =
   case e of
     Vty.EvKey KEsc [] -> modify resetFooter
@@ -639,54 +635,69 @@ dispatchFooterInput :: Debuggee
                     -> EventM n OperationalState ()
 dispatchFooterInput dbg FSearch form = do
    os <- get
-   cps <- map head <$> (liftIO $ retainersOfConstructor Nothing dbg (T.unpack (formState form)))
-   let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-   res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
-   let tree = mkIOTree dbg Nothing res getChildren id
-   put (os & resetFooter
-           & treeMode .~ Searched tree
-       )
+   asyncAction "Searching for closures" os (map head <$> (liftIO $ retainersOfConstructor Nothing dbg (T.unpack (formState form)))) $ \cps -> do
+     let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+     res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
+     let tree = mkIOTree dbg Nothing res getChildren id
+     put (os & resetFooter
+             & treeMode .~ Searched tree
+         )
 dispatchFooterInput dbg FAddress form = do
    os <- get
    let address = T.unpack (formState form)
    case readClosurePtr address of
     Just cp -> do
-      cps <- map head <$> (liftIO $ retainersOfAddress Nothing dbg [cp])
-      let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
-      res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
-      let tree = mkIOTree dbg Nothing res getChildren id
-      put (os & resetFooter
-                   & treeMode .~ Searched tree
-               )
+      asyncAction "Finding address" os (map head <$> (liftIO $ retainersOfAddress Nothing dbg [cp])) $ \cps -> do
+        let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
+        res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
+        let tree = mkIOTree dbg Nothing res getChildren id
+        put (os & resetFooter
+                & treeMode .~ Searched tree
+            )
     Nothing -> put (os & resetFooter)
 
 dispatchFooterInput dbg FProfile form = do
    os <- get
-   liftIO $ profile dbg (T.unpack (formState form))
-   put (os & resetFooter)
+   asyncAction_ "Writing profile" os $ profile dbg (T.unpack (formState form))
 dispatchFooterInput dbg FRetainer form = do
    os <- get
    let roots = mapMaybe go (map snd (currentRoots (view rootsFrom os)))
        go (CP p) = Just p
        go (SP _)   = Nothing
-   cps <- liftIO $ retainersOfConstructor (Just roots) dbg (T.unpack (formState form))
-   let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-   res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
-   let tree = mkRetainerTree dbg res
-   put (os & resetFooter
-                & treeMode .~ Retainer tree)
+   asyncAction "Finding retainers" os (retainersOfConstructor (Just roots) dbg (T.unpack (formState form))) $ \cps -> do
+      let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+      res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+      let tree = mkRetainerTree dbg res
+      put (os & resetFooter
+              & treeMode .~ Retainer tree)
 dispatchFooterInput dbg FRetainerExact form = do
    os <- get
-   cps <- liftIO $ retainersOfConstructorExact dbg (T.unpack (formState form))
-   let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-   res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
-   let tree = mkRetainerTree dbg res
-   put (os & resetFooter
-                & treeMode .~ Retainer tree)
+   asyncAction "Finding exact retainers" os (retainersOfConstructorExact dbg (T.unpack (formState form))) $ \cps -> do
+    let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+    res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+    let tree = mkRetainerTree dbg res
+    put (os & resetFooter
+            & treeMode .~ Retainer tree)
 dispatchFooterInput dbg FSnapshot form = do
    os <- get
-   liftIO $ snapshot dbg (T.unpack (formState form))
-   put (os & resetFooter)
+   asyncAction_ "Taking snapshot" os $ snapshot dbg (T.unpack (formState form))
+
+asyncAction_ :: Text -> OperationalState -> IO a -> EventM n OperationalState ()
+asyncAction_ desc  os action = asyncAction desc os action (\_ -> return ())
+
+asyncAction :: Text -> OperationalState -> IO a -> (a -> EventM Name OperationalState ()) -> EventM n OperationalState ()
+asyncAction desc os action final = do
+  tid <- (liftIO $ forkIO $ do
+    writeBChan eventChan (ProgressMessage desc)
+    res <- action
+    writeBChan eventChan (AsyncFinished (final res))
+    writeBChan eventChan ProgressFinished)
+  put $ os & running_task .~ Just tid
+           & resetFooter
+  where
+    eventChan = view event_chan os
+
+
 
 mkRetainerTree :: Debuggee -> [[ClosureDetails]] -> IOTree ClosureDetails Name
 mkRetainerTree dbg stacks = do
@@ -707,6 +718,9 @@ mkRetainerTree dbg stacks = do
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set footerMode FooterInfo l)
+
+footerMessage :: Text -> OperationalState -> OperationalState
+footerMessage t l = (set footerMode (FooterMessage t) l)
 
 myAppStartEvent :: EventM Name AppState ()
 myAppStartEvent = return ()
@@ -755,10 +769,10 @@ main = do
       app = App
         { appDraw = myAppDraw
         , appChooseCursor = showFirstCursor
-        , appHandleEvent = (myAppHandleEvent eventChan)
+        , appHandleEvent = myAppHandleEvent
         , appStartEvent = myAppStartEvent
         , appAttrMap = myAppAttrMap
         }
   _finalState <- customMain initialVty buildVty
-                    (Just eventChan) app initialAppState
+                    (Just eventChan) app (initialAppState eventChan)
   return ()
