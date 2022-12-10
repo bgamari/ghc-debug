@@ -85,7 +85,7 @@ myAppDraw (AppState majorState' _) =
         , withAttr menuAttr $ vLimit 1 $ hBox [txt "(p): Pause | (ESC): Exit", fill ' ']
         ]]
 
-      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ro _dtree _ _hg _)) -> let
+      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ _ _)) -> let
         in kbOverlay kbmode $ [mainBorder "ghc-debug - Paused" $ vBox
           [ -- Current closure details
               joinBorders $ borderWithLabel (txt "Closure Details") $
@@ -95,7 +95,6 @@ myAppDraw (AppState majorState' _) =
           , -- Tree
             joinBorders $ borderWithLabel
               (txt $ case treeMode' of
-                Dominator -> "Dominator Tree"
                 SavedAndGCRoots -> "Root Closures"
                 Retainer {} -> "Retainers"
                 Searched {} -> "Search Results"
@@ -273,7 +272,6 @@ myAppHandleEvent brickEvent = do
           -- Pause the debuggee
           VtyEvent (Vty.EvKey (KChar 'p') []) -> do
             liftIO $ pause debuggee'
-  --          _ <- liftIO $ initialiseViews
             (rootsTree, initRoots) <- liftIO $ mkSavedAndGCRootsIOTree Nothing
             put (appState & majorState . mode .~
                         PausedMode
@@ -282,9 +280,7 @@ myAppHandleEvent brickEvent = do
                                             KeybindingsHidden
                                             FooterInfo
                                             (DefaultRoots initRoots)
-                                            Nothing
                                             rootsTree
-                                            Nothing
                                             eventChan ))
 
 
@@ -314,29 +310,6 @@ myAppHandleEvent brickEvent = do
 
 
         where
-
-        -- This is really slow on big heaps, needs to be made more efficient
-        -- or some progress/timeout indicator
-        {-
-        mkDominatorTreeIO hg = forkIO $ do
-          !analysis <- runAnalysis debuggee' hg
-          !rootClosures' <- liftIO $ mapM (getClosureDetails debuggee' (Just analysis) "" <=< fillConstrDesc debuggee') =<< GD.dominatorRootClosures debuggee' analysis
-          let domIoTree = mkIOTree (Just analysis) rootClosures'
-                        (getChildren analysis)
-
-                        (List.sortOn (Ord.Down . _retainerSize))
-          writeBChan eventChan (DominatorTreeReady (DominatorAnalysis analysis domIoTree))
-          where
-            getChildren analysis _dbg c = do
-              cs <- closureDominatees debuggee' analysis c
-              fmap (("",)) <$> mapM (fillConstrDesc debuggee') cs
-              -}
-
-
-  --      mkReversalTreeIO hg = forkIO $ do
-  --        let !revg = mkReverseGraph hg
-  --        let revIoTree = mkIOTree Nothing [] (reverseClosureReferences hg revg) id
-  --        writeBChan eventChan (ReverseAnalysisReady (ReverseAnalysis revIoTree (lookupHeapGraph hg)))
 
 
         mkSavedAndGCRootsIOTree manalysis = do
@@ -560,25 +533,11 @@ handleMain dbg e = do
 handleMainWindowEvent :: Debuggee
                       -> Handler () OperationalState
 handleMainWindowEvent _dbg brickEvent = do
-      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots domTree rootsTree _hg _) <- get
+      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _) <- get
       case brickEvent of
         -- Change Modes
         VtyEvent (Vty.EvKey (KChar '?') []) -> put $ os & keybindingsMode .~ KeybindingsShown
         VtyEvent (Vty.EvKey (KChar 's') [Vty.MCtrl]) -> put $ os & treeMode .~ SavedAndGCRoots
-        VtyEvent (Vty.EvKey (KChar 't') [Vty.MCtrl])
-          -- Only switch if the dominator view is ready
-          | Just {} <- domTree -> put $ os & treeMode .~ Dominator
-{-        VtyEvent (Vty.EvKey (KFun 3) _)
-          -- Only switch if the reverse view is ready
-          | Just ra <- reverseA -> do
-            -- Get roots from rootTree and use those for the reverse view
-            let rs = getIOTreeRoots rootsTree
-                convert cd = cd & closure %~ do_one
-                do_one cd  = fromJust (view convertPtr ra $ _closurePtr cd)
-                rs' = map convert rs
-            continue $ os & treeMode .~ Reverse
-                          & treeReverse . _Just . reverseIOTree %~ setIOTreeRoots rs'
-                          -}
         VtyEvent (Vty.EvKey (KChar 'c') [Vty.MCtrl]) ->
           put $ os & footerMode .~ footerInput FSearch
 
@@ -599,9 +558,6 @@ handleMainWindowEvent _dbg brickEvent = do
 
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
-          Dominator -> do
-            newTree <- traverseOf (_Just . getDominatorTree) (handleIOTreeEvent event) domTree
-            put (os & treeDominator .~ newTree)
           SavedAndGCRoots -> do
             newTree <- handleIOTreeEvent event rootsTree
             put (os & treeSavedAndGCRoots .~ newTree)

@@ -112,9 +112,7 @@ data ClosureDetails = ClosureDetails
   | InfoDetails { _info :: InfoInfo }
   | LabelNode { _label :: Text }
 
-data TreeMode = Dominator
-              | SavedAndGCRoots
---              | Reverse
+data TreeMode = SavedAndGCRoots
               | Retainer (IOTree (ClosureDetails) Name)
               | Searched (IOTree (ClosureDetails) Name)
 
@@ -155,30 +153,14 @@ data OperationalState = OperationalState
     , _keybindingsMode :: KeybindingsMode
     , _footerMode :: FooterMode
     , _rootsFrom  :: RootsOrigin
-    , _treeDominator :: Maybe DominatorAnalysis
-    -- ^ Tree corresponding to Dominator mode
     , _treeSavedAndGCRoots :: IOTree (ClosureDetails) Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
---    , _treeReverse :: Maybe ReverseAnalysis
-    -- ^ Tree corresponding to Dominator mode
-    , _heapGraph :: Maybe (HeapGraph Size)
-    -- ^ Raw heap graph
     , _event_chan :: BChan Event
     }
 
-data DominatorAnalysis =
-  DominatorAnalysis { _getDominatorAnalysis :: Analysis
-                    , _getDominatorTree :: IOTree (ClosureDetails) Name
-                    }
-
---data ReverseAnalysis = ReverseAnalysis { _reverseIOTree :: IOTree (ClosureDetails SrtHI PapHI StackHI (Maybe HeapGraphIndex)) Name
---                                          , _convertPtr :: ClosurePtr -> Maybe (DebugClosure SrtHI PapHI ConstrDesc StackHI (Maybe HeapGraphIndex)) }
-
 pauseModeTree :: (IOTree ClosureDetails Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState _ mode _kb _footer _from dom roots _graph _) = case mode of
-  Dominator -> k $ maybe (error "DOMINATOR-DavidE is not ready") _getDominatorTree dom
+pauseModeTree k (OperationalState _ mode _kb _footer _from roots _) = case mode of
   SavedAndGCRoots -> k roots
---  Reverse -> k $ maybe (error "bop it, flip, reverse it, DavidE") _reverseIOTree reverseA
   Retainer r -> k r
   Searched r -> k r
 
@@ -188,4 +170,3 @@ makeLenses ''ClosureDetails
 makeLenses ''ConnectedMode
 makeLenses ''OperationalState
 makeLenses ''SocketInfo
-makeLenses ''DominatorAnalysis
