@@ -29,6 +29,7 @@ import Namespace
 import Common
 import Lib
 import Control.Concurrent
+import qualified Graphics.Vty as Vty
 
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
@@ -122,7 +123,14 @@ data FooterMode = FooterInfo
 
 data FooterInputMode = FAddress | FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
 
+data Command = Command { commandDescription :: Text
+                       , commandKey :: Vty.Event
+                       , dispatchCommand :: EventM Name OperationalState ()
+                       }
+
 data OverlayMode = KeybindingsShown
+                 -- TODO: Abstract the "CommandPicker" into it's own module
+                 | CommandPicker (Form Text () Name) (GenericList Name Seq Command)
                  | NoOverlay
 
 
@@ -171,3 +179,4 @@ makeLenses ''ClosureDetails
 makeLenses ''ConnectedMode
 makeLenses ''OperationalState
 makeLenses ''SocketInfo
+makeLenses ''OverlayMode

@@ -38,6 +38,7 @@ import Data.Text (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Map as M
 import Data.Maybe
+import qualified Data.Foldable as F
 
 import IOTree
 import Lib as GD
@@ -107,25 +108,54 @@ myAppDraw (AppState majorState' _) =
 
   kbOverlay :: OverlayMode -> [Widget Name] -> [Widget Name]
   kbOverlay KeybindingsShown ws = centerLayer kbWindow : ws
+  kbOverlay (CommandPicker inp cmd_list) ws  = centerLayer (cpWindow inp cmd_list) : ws
   kbOverlay NoOverlay ws = ws
+
+  cpWindow :: Form Text () Name -> GenericList Name Seq.Seq Command -> Widget Name
+  cpWindow input cmd_list = hLimit (actual_width + 2) $ vLimit (length commandList + 4) $
+    withAttr menuAttr $
+    borderWithLabel (txt "Command Picker") $ vBox $
+      [ renderForm input
+      , renderList (\elIsSelected -> if elIsSelected then highlighted . renderCommand else renderCommand) False cmd_list]
 
   kbWindow :: Widget Name
   kbWindow =
     withAttr menuAttr $
     borderWithLabel (txt "Keybindings") $ vBox $
-      [ txt "Resume                  (^r)"
-      , txt "Tree                    (^t)"
-      , txt "Parent                  (<-)"
-      , txt "Child                   (->)"
-      , txt "Saved/GC Roots          (^s)"
-      , txt "Write Profile           (^w)"
-      , txt "Find Retainers          (^f)"
-      , txt "Find Retainers (Exact)  (^e)"
-      , txt "Find Closures (Exact)   (^c)"
-      , txt "Find Address            (^p)"
-      , txt "Take Snapshot           (^x)"
-      , txt "Exit                    (ESC)"
-      ]
+      map renderCommandDesc all_keys
+
+  all_keys =
+    [ ("Resume", Vty.EvKey (Vty.KChar 'r') [Vty.MCtrl])
+    , ("Parent", Vty.EvKey KLeft [])
+    , ("Child", Vty.EvKey KRight [])
+    , ("Command Picker", Vty.EvKey (Vty.KChar 'p') [Vty.MCtrl]) ]
+    ++ [(commandDescription cmd, commandKey cmd) | cmd <- F.toList commandList ]
+    ++ [ ("Exit", Vty.EvKey KEsc []) ]
+
+  maximum_size = maximum (map (T.length . fst) all_keys)
+
+  actual_width = maximum_size + 5  -- 5, maximum width of rendering a key
+                              + 1  -- 1, at least one padding
+
+  renderKey :: Vty.Event -> Text
+  renderKey (Vty.EvKey k [Vty.MCtrl]) = "(^" <> renderNormalKey k <> ")"
+  renderKey (Vty.EvKey k [])       = "(" <> renderNormalKey k <> ")"
+  renderKey _k = "()"
+
+  renderNormalKey (KChar c) = T.pack [c]
+  renderNormalKey KEsc = "ESC"
+  renderNormalKey KLeft = "←"
+  renderNormalKey KRight = "→"
+  renderNormalKey _k = "�"
+
+  renderCommand cmd = renderCommandDesc (commandDescription cmd, commandKey cmd)
+
+
+  renderCommandDesc :: (Text, Vty.Event) -> Widget Name
+  renderCommandDesc (desc, k) = txt (desc <> T.replicate padding " " <> renderKey k)
+    where
+      key = renderKey k
+      padding = (actual_width - T.length desc - T.length key)
 
   renderClosureDetails :: Maybe ClosureDetails -> Widget Name
   renderClosureDetails (Just cd@(ClosureDetails {})) =
@@ -525,37 +555,93 @@ handleMain dbg e = do
           case e of
             VtyEvent (Vty.EvKey _ _) -> put $ os & keybindingsMode .~ NoOverlay
             _ -> put os
+        CommandPicker form cmd_list -> do
+          -- Overlapping commands are up/down so handle those just via list, otherwise both
+          let handle_form = nestEventM' form (handleFormEvent (() <$ e))
+              handle_list =
+                case e of
+                  VtyEvent vty_e -> nestEventM' cmd_list (handleListEvent vty_e)
+                  _ -> return cmd_list
+              k form' cmd_list' =
+                if (formState form /= formState form') then do
+                    let filter_string = formState form'
+                        new_elems = Seq.filter (\cmd -> T.toLower filter_string `T.isInfixOf` T.toLower (commandDescription cmd )) commandList
+                        cmd_list'' = cmd_list' & listElementsL .~ new_elems
+                                           & listSelectedL .~ if Seq.null new_elems then Nothing else Just 0
+                    modify $ keybindingsMode .~ (CommandPicker form' cmd_list'')
+                  else
+                    modify $ keybindingsMode .~ (CommandPicker form' cmd_list')
+
+
+          case e of
+              VtyEvent (Vty.EvKey Vty.KUp _) -> do
+                list' <- handle_list
+                k form list'
+              VtyEvent (Vty.EvKey Vty.KDown _) -> do
+                list' <- handle_list
+                k form list'
+              VtyEvent (Vty.EvKey Vty.KEsc _) ->
+                put $ os & keybindingsMode .~ NoOverlay
+              VtyEvent (Vty.EvKey Vty.KEnter _) -> do
+                case listSelectedElement cmd_list of
+                  Just (_, cmd) -> do
+                    modify $ keybindingsMode .~ NoOverlay
+                    dispatchCommand cmd
+                  Nothing  -> return ()
+              _ -> do
+                form' <- handle_form
+                list' <- handle_list
+                k form' list'
+
+
         NoOverlay -> case view footerMode os of
           FooterInput fm form -> inputFooterHandler dbg fm form (handleMainWindowEvent dbg) (() <$ e)
           _ -> handleMainWindowEvent dbg (() <$ e)
     _ -> return ()
+
+commandPickerMode :: OverlayMode
+commandPickerMode =
+  CommandPicker
+    (newForm [(\w -> forceAttr inputAttr w) @@= editTextField id Overlay (Just 1)] "")
+    (list CommandPicker_List commandList 1)
+
+
+-- All the commands which we support, these show up in keybindings and also the command picker
+commandList :: Seq.Seq Command
+commandList =
+  [ Command "Show key bindings" (Vty.EvKey (KChar '?') [])
+            (modify $ keybindingsMode .~ KeybindingsShown)
+  , Command "Saved/GC Roots" (Vty.EvKey (KChar 's') [Vty.MCtrl])
+            (modify $ treeMode .~ SavedAndGCRoots)
+  , Command "Find Closures (Exact)" (Vty.EvKey (KChar 'c') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FSearch)
+  , Command "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FAddress)
+  , Command "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FProfile)
+  , Command "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FRetainer)
+  , Command "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FRetainerExact)
+  , Command "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FSnapshot) ]
+
+
+findCommand :: Vty.Event -> Maybe Command
+findCommand event = do
+  i <- Seq.findIndexL (\cmd -> commandKey cmd == event) commandList
+  Seq.lookup i commandList
 
 handleMainWindowEvent :: Debuggee
                       -> Handler () OperationalState
 handleMainWindowEvent _dbg brickEvent = do
       os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _) <- get
       case brickEvent of
-        -- Change Modes
-        VtyEvent (Vty.EvKey (KChar '?') []) -> put $ os & keybindingsMode .~ KeybindingsShown
-        VtyEvent (Vty.EvKey (KChar 's') [Vty.MCtrl]) -> put $ os & treeMode .~ SavedAndGCRoots
-        VtyEvent (Vty.EvKey (KChar 'c') [Vty.MCtrl]) ->
-          put $ os & footerMode .~ footerInput FSearch
-
         VtyEvent (Vty.EvKey (KChar 'p') [Vty.MCtrl]) ->
-          put $ os & footerMode .~ footerInput FAddress
+          put $ os & keybindingsMode .~ commandPickerMode
 
-        VtyEvent (Vty.EvKey (KChar 'w') [Vty.MCtrl]) ->
-          put $ os & footerMode .~ footerInput FProfile
-
-        VtyEvent (Vty.EvKey (KChar 'f') [Vty.MCtrl]) ->
-          put $ os & footerMode .~ footerInput FRetainer
-
-        VtyEvent (Vty.EvKey (KChar 'e') [Vty.MCtrl]) ->
-          put $ os & footerMode .~ footerInput FRetainerExact
-
-        VtyEvent (Vty.EvKey (KChar 'x') [Vty.MCtrl]) ->
-          put $ os & footerMode .~ footerInput FSnapshot
-
+        -- A generic event
+        VtyEvent event | Just cmd <- findCommand event -> dispatchCommand cmd
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
           SavedAndGCRoots -> do

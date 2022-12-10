@@ -12,5 +12,7 @@ data Name
   | Setup_KnownSnapshotsList
   | Connected_Paused_ClosureDetails
   | Connected_Paused_ClosureTree
+  | CommandPicker_List
+  | Overlay
   | Footer
   deriving (Eq, Ord, Show)
