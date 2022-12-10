@@ -122,8 +122,9 @@ data FooterMode = FooterInfo
 
 data FooterInputMode = FAddress | FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
 
-data KeybindingsMode = KeybindingsShown
-                     | KeybindingsHidden
+data OverlayMode = KeybindingsShown
+                 | NoOverlay
+
 
 formatFooterMode :: FooterInputMode -> Text
 formatFooterMode FAddress = "address (0x..): "
@@ -150,7 +151,7 @@ currentRoots (SearchedRoots cp) = cp
 data OperationalState = OperationalState
     { _running_task :: Maybe ThreadId
     , _treeMode :: TreeMode
-    , _keybindingsMode :: KeybindingsMode
+    , _keybindingsMode :: OverlayMode
     , _footerMode :: FooterMode
     , _rootsFrom  :: RootsOrigin
     , _treeSavedAndGCRoots :: IOTree (ClosureDetails) Name

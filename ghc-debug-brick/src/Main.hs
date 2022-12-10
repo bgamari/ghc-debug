@@ -105,9 +105,9 @@ myAppDraw (AppState majorState' _) =
 
   where
 
-  kbOverlay :: KeybindingsMode -> [Widget Name] -> [Widget Name]
+  kbOverlay :: OverlayMode -> [Widget Name] -> [Widget Name]
   kbOverlay KeybindingsShown ws = centerLayer kbWindow : ws
-  kbOverlay KeybindingsHidden ws = ws
+  kbOverlay NoOverlay ws = ws
 
   kbWindow :: Widget Name
   kbWindow =
@@ -277,7 +277,7 @@ myAppHandleEvent brickEvent = do
                         PausedMode
                           (OperationalState Nothing
                                             SavedAndGCRoots
-                                            KeybindingsHidden
+                                            NoOverlay
                                             FooterInfo
                                             (DefaultRoots initRoots)
                                             rootsTree
@@ -523,9 +523,9 @@ handleMain dbg e = do
       case view keybindingsMode os of
         KeybindingsShown ->
           case e of
-            VtyEvent (Vty.EvKey _ _) -> put $ os & keybindingsMode .~ KeybindingsHidden
+            VtyEvent (Vty.EvKey _ _) -> put $ os & keybindingsMode .~ NoOverlay
             _ -> put os
-        _ -> case view footerMode os of
+        NoOverlay -> case view footerMode os of
           FooterInput fm form -> inputFooterHandler dbg fm form (handleMainWindowEvent dbg) (() <$ e)
           _ -> handleMainWindowEvent dbg (() <$ e)
     _ -> return ()
