@@ -323,7 +323,8 @@ myAppHandleEvent brickEvent = do
               VtyEvent (Vty.EvKey (KChar 'r') [Vty.MCtrl]) -> do
                   liftIO $ resume debuggee'
                   put (appState & majorState . mode .~ RunningMode)
-              VtyEvent (Vty.EvKey (KEsc) _) -> do
+              VtyEvent (Vty.EvKey (KEsc) _) | NoOverlay <- view keybindingsMode os
+                                            , not (isFocusedFooter (view footerMode os)) -> do
                   case view running_task os of
                     Just tid -> do
                       liftIO $ killThread tid

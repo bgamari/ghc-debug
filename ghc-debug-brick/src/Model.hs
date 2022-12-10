@@ -121,6 +121,10 @@ data FooterMode = FooterInfo
                 | FooterMessage Text
                 | FooterInput FooterInputMode (Form Text () Name)
 
+isFocusedFooter :: FooterMode -> Bool
+isFocusedFooter (FooterInput {}) = True
+isFocusedFooter _ = False
+
 data FooterInputMode = FAddress | FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
 
 data Command = Command { commandDescription :: Text
