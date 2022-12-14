@@ -25,7 +25,7 @@ main = do
     performGC
 
     -- Give the test a chance to RequestPoll
-    threadDelay 5000000000
+    threadDelay 2_000_000
 
     pause
 
