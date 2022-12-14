@@ -200,7 +200,7 @@ footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
    FooterMessage t -> withAttr menuAttr $ hBox [txt t, fill ' ']
-   FooterInfo -> withAttr menuAttr $ hBox [txt "(↑↓): select item | (→): expand | (←): collapse | (?): full keybindings", fill ' ']
+   FooterInfo -> withAttr menuAttr $ hBox [txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (?): full keybindings", fill ' ']
    FooterInput _im form -> renderForm form
 
 footerInput :: FooterInputMode -> FooterMode
