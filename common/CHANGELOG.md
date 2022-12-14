@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-common
 
+## 0.4.0.0 -- 2022-12-14
+
+* Add RequestSRT to allow support for tracing SRTs
+
 ## 0.3.0.0 -- 2022-10-06
 
 * Support changes to TSO decoding on GHC HEAD

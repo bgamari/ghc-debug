@@ -1,5 +1,13 @@
 # Revision history for ghc-debug-brick
 
+## 0.4.0.0 -- 2022-12-14
+
+* Add command picker (Ctrl-P) for selecting commands
+* Add support for tracing SRTs
+* Better progress indicating
+* Fix some bugs with `ESC` not respecting the correct scopes.
+* Keybinding for multi collapse (Shift-Left)
+
 ## 0.3.0.0 -- 2022-10-06
 
 * Major improvments to interface

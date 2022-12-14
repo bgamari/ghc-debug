@@ -1,6 +1,6 @@
 cabal-version:       2.4
 name:                ghc-debug-stub
-version:             0.3.0.0
+version:             0.4.0.0
 synopsis:            Functions for instrumenting your application so the heap
                      can be analysed with ghc-debug-common.
 description:         Functions for instrumenting your application so the heap can
@@ -27,7 +27,7 @@ library
                      , directory ^>= 1.3
                      , filepath ^>= 1.4
                      , ghc-prim ^>= 0.8
-                     , ghc-debug-convention == 0.3.0.0
+                     , ghc-debug-convention == 0.4.0.0
   default-language:    Haskell2010
   cxx-sources:         cbits/stub.cpp, cbits/socket.cpp, cbits/trace.cpp
   cxx-options:         -std=gnu++11 -pthread -O3 -g3 -DTHREADED_RTS

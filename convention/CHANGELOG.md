@@ -1,5 +1,9 @@
 # Revision history for convention
 
+## 0.4.0.0 -- 2022-12-14
+
+* No changes.
+
 ## 0.3.0.0 -- 2022-10-06
 
 * No changes.

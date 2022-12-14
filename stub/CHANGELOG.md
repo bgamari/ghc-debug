@@ -1,5 +1,10 @@
 # Revision history for ghc-debug-stub
 
+## 0.4.0.0 -- 2022-12-14
+
+* Fix compatability with HEAD/9.4/9.2
+* Support for SRT requests
+
 ## 0.3.0.0 -- 2022-10-06
 
 * Allow clients to reconnect multiple times to debuggee (Finley McIlwaine)
