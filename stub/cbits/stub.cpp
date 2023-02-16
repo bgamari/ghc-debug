@@ -208,8 +208,6 @@ class Response {
         trace("finishing with code: %d\n", status);
         this->flush(status);
     }
-
-    Response(Response &x) = delete;
 };
 
 static bool paused = false;
@@ -606,7 +604,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
 
 
       case CMD_POLL:
-        r_poll_pause_resp = &resp;
+        r_poll_pause_resp = new Response(resp);
         // NOTE: Don't call finish so that the process blocks waiting for
         // a response. We will send the response when the process pauses.
         break;
