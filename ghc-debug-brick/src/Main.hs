@@ -255,7 +255,7 @@ myAppHandleEvent brickEvent = do
               Snapshot
                 | Just (_debuggeeIx, socket) <- listSelectedElement knownSnapshots'
                 -> do
-                  debuggee' <- liftIO $ snapshotConnect (writeBChan eventChan . ProgressMessage . error . show) (view socketLocation socket)
+                  debuggee' <- liftIO $ snapshotConnect (writeBChan eventChan . ProgressMessage) (view socketLocation socket)
                   put $ appState & majorState .~ Connected
                         { _debuggeeSocket = socket
                         , _debuggee = debuggee'
