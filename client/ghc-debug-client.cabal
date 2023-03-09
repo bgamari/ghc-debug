@@ -38,13 +38,13 @@ library
                        GHC.Debug.Client.Monad.Class,
                        GHC.Debug.Client.Monad.Simple
 
-  build-depends:       base >=4.16 && < 4.17,
+  build-depends:       base >=4.16 && < 4.19,
                        network >= 2.6 ,
                        containers ^>= 0.6,
                        unordered-containers ^>= 0.2.13,
                        ghc-debug-common == 0.4.0.0,
                        ghc-debug-convention == 0.4.0.0,
-                       text ^>= 1.2.4,
+                       text >= 1.2.4 && < 3,
                        process ^>= 1.6,
                        filepath ^>= 1.4,
                        directory ^>= 1.3,
@@ -58,7 +58,7 @@ library
                        async ^>= 2.2,
                        monoidal-containers >= 0.6,
                        language-dot ^>= 0.1,
-                       ghc-prim ^>= 0.8,
+                       ghc-prim >= 0.8 && <0.10,
                        stm ^>= 2.5,
                        bytestring,
                        contra-tracer
