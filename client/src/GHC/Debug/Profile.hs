@@ -37,7 +37,7 @@ import Eventlog.Types
 import Eventlog.Data
 import Eventlog.Total
 import Eventlog.HtmlTemplate
-import Eventlog.Args (defaultArgs)
+import Eventlog.Args (defaultArgs, Option(..))
 import Data.Text (pack, Text, unpack)
 import Data.Semigroup
 import qualified Data.Text as T
@@ -204,7 +204,7 @@ mkProfData raw_fs =
 renderProfile :: [(Int, CensusByClosureType)] -> IO ()
 renderProfile ss = do
   let pd = mkProfData ss
-  as <- defaultArgs "unused"
+  Run as <- defaultArgs "unused"
   (header, data_json, descs, closure_descs) <- generateJsonData as pd
   let html = templateString header data_json descs closure_descs as
   writeFile "profile/ht.html" html
