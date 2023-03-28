@@ -15,6 +15,7 @@
 -- then the other pointers are derived from this instance using DerivingVia
 module GHC.Debug.Types.Ptr( -- * InfoTables
                             InfoTablePtr(..)
+                          , readInfoTablePtr
                           , RawInfoTable(..)
                           -- UntaggedClosurePtr constructor not exported so
                           -- we can maintain the invariant that all
@@ -104,6 +105,13 @@ newtype InfoTablePtr = InfoTablePtr Word64
                      deriving (Eq, Ord)
                      deriving newtype (Hashable)
                      deriving (Show, Binary) via ClosurePtr
+
+readInfoTablePtr :: String -> Maybe InfoTablePtr
+readInfoTablePtr ('0':'x':s) = case readHex s of
+    [(res, "")] -> Just (InfoTablePtr res)
+    _ -> Nothing
+readInfoTablePtr _ = Nothing
+
 
 -- Invariant, ClosurePtrs are *always* untagged, we take some care to
 -- untag them when making a ClosurePtr so we don't have to do it on every

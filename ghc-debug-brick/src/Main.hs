@@ -40,6 +40,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Foldable as F
 
+import GHC.Debug.Types.Ptr(readInfoTablePtr)
 import IOTree
 import Lib as GD
 import Model
@@ -618,6 +619,8 @@ commandList =
             (modify $ footerMode .~ footerInput FSearch)
   , Command "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FAddress)
+  , Command "Find Info Table" (Vty.EvKey (KChar 'i') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FInfoTable)
   , Command "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FProfile)
   , Command "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
@@ -691,6 +694,21 @@ dispatchFooterInput dbg FAddress form = do
    case readClosurePtr address of
     Just cp -> do
       asyncAction "Finding address" os (map head <$> (liftIO $ retainersOfAddress Nothing dbg [cp])) $ \cps -> do
+        let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
+        res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
+        let tree = mkIOTree dbg Nothing res getChildren id
+        put (os & resetFooter
+                & treeMode .~ Searched tree
+            )
+    Nothing -> put (os & resetFooter)
+
+dispatchFooterInput dbg FInfoTable form = do
+   os <- get
+   let address = T.unpack (formState form)
+   case readInfoTablePtr address of
+    Just info_ptr -> do
+      mb_src <- liftIO $ infoSourceLocation dbg info_ptr
+      asyncAction ("Finding info table " <> T.pack (show info_ptr ++ maybe "" ((" " ++) . show) mb_src)) os (map head <$> (liftIO $ retainersOfInfoTable Nothing dbg info_ptr)) $ \cps -> do
         let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
         res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
         let tree = mkIOTree dbg Nothing res getChildren id

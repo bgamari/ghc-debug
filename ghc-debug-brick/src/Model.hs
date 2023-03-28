@@ -125,7 +125,7 @@ isFocusedFooter :: FooterMode -> Bool
 isFocusedFooter (FooterInput {}) = True
 isFocusedFooter _ = False
 
-data FooterInputMode = FAddress | FSearch | FProfile | FRetainer | FRetainerExact | FSnapshot
+data FooterInputMode = FAddress | FSearch | FInfoTable | FProfile | FRetainer | FRetainerExact | FSnapshot
 
 data Command = Command { commandDescription :: Text
                        , commandKey :: Vty.Event
@@ -141,6 +141,7 @@ data OverlayMode = KeybindingsShown
 formatFooterMode :: FooterInputMode -> Text
 formatFooterMode FAddress = "address (0x..): "
 formatFooterMode FSearch = "search: "
+formatFooterMode FInfoTable = "info table pointer (0x..): "
 formatFooterMode FProfile = "filename: "
 formatFooterMode FRetainer = "constructor name: "
 formatFooterMode FRetainerExact = "closure name: "

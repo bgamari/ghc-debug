@@ -1,6 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack') where
+module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainersOfInfoTable, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack') where
 
 import GHC.Debug.Client
 import Control.Monad.State
@@ -44,6 +44,12 @@ findRetainersOfConstructorExact limit rroots clos_name =
         Just cur_loc ->
 
           return $ (infoName cur_loc) == clos_name
+
+findRetainersOfInfoTable :: Maybe Int -> [ClosurePtr] -> InfoTablePtr -> DebugM [[ClosurePtr]]
+findRetainersOfInfoTable limit rroots info_ptr =
+  findRetainers limit rroots go
+  where
+    go _ sc = return $ tableId (info (noSize sc)) == info_ptr
 
 -- | From the given roots, find any path to one of the given pointers.
 -- Note: This function can be quite slow! The first argument is a limit to

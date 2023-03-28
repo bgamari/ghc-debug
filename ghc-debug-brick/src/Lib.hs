@@ -71,6 +71,7 @@ module Lib
   , retainersOfConstructor
   , retainersOfAddress
   , retainersOfConstructorExact
+  , retainersOfInfoTable
 
     -- * Snapshot
   , snapshot
@@ -254,6 +255,13 @@ retainersOfConstructorExact dbg con_name = do
   run dbg $ do
     roots <- GD.gcRoots
     stack <- GD.findRetainersOfConstructorExact (Just 100) roots con_name
+    traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
+
+retainersOfInfoTable :: Maybe [ClosurePtr] -> Debuggee -> InfoTablePtr -> IO [[Closure]]
+retainersOfInfoTable mroots dbg info_ptr = do
+  run dbg $ do
+    roots <- maybe GD.gcRoots return mroots
+    stack <- GD.findRetainersOfInfoTable (Just 100) roots info_ptr
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 -- -- | Request the description for an info table.
