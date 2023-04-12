@@ -344,7 +344,7 @@ ppClosure showBox prec c = case c of
         "_blockingQueue"
     OtherClosure {} ->
         "_other"
-    TSOClosure {} -> "TSO"
+    TSOClosure {..} -> "TSO: " ++ show why_blocked
     StackClosure {..} -> app ["Stack(", show stack_size, ")"] -- TODO
     WeakClosure {} -> "_wk" -- TODO
     TVarClosure {} -> "_tvar" -- TODO
