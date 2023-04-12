@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-client
 
+## 0.4.0.1 -- 2023-03-09
+
+* Relax some version bounds and use eventlog2html 0.9.3
+
 ## 0.4 -- 2022-12-14
 
 * Add support for tracing SRTs. This is quite an invasive change which adds a new

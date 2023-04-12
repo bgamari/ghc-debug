@@ -1,5 +1,10 @@
 # Revision history for ghc-debug-brick
 
+## 0.4.0.1 -- 2023-03-09
+
+* Fix snapshot mode
+* Show why threads are blocked (or not)
+
 ## 0.4.0.0 -- 2022-12-14
 
 * Add command picker (Ctrl-P) for selecting commands
