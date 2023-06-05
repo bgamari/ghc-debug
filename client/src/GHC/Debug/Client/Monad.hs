@@ -18,9 +18,12 @@ module GHC.Debug.Client.Monad
     -- * Running/Connecting to a debuggee
   , withDebuggeeRun
   , withDebuggeeConnect
+  , withDebuggeeConnectTCP
   , debuggeeRun
   , debuggeeConnect
+  , debuggeeConnectTCP
   , debuggeeConnectWithTracer
+  , debuggeeConnectWithTracerTCP
   , debuggeeClose
   -- * Snapshot run
   , snapshotInit
@@ -31,6 +34,7 @@ module GHC.Debug.Client.Monad
   ) where
 
 import Control.Exception (finally)
+import Data.Word (Word16)
 import Network.Socket
 import System.Process
 import System.Environment
@@ -81,6 +85,19 @@ withDebuggeeConnect socketName action = do
       `finally`
       debuggeeClose new_env
 
+-- | Bracketed version of @debuggeeConnectTCP@. Connects to a debuggee, runs the
+-- action, then closes the debuggee.
+withDebuggeeConnectTCP
+  :: String  -- ^ host of the tcp socket (e.g. @"127.0.0.1"@)
+  -> Word16  -- ^ port of the tcp socket (e.g. @1235@)
+  -> (Debuggee -> IO a)
+  -> IO a
+withDebuggeeConnectTCP host port action = do
+    new_env <- debuggeeConnectTCP host port
+    action new_env
+      `finally`
+      debuggeeClose new_env
+
 -- | Run a debuggee and connect to it. Use @debuggeeClose@ when you're done.
 debuggeeRun :: FilePath  -- ^ path to executable to run as the debuggee
             -> FilePath  -- ^ filename of socket (e.g. @"\/tmp\/ghc-debug"@)
@@ -94,6 +111,9 @@ debuggeeRun exeName socketName = do
 debuggeeConnect :: FilePath -> IO Debuggee
 debuggeeConnect = debuggeeConnectWithTracer debugTracer
 
+debuggeeConnectTCP :: String -> Word16 -> IO Debuggee
+debuggeeConnectTCP = debuggeeConnectWithTracerTCP debugTracer
+
 -- | Connect to a debuggee on the given socket. Use @debuggeeClose@ when you're done.
 debuggeeConnectWithTracer
                 :: Tracer IO String
@@ -102,6 +122,19 @@ debuggeeConnectWithTracer
 debuggeeConnectWithTracer tracer socketName = do
     s <- socket AF_UNIX Stream defaultProtocol
     connect s (SockAddrUnix socketName)
+    hdl <- socketToHandle s ReadWriteMode
+    new_env <- newEnv @DebugM tracer (SocketMode hdl)
+    return (Debuggee new_env)
+
+debuggeeConnectWithTracerTCP
+  :: Tracer IO String
+  -> String  -- ^ host of the tcp socket (e.g. @"127.0.0.1"@)
+  -> Word16  -- ^ port of the tcp socket (e.g. @1235@)
+  -> IO Debuggee
+debuggeeConnectWithTracerTCP tracer host port = do
+    addr:_ <- getAddrInfo (Just defaultHints) (Just host) (Just $ show port)
+    s <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+    connect s (addrAddress addr)
     hdl <- socketToHandle s ReadWriteMode
     new_env <- newEnv @DebugM tracer (SocketMode hdl)
     return (Debuggee new_env)

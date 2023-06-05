@@ -778,7 +778,57 @@ static void handle_connection(const unsigned int sock_fd) {
 */
 
 extern "C"
-void start(const char* socket_path) {
+void start_over_tcp(const char* socket_addr, uint16_t port) {
+    trace("starting with socket: %s:%d\n", socket_addr, port);
+    struct sockaddr_in local, remote;
+    int family;
+
+    // try ipv4
+    if (inet_pton(AF_INET, socket_addr, &local.sin_addr) == 1) {
+        family = AF_INET;
+    } else {
+        // try ipv6
+        if (inet_pton(AF_INET6, socket_addr, &local.sin_addr) == 1) {
+            family = AF_INET6;
+        } else {
+            barf("invalid socket address: \"%s\"", socket_addr);
+        }
+    }
+
+    // Open the socket for listening
+    int listenHdl = socket(family, SOCK_STREAM, 0);
+    if (listenHdl == -1) {
+        barf("socket failed");
+    }
+
+    // Bind the socket to an address
+    local.sin_family = family;
+    local.sin_port = htons(port);
+    if (bind(listenHdl, (struct sockaddr *) &local, sizeof(local)) != 0) {
+        barf("bind failed");
+    }
+
+    // Listen for connections
+    if (listen(listenHdl, 1) != 0) {
+        barf("listen failed");
+    }
+    fflush(stdout);
+
+    while (true) {
+        // Wait for client connection
+        socklen_t len = sizeof(remote);
+        int commHdl = accept(listenHdl, (struct sockaddr *) &remote, &len);
+        if (commHdl == -1) {
+            barf("accept failed %s", strerror(errno));
+        }
+
+        // Handle and on disconnect listen for more connections
+        handle_connection(commHdl);
+    }
+}
+
+extern "C"
+void start_over_un(const char* socket_path) {
     trace("starting with socket path: %s\n", socket_path);
     struct sockaddr_un local, remote;
 
@@ -813,7 +863,7 @@ void start(const char* socket_path) {
         if (commHdl == -1) {
             barf("accept failed %s", strerror(errno));
         }
-        
+
         // Handle and on disconnect listen for more connections
         handle_connection(commHdl);
     }
