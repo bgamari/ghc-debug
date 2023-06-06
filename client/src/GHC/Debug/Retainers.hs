@@ -6,6 +6,7 @@ import GHC.Debug.Client
 import Control.Monad.State
 import GHC.Debug.Trace
 import GHC.Debug.Types.Graph
+import Control.Monad
 
 import qualified Data.Set as Set
 import Control.Monad.RWS

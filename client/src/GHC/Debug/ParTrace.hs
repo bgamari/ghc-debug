@@ -22,6 +22,7 @@ import           GHC.Debug.Client.Query
 import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO hiding (map)
 import Control.Monad.Reader
+import Control.Monad
 import Data.Word
 import GHC.Debug.Client.Monad.Simple
 import GHC.Debug.Client.Monad.Class

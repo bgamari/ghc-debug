@@ -39,6 +39,7 @@ import Control.Concurrent
 import Data.List (sortOn)
 import Language.Dot
 import qualified Data.Set as S
+import Control.Monad
 
 
 type Key = InfoTablePtr

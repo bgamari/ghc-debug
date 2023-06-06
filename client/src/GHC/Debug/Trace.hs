@@ -11,6 +11,7 @@ import           GHC.Debug.Client.Query
 import qualified Data.IntMap as IM
 import Data.Array.BitArray.IO
 import Control.Monad.Reader
+import Control.Monad
 import Data.IORef
 import Data.Word
 

@@ -36,6 +36,7 @@ import Data.Semigroup
 import qualified Data.Text as T
 import qualified Data.Map.Monoidal.Strict as MMap
 import Data.Bitraversable
+import Control.Monad
 
 --import Control.Concurrent
 --import Eventlog.Types
