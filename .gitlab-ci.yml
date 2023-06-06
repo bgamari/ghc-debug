@@ -1,27 +1,29 @@
-image: nixos/nix
+image: debian:10
 
 workflow:
   rules:
     - if: '$CI_COMMIT_BRANCH'
 
 ci:
+  parallel:
+      matrix:
+        - VERSION: "9.6.2"
+        - VERSION: "9.4.5"
+        - VERSION: "9.2.8"
   tags:
     - x86_64-linux
   script:
-    - nix-shell -p git
-    - nix-shell
-    - cabal update
-    - cabal build debugger
-    - cabal test
+    - apt-get update && apt-get install -y curl bash git build-essential curl libffi-dev libgmp-dev libgmp10 libncurses-dev libncurses5 libtinfo5
+    - ./ci.sh
 
-pages:
-  script:
-    - nix-build -A site --arg ci true -o site-out --option trusted-public-keys "mpickering.cachix.org-1:COxPsDJqqrggZgvKG6JeH9baHPue8/pcpYkmcBPUbeg= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" --option substituters "https://hydra.iohk.io https://iohk.cachix.org https://cache.nixos.org/ https://mpickering.cachix.org"
-    - mkdir -p public
-    - cp -r site-out/* public/
-  artifacts:
-    paths:
-      - public
-
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "master"'
+      #pages:
+      #  script:
+      #    - nix-build -A site --arg ci true -o site-out --option trusted-public-keys "mpickering.cachix.org-1:COxPsDJqqrggZgvKG6JeH9baHPue8/pcpYkmcBPUbeg= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" --option substituters "https://hydra.iohk.io https://iohk.cachix.org https://cache.nixos.org/ https://mpickering.cachix.org"
+      #    - mkdir -p public
+      #    - cp -r site-out/* public/
+      #  artifacts:
+      #    paths:
+      #      - public
+      #
+      #  rules:
+      #    - if: '$CI_COMMIT_BRANCH == "master"'
