@@ -1,6 +1,6 @@
 cabal-version:       3.0
 name:                ghc-debug-client
-version:             0.4.0.1
+version:             0.5.0.0
 synopsis:            Useful functions for writing heap analysis tools which use
                      ghc-debug.
 description:         Useful functions for writing heap analysis tools which use
@@ -42,8 +42,8 @@ library
                        network >= 2.6 ,
                        containers ^>= 0.6,
                        unordered-containers ^>= 0.2.13,
-                       ghc-debug-common == 0.4.0.0,
-                       ghc-debug-convention == 0.4.0.0,
+                       ghc-debug-common == 0.5.0.0,
+                       ghc-debug-convention == 0.5.0.0,
                        text >= 1.2.4 && < 3,
                        process ^>= 1.6,
                        filepath ^>= 1.4,

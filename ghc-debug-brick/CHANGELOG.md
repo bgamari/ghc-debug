@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-brick
 
+## 0.5.0.0 -- 2023-06-06
+
+* Add find closure by info table address
+
 ## 0.4.0.1 -- 2023-03-09
 
 * Fix snapshot mode

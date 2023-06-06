@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-stub
 
+## 0.5.0.0 -- 2023-06-06
+
+* Add support for debugging over a TCP socket (`withGhcDebugTCP`)
+
 ## 0.4.0.0 -- 2022-12-14
 
 * Fix compatability with HEAD/9.4/9.2

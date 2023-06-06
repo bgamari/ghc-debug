@@ -1,5 +1,13 @@
 # Revision history for ghc-debug-client
 
+## 0.5.0.0 -- 2023-06-06
+
+* Remove eventlog2html dependency and hence `profile` function. These can be
+  implemented in your own library if you want to use them.
+* Update with support for ghc-9.4 and ghc-9.6.
+* Add support for debugging over a TCP socket (`withDebuggeeConnectTCP`)
+
+
 ## 0.4.0.1 -- 2023-03-09
 
 * Relax some version bounds and use eventlog2html 0.9.3

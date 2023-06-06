@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-common
 
+## 0.5.0.0 -- 2023-06-06
+
+* Bump to keep in sync with other libraries
+
 ## 0.4.0.0 -- 2022-12-14
 
 * Add RequestSRT to allow support for tracing SRTs

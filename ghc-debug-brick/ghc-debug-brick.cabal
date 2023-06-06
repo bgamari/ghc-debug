@@ -1,6 +1,6 @@
 cabal-version:       2.4
 name:                ghc-debug-brick
-version:             0.4.0.1
+version:             0.5.0.0
 synopsis:            A simple TUI using ghc-debug
 description:         A simple TUI using ghc-debug
 bug-reports:         https://gitlab.haskell.org/ghc/ghc-debug/-/issues
@@ -29,9 +29,9 @@ executable ghc-debug-brick
                      , time
                      , deepseq
                      , microlens
-                     , ghc-debug-client == 0.4.0.1
-                     , ghc-debug-common == 0.4.0.0
-                     , ghc-debug-convention == 0.4.0.0
+                     , ghc-debug-client == 0.5.0.0
+                     , ghc-debug-common == 0.5.0.0
+                     , ghc-debug-convention == 0.5.0.0
                      , unordered-containers
                      , exceptions
                      , contra-tracer
