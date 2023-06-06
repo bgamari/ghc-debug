@@ -11,8 +11,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {- | Functions for performing whole heap census in the style of the normal
 - heap profiling -}
-module GHC.Debug.Profile( profile
-                        , censusClosureType
+module GHC.Debug.Profile( censusClosureType
                         , census2LevelClosureType
                         , closureCensusBy
                         , CensusByClosureType
@@ -32,17 +31,18 @@ import qualified Data.Map.Strict as Map
 import Control.Monad.State
 import Data.List (sortBy)
 import Data.Ord
-import Control.Concurrent
-import Eventlog.Types
-import Eventlog.Data
-import Eventlog.Total
-import Eventlog.HtmlTemplate
-import Eventlog.Args (defaultArgs, Option(..))
 import Data.Text (pack, Text, unpack)
 import Data.Semigroup
 import qualified Data.Text as T
 import qualified Data.Map.Monoidal.Strict as MMap
 import Data.Bitraversable
+
+--import Control.Concurrent
+--import Eventlog.Types
+--import Eventlog.Data
+--import Eventlog.Total
+--import Eventlog.HtmlTemplate
+--import Eventlog.Args (defaultArgs, Option(..))
 
 
 type CensusByClosureType = Map.Map Text CensusStats
@@ -163,6 +163,7 @@ writeCensusByClosureType outpath c = do
   writeFile outpath (unlines $ "key, total, count, max, avg" : map showLine res)
 
 
+{-
 -- | Peform a profile at the given interval (in seconds), the result will
 -- be rendered after each iteration using @eventlog2html@.
 profile :: FilePath -> Int -> Debuggee -> IO ()
@@ -209,5 +210,6 @@ renderProfile ss = do
   let html = templateString header data_json descs closure_descs as
   writeFile "profile/ht.html" html
   return ()
+  -}
 
 

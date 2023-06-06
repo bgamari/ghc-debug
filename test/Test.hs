@@ -124,7 +124,6 @@ p26 :: Debuggee -> IO ()
 p27 :: Debuggee -> IO ()
 p28 :: Debuggee -> IO ()
 p29 :: Debuggee -> IO ()
-p30 :: Debuggee -> IO ()
 p31 :: Debuggee -> IO ()
 p32 :: Debuggee -> IO ()
 p33 :: Debuggee -> IO ()
@@ -298,7 +297,7 @@ p29 e = do
   p29 e
 
 
-p30 e = profile "profile/profile_out.txt" 10_000 e
+--p30 e = profile "profile/profile_out.txt" 10_000 e
 
 p31 e = analyseFragmentation 5_000_000 e
 
