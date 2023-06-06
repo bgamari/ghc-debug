@@ -367,16 +367,25 @@ closureReferences e (Stack _ stack) = run e $ do
   let action (GD.SPtr ptr) = ("Pointer", ListFullClosure . Closure ptr <$> GD.dereferenceClosure ptr)
       action (GD.SNonPtr dat) = ("Data:" ++ show dat, return ListData)
 
-      frame_items frame = ("Info: " ++ show (tableId (frame_info frame)), return (ListOnlyInfo (tableId (frame_info frame)))) :
-                          [ ("SRT: ", ListFullClosure . Closure srt <$> GD.dereferenceClosure srt)  | Just srt <- [getSrt (frame_srt frame)]]
-                          ++ map action (GD.values frame)
+--      frame_items :: DebugStackFrame
+--                        (GenSrtPayload ClosurePtr) ClosurePtr -> GD.DebugM [(String, _)]
+      frame_items frame = do
+          info <- GD.getSourceInfo (tableId (frame_info frame))
+          case info of
+            Just (SourceInformation {infoName = "stg_orig_thunk_info_frame_info"}) ->
+              let [GD.SNonPtr dat] = GD.values frame
+              in return [("Blackhole arising from thunk:", (ListOnlyInfo (InfoTablePtr dat)))]
+            _ -> traverse sequenceA $
+
+             ("Info: " ++ show (tableId (frame_info frame)), return (ListOnlyInfo (tableId (frame_info frame)))) :
+             [ ("SRT: ", ListFullClosure . Closure srt <$> GD.dereferenceClosure srt)  | Just srt <- [getSrt (frame_srt frame)]]
+             ++ map action (GD.values frame)
 
       add_frame_ix ix (lbl, x) = ("Frame " ++ show ix ++ " " ++ lbl, x)
-  let lblAndPtrs = [ map (add_frame_ix frameIx) (frame_items frame)
-                      | (frameIx, frame) <- zip [(0::Int)..] (GD.getFrames stack')
-                   ]
---  traverse GD.dereferenceClosures (snd <$> lblAndPtrs)
-  traverse (traverse id) (concat lblAndPtrs)
+  lblAndPtrs <- sequence [ map (add_frame_ix frameIx) <$> (frame_items frame)
+                            | (frameIx, frame) <- zip [(0::Int)..] (GD.getFrames stack')
+                            ]
+  return (concat lblAndPtrs)
   {-
   return $ zipWith (\(lbl,ptr) c -> (lbl, Closure ptr c))
             lblAndPtrs
