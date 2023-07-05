@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 module Model
   ( module Model
@@ -22,7 +23,7 @@ import Data.Text(Text, pack)
 
 import Brick.Forms
 import Brick.BChan
-import Brick (EventM)
+import Brick (EventM, Widget)
 import Brick.Widgets.List
 
 import Namespace
@@ -110,21 +111,20 @@ data InfoInfo = InfoInfo
 
 data ClosureDetails = ClosureDetails
   { _closure :: DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
-  , _retainerSize :: Maybe RetainerSize
   , _excSize :: Size
   , _info :: InfoInfo
   }
   | InfoDetails { _info :: InfoInfo }
   | LabelNode { _label :: Text }
 
-data TreeMode = SavedAndGCRoots
-              | Retainer (IOTree (ClosureDetails) Name)
-              | Searched (IOTree (ClosureDetails) Name)
+data TreeMode = SavedAndGCRoots (ClosureDetails -> Widget Name)
+              | Retainer (ClosureDetails -> Widget Name) (IOTree (ClosureDetails) Name)
+              | forall a . Searched (a -> Widget Name) (IOTree a Name)
 
 treeLength :: TreeMode -> Maybe Int
-treeLength SavedAndGCRoots = Nothing
-treeLength (Retainer tree) = Just $ Prelude.length $ getIOTreeRoots tree
-treeLength (Searched tree) = Just $ Prelude.length $ getIOTreeRoots tree
+treeLength (SavedAndGCRoots {}) = Nothing
+treeLength (Retainer _ tree) = Just $ Prelude.length $ getIOTreeRoots tree
+treeLength (Searched _ tree) = Just $ Prelude.length $ getIOTreeRoots tree
 
 data FooterMode = FooterInfo
                 | FooterMessage Text
@@ -144,11 +144,15 @@ data FooterInputMode = FAddress
                      | FRetainerArrWords
                      | FDumpArrWords
                      | FSetResultSize
+                     | FRetainerAddress
 
 data Command = Command { commandDescription :: Text
-                       , commandKey :: Vty.Event
-                       , dispatchCommand :: EventM Name OperationalState ()
+                       , commandKey :: Maybe Vty.Event
+                       , dispatchCommand :: Debuggee -> EventM Name OperationalState ()
                        }
+
+mkCommand :: Text -> Vty.Event -> EventM Name OperationalState () -> Command
+mkCommand desc key dispatch = Command desc (Just key) (\_ -> dispatch)
 
 data OverlayMode = KeybindingsShown
                  -- TODO: Abstract the "CommandPicker" into it's own module
@@ -166,6 +170,7 @@ formatFooterMode FRetainerExact = "closure name: "
 formatFooterMode FRetainerArrWords = "size (bytes): "
 formatFooterMode FDumpArrWords = "dump payload to file: "
 formatFooterMode FSetResultSize = "search result limit (0 for infinity): "
+formatFooterMode FRetainerAddress = "address (0x..): "
 formatFooterMode FSnapshot = "snapshot name: "
 
 data ConnectedMode
@@ -197,11 +202,11 @@ data OperationalState = OperationalState
 osSize :: OperationalState -> Int
 osSize os = fromMaybe (Prelude.length (getIOTreeRoots $ _treeSavedAndGCRoots os)) $ treeLength (_treeMode os)
 
-pauseModeTree :: (IOTree ClosureDetails Name -> r) -> OperationalState -> r
+pauseModeTree :: (forall a . (a -> Widget Name) -> IOTree a Name -> r) -> OperationalState -> r
 pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _) = case mode of
-  SavedAndGCRoots -> k roots
-  Retainer r -> k r
-  Searched r -> k r
+  SavedAndGCRoots render -> k render roots
+  Retainer render r -> k render r
+  Searched render r -> k render r
 
 makeLenses ''AppState
 makeLenses ''MajorState

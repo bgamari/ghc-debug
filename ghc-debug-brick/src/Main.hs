@@ -23,7 +23,7 @@ import Brick.Widgets.Border
 import Brick.Widgets.Center (centerLayer, hCenter)
 import Brick.Widgets.List
 import Control.Applicative
-import Control.Monad (forever)
+import Control.Monad (forever, forM)
 import Control.Monad.IO.Class
 import Control.Monad.Catch (bracket)
 import Control.Concurrent
@@ -41,6 +41,7 @@ import Data.Text (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.ByteString.Lazy as BS
+import qualified Data.Set as S
 import Data.Maybe
 import qualified Data.Foldable as F
 import Text.Read (readMaybe)
@@ -50,6 +51,7 @@ import qualified GHC.Debug.Types.Closures as Debug
 import IOTree
 import Lib as GD
 import Model
+import Data.ByteString.Lazy (ByteString)
 
 
 drawSetup :: Text -> Text -> GenericList Name Seq.Seq SocketInfo -> Widget Name
@@ -98,16 +100,16 @@ myAppDraw (AppState majorState' _) =
           [ -- Current closure details
               joinBorders $ borderWithLabel (txt "Closure Details") $
               vLimit 9 $
-              pauseModeTree (renderClosureDetails . ioTreeSelection) os
+              pauseModeTree (\r io -> maybe emptyWidget r (ioTreeSelection io)) os
               <=> fill ' '
           , -- Tree
             joinBorders $ borderWithLabel
               (txt $ case treeMode' of
-                SavedAndGCRoots -> "Root Closures"
+                SavedAndGCRoots {} -> "Root Closures"
                 Retainer {} -> "Retainers"
                 Searched {} -> "Search Results"
               )
-              (pauseModeTree renderIOTree os)
+              (pauseModeTree (\_ -> renderIOTree) os)
           , footer (osSize os) (_resultSize os) fmode
           ]]
 
@@ -132,12 +134,12 @@ myAppDraw (AppState majorState' _) =
       map renderCommandDesc all_keys
 
   all_keys =
-    [ ("Resume", Vty.EvKey (Vty.KChar 'r') [Vty.MCtrl])
-    , ("Parent", Vty.EvKey KLeft [])
-    , ("Child", Vty.EvKey KRight [])
-    , ("Command Picker", Vty.EvKey (Vty.KChar 'p') [Vty.MCtrl]) ]
+    [ ("Resume", Just (Vty.EvKey (Vty.KChar 'r') [Vty.MCtrl]))
+    , ("Parent", Just (Vty.EvKey KLeft []))
+    , ("Child", Just (Vty.EvKey KRight []))
+    , ("Command Picker", Just (Vty.EvKey (Vty.KChar 'p') [Vty.MCtrl]))]
     ++ [(commandDescription cmd, commandKey cmd) | cmd <- F.toList commandList ]
-    ++ [ ("Exit", Vty.EvKey KEsc []) ]
+    ++ [ ("Exit", Just (Vty.EvKey KEsc [])) ]
 
   maximum_size = maximum (map (T.length . fst) all_keys)
 
@@ -158,55 +160,52 @@ myAppDraw (AppState majorState' _) =
   renderCommand cmd = renderCommandDesc (commandDescription cmd, commandKey cmd)
 
 
-  renderCommandDesc :: (Text, Vty.Event) -> Widget Name
-  renderCommandDesc (desc, k) = txt (desc <> T.replicate padding " " <> renderKey k)
+  renderCommandDesc :: (Text, Maybe Vty.Event) -> Widget Name
+  renderCommandDesc (desc, k) = txt (desc <> T.replicate padding " " <> key)
     where
-      key = renderKey k
+      key = maybe mempty renderKey k
       padding = (actual_width - T.length desc - T.length key)
 
-  renderClosureDetails :: Maybe ClosureDetails -> Widget Name
-  renderClosureDetails (Just cd@(ClosureDetails {})) =
-    vLimit 9 $
-    -- viewport Connected_Paused_ClosureDetails Both $
-    vBox $
-      renderInfoInfo (_info cd)
-      ++
-      [ hBox [
-        txtLabel $ "Exclusive Size   "
-        <> maybe "" (pack . show @Int . GD.getSize) (Just $ _excSize cd) <> " bytes"
-        ],
-        hBox [
-        txtLabel $ "CCS   TODO"
-        ]
-      ]
-  renderClosureDetails Nothing = emptyWidget
-  renderClosureDetails (Just (LabelNode n)) = txt n
-  renderClosureDetails (Just (InfoDetails info')) = vLimit 9 $ vBox $ renderInfoInfo info'
-
-  renderInfoInfo :: InfoInfo -> [Widget Name]
-  renderInfoInfo info' =
-    maybe [] renderSourceInformation (_sourceLocation info')
+renderInfoInfo :: InfoInfo -> [Widget Name]
+renderInfoInfo info' =
+  maybe [] renderSourceInformation (_sourceLocation info')
     ++ [labelled "Era" $ vLimit 1 (str $ show $ _era info')
        ,labelled "type" $ vLimit 1 (str $ show $ _closureType info')]
-      -- TODO these aren't actually implemented yet
-      -- , txt $ "Type             "
-      --       <> fromMaybe "" (_closureType =<< cd)
-      -- , txt $ "Constructor      "
-      --       <> fromMaybe "" (_constructor =<< cd)
+    -- TODO these aren't actually implemented yet
+    -- , txt $ "Type             "
+    --       <> fromMaybe "" (_closureType =<< cd)
+    -- , txt $ "Constructor      "
+    --       <> fromMaybe "" (_constructor =<< cd)
 
-  renderSourceInformation :: SourceInformation -> [Widget Name]
-  renderSourceInformation (SourceInformation name cty ty label' modu loc) =
-      [ labelled "Name" $ vLimit 1 (str name)
-      , labelled "Closure type" $ vLimit 1 (str (show cty))
-      , labelled "Type" $ vLimit 3 (str ty)
-      , labelled "Label" $ vLimit 1 (str label')
-      , labelled "Module" $ vLimit 1 (str modu)
-      , labelled "Location" $ vLimit 1 (str loc)
+renderSourceInformation :: SourceInformation -> [Widget Name]
+renderSourceInformation (SourceInformation name cty ty label' modu loc) =
+    [ labelled "Name" $ vLimit 1 (str name)
+    , labelled "Closure type" $ vLimit 1 (str (show cty))
+    , labelled "Type" $ vLimit 3 (str ty)
+    , labelled "Label" $ vLimit 1 (str label')
+    , labelled "Module" $ vLimit 1 (str modu)
+    , labelled "Location" $ vLimit 1 (str loc)
+    ]
+
+labelled :: Text -> Widget Name -> Widget Name
+labelled lbl w =
+  hLimit 17 (txtLabel lbl <+> vLimit 1 (fill ' ')) <+> w <+> vLimit 1 (fill ' ')
+
+
+renderClosureDetails :: ClosureDetails -> Widget Name
+renderClosureDetails (cd@(ClosureDetails {})) =
+  vLimit 8 $
+  -- viewport Connected_Paused_ClosureDetails Both $
+  vBox $
+    renderInfoInfo (_info cd)
+    ++
+    [ hBox [
+      txtLabel $ "Exclusive Size   "
+      <> maybe "" (pack . show @Int . GD.getSize) (Just $ _excSize cd) <> " bytes"
       ]
-
-  labelled :: Text -> Widget Name -> Widget Name
-  labelled lbl w =
-    hLimit 17 (txtLabel lbl <+> vLimit 1 (fill ' ')) <+> w <+> vLimit 1 (fill ' ')
+    ]
+renderClosureDetails ((LabelNode n)) = txt n
+renderClosureDetails ((InfoDetails info')) = vLimit 8 $ vBox $ renderInfoInfo info'
 
 footer :: Int -> Maybe Int -> FooterMode -> Widget Name
 footer n m mode = vLimit 1 $
@@ -315,11 +314,11 @@ myAppHandleEvent brickEvent = do
           -- Pause the debuggee
           VtyEvent (Vty.EvKey (KChar 'p') []) -> do
             liftIO $ pause debuggee'
-            (rootsTree, initRoots) <- liftIO $ mkSavedAndGCRootsIOTree Nothing
+            (rootsTree, initRoots) <- liftIO $ mkSavedAndGCRootsIOTree
             put (appState & majorState . mode .~
                         PausedMode
                           (OperationalState Nothing
-                                            SavedAndGCRoots
+                                            savedAndGCRoots
                                             NoOverlay
                                             FooterInfo
                                             (DefaultRoots initRoots)
@@ -357,22 +356,23 @@ myAppHandleEvent brickEvent = do
         where
 
 
-        mkSavedAndGCRootsIOTree manalysis = do
+        mkSavedAndGCRootsIOTree = do
           raw_roots <- take 1000 . map ("GC Roots",) <$> GD.rootClosures debuggee'
-          rootClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_roots
+          rootClosures' <- liftIO $ mapM (completeClosureDetails debuggee') raw_roots
           raw_saved <- map ("Saved Object",) <$> GD.savedClosures debuggee'
-          savedClosures' <- liftIO $ mapM (completeClosureDetails debuggee' manalysis) raw_saved
-          return $ (mkIOTree debuggee' manalysis (savedClosures' ++ rootClosures') getChildren id
+          savedClosures' <- liftIO $ mapM (completeClosureDetails debuggee') raw_saved
+          return $ (mkIOTree debuggee' (savedClosures' ++ rootClosures') getChildren renderInlineClosureDesc id
                    , fmap toPtr <$> (raw_roots ++ raw_saved))
           where
 
 
-getChildren :: Debuggee -> DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
-            -> IO
-                 [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
-getChildren d c = do
+getChildren :: Debuggee -> ClosureDetails
+            -> IO [ClosureDetails]
+getChildren d (ClosureDetails c _ _) = do
   children <- closureReferences d c
-  traverse (traverse (fillListItem d)) children
+  children' <- traverse (traverse (fillListItem d)) children
+  mapM (\(lbl, child) -> getClosureDetails d (pack lbl) child) children'
+getChildren _ _ = return []
 
 fillListItem :: Debuggee
              -> ListItem CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
@@ -381,39 +381,32 @@ fillListItem _ (ListOnlyInfo x) = return $ ListOnlyInfo x
 fillListItem d(ListFullClosure cd) = ListFullClosure <$> fillConstrDesc d cd
 fillListItem _ ListData = return ListData
 
-
 mkIOTree :: Debuggee
-         -> Maybe Analysis
-         -> [ClosureDetails]
-         -> (Debuggee -> DebugClosure
-                  CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
- -> IO [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)])
-         -> ([ClosureDetails] -> [ClosureDetails])
-         -> IOTree ClosureDetails Name
-mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
+         -> [a]
+         -> (Debuggee -> a -> IO [a])
+         -> (a -> [Widget Name])
+-- -> IO [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)])
+         -> ([a] -> [a])
+         -> IOTree a Name
+mkIOTree debuggee' cs getChildren renderNode sort = ioTree Connected_Paused_ClosureTree
         (sort cs)
-        (\c -> do
-            case c of
-              LabelNode {} -> return []
-              InfoDetails {} -> return []
-              _ -> do
-                children <- getChildren debuggee' (_closure c)
-                cDets <- mapM (\(lbl, child) -> getClosureDetails debuggee' manalysis (pack lbl) child) children
-                return (sort cDets)
+        (\c -> sort <$> getChildren debuggee' c
+--            cDets <- mapM (\(lbl, child) -> getClosureDetails debuggee' manalysis (pack lbl) child) children
+--            return (sort cDets)
         )
         -- rendering the row
         (\state selected ctx depth closureDesc ->
           let
-            colorId = _era $ _info closureDesc
-            colorEra = case colorId of
-              _ -> id
+            -- colorId = _era $ _info closureDesc
+            colorEra = {- case colorId of
+              _ -> -} id
               -- Nothing -> id
               -- Just i -> modifyDefAttr (flip Vty.withBackColor (era_colors !! (1 + (fromIntegral $ abs i) `mod` (length era_colors - 1))))
             body =
               (if selected then visible . highlighted else id) $
                 colorEra $
                 hBox $
-                renderInlineClosureDesc closureDesc
+                renderNode closureDesc
           in
             vdecorate state ctx depth body -- body (T.concat context)
         )
@@ -506,27 +499,24 @@ renderInlineClosureDesc closureDesc =
                         <> "   "
                         <> _pretty (_info closureDesc)
                     ]
-completeClosureDetails :: Debuggee -> Maybe Analysis
-                                            -> (Text, DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
+completeClosureDetails :: Debuggee -> (Text, DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
                                             -> IO ClosureDetails
 
-completeClosureDetails dbg manalysis (label', clos)  =
-  getClosureDetails dbg manalysis label' . ListFullClosure  =<< fillConstrDesc dbg clos
+completeClosureDetails dbg (label', clos)  =
+  getClosureDetails dbg label' . ListFullClosure  =<< fillConstrDesc dbg clos
 
 
 
 getClosureDetails :: Debuggee
-                            -> Maybe Analysis
                             -> Text
                             -> ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
                             -> IO ClosureDetails
-getClosureDetails debuggee' _ t (ListOnlyInfo info_ptr) = do
+getClosureDetails debuggee' t (ListOnlyInfo info_ptr) = do
   info' <- getInfoInfo debuggee' t info_ptr
   return $ InfoDetails info'
-getClosureDetails _ _ t ListData = return $ LabelNode t
-getClosureDetails debuggee' manalysis label' (ListFullClosure c) = do
+getClosureDetails _ t ListData = return $ LabelNode t
+getClosureDetails debuggee' label' (ListFullClosure c) = do
   let excSize' = closureExclusiveSize c
-      retSize' = closureRetainerSize <$> manalysis <*> pure c
   sourceLoc <- maybe (return Nothing) (infoSourceLocation debuggee') (closureInfoPtr c)
   pretty' <- closurePretty debuggee' c
   return ClosureDetails
@@ -546,7 +536,6 @@ getClosureDetails debuggee' manalysis label' (ListFullClosure c) = do
           _ -> Nothing
       }
     , _excSize = excSize'
-    , _retainerSize = retSize'
     }
 
 getInfoInfo :: Debuggee -> Text -> InfoTablePtr -> IO InfoInfo
@@ -618,7 +607,7 @@ handleMain dbg e = do
                 case listSelectedElement cmd_list of
                   Just (_, cmd) -> do
                     modify $ keybindingsMode .~ NoOverlay
-                    dispatchCommand cmd
+                    dispatchCommand cmd dbg
                   Nothing  -> return ()
               _ -> do
                 form' <- handle_form
@@ -638,62 +627,69 @@ commandPickerMode =
     (list CommandPicker_List commandList 1)
 
 
+savedAndGCRoots :: TreeMode
+savedAndGCRoots = SavedAndGCRoots renderClosureDetails
+
 -- All the commands which we support, these show up in keybindings and also the command picker
 commandList :: Seq.Seq Command
 commandList =
-  [ Command "Show key bindings" (Vty.EvKey (KChar '?') [])
+  [ mkCommand "Show key bindings" (Vty.EvKey (KChar '?') [])
             (modify $ keybindingsMode .~ KeybindingsShown)
-  , Command "Saved/GC Roots" (Vty.EvKey (KChar 's') [Vty.MCtrl])
-            (modify $ treeMode .~ SavedAndGCRoots)
-  , Command "Find Closures (Exact)" (Vty.EvKey (KChar 'c') [Vty.MCtrl])
+  , mkCommand "Saved/GC Roots" (Vty.EvKey (KChar 's') [Vty.MCtrl])
+            (modify $ treeMode .~ savedAndGCRoots)
+  , mkCommand "Find Closures (Exact)" (Vty.EvKey (KChar 'c') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSearch)
-  , Command "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
+  , mkCommand "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FAddress)
-  , Command "Find Info Table" (Vty.EvKey (KChar 'i') [Vty.MCtrl])
+  , mkCommand "Find Info Table" (Vty.EvKey (KChar 'i') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FInfoTable)
-  , Command "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
+  , mkCommand "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FProfile)
-  , Command "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
+  , mkCommand "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FRetainer)
-  , Command "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
+  , mkCommand "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FRetainerExact)
-  , Command "Find Retainers of large ARR_WORDS" (Vty.EvKey (KChar 'g') [Vty.MCtrl])
+  , mkCommand "Find Retainers of large ARR_WORDS" (Vty.EvKey (KChar 'g') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FRetainerArrWords)
-  , Command "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
+  , mkCommand "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FDumpArrWords)
-  , Command "Set search limit (default 100)" (Vty.EvKey (KChar 'l') [Vty.MCtrl])
+  , mkCommand "Set search limit (default 100)" (Vty.EvKey (KChar 'l') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSetResultSize)
-  , Command "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FSnapshot) ]
+  , mkCommand "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FSnapshot)
+  , Command "Find Retainers (Address)" Nothing
+            (\_ -> modify $ footerMode .~ footerInput FRetainerAddress)
+  , Command "ARR_WORDS Count" Nothing arrWordsAction
+   ]
 
 
 findCommand :: Vty.Event -> Maybe Command
 findCommand event = do
-  i <- Seq.findIndexL (\cmd -> commandKey cmd == event) commandList
+  i <- Seq.findIndexL (\cmd -> commandKey cmd == Just event) commandList
   Seq.lookup i commandList
 
 handleMainWindowEvent :: Debuggee
                       -> Handler () OperationalState
-handleMainWindowEvent _dbg brickEvent = do
+handleMainWindowEvent dbg brickEvent = do
       os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _ _) <- get
       case brickEvent of
         VtyEvent (Vty.EvKey (KChar 'p') [Vty.MCtrl]) ->
           put $ os & keybindingsMode .~ commandPickerMode
 
         -- A generic event
-        VtyEvent event | Just cmd <- findCommand event -> dispatchCommand cmd
+        VtyEvent event | Just cmd <- findCommand event -> dispatchCommand cmd dbg
         -- Navigate the tree of closures
         VtyEvent event -> case treeMode' of
-          SavedAndGCRoots -> do
+          SavedAndGCRoots {} -> do
             newTree <- handleIOTreeEvent event rootsTree
             put (os & treeSavedAndGCRoots .~ newTree)
-          Retainer t -> do
+          Retainer r t -> do
             newTree <- handleIOTreeEvent event t
-            put (os & treeMode .~ Retainer newTree)
+            put (os & treeMode .~ Retainer r newTree)
 
-          Searched t -> do
+          Searched r t -> do
             newTree <- handleIOTreeEvent event t
-            put (os & treeMode .~ Searched newTree)
+            put (os & treeMode .~ Searched r newTree)
 
         _ -> return ()
 
@@ -710,6 +706,40 @@ inputFooterHandler dbg m form _k re@(VtyEvent e) =
       zoom (lens (const form) (\ os form' -> set footerMode (FooterInput m form') os)) (handleFormEvent re)
 inputFooterHandler _ _ _ k re = k re
 
+
+data ArrWordsLine = CountLine ByteString Int | FieldLine ClosureDetails
+
+renderArrWordsLines :: ArrWordsLine -> [Widget n]
+renderArrWordsLines (CountLine k n) = [txtLabel (T.pack (show n)), txtWrap (T.pack (show k))]
+renderArrWordsLines (FieldLine cd) = renderInlineClosureDesc cd
+
+arrWordsAction :: Debuggee -> EventM n OperationalState ()
+arrWordsAction dbg = do
+  os <- get
+  -- TODO: Does not honour search limit at all
+  asyncAction "Counting ARR_WORDS" os (arrWordsAnalysis Nothing dbg) $ \res -> do
+    let sorted_res = take 100 $ Prelude.reverse [(k, S.toList v ) | (k, v) <- (List.sortBy (comparing (S.size . snd)) (M.toList res))]
+
+        top_closure = [CountLine k (length v) | (k, v) <- sorted_res]
+
+        g_children d (CountLine b _) = do
+          let Just cs = M.lookup b res
+          cs' <- run dbg $ forM (S.toList cs) $ \c -> do
+            c' <- GD.dereferenceClosure c
+            return $ ListFullClosure $ Closure c c'
+          children' <- traverse (traverse (fillListItem d)) $ zipWith (\n c -> (show n, c)) [0..] cs'
+          mapM (\(lbl, child) -> FieldLine <$> getClosureDetails d (pack lbl) child) children'
+        g_children d (FieldLine c) = map FieldLine <$> getChildren d c
+
+        renderHeaderPane (CountLine b k) = txtWrap (T.pack (show b))
+        renderHeaderPane (FieldLine c) = renderClosureDetails c
+
+        tree = mkIOTree dbg top_closure g_children renderArrWordsLines id
+    put (os & resetFooter
+            & treeMode .~ Searched renderHeaderPane tree
+        )
+
+
 -- | What happens when we press enter in footer input mode
 dispatchFooterInput :: Debuggee
                     -> FooterInputMode
@@ -719,10 +749,10 @@ dispatchFooterInput dbg FSearch form = do
    os <- get
    asyncAction "Searching for closures" os (map head <$> (liftIO $ retainersOfConstructor (_resultSize os) Nothing dbg (T.unpack (formState form)))) $ \cps -> do
      let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-     res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
-     let tree = mkIOTree dbg Nothing res getChildren id
+     res <- liftIO $ mapM (completeClosureDetails dbg) cps'
+     let tree = mkIOTree dbg res getChildren renderInlineClosureDesc id
      put (os & resetFooter
-             & treeMode .~ Searched tree
+             & treeMode .~ Searched renderClosureDetails tree
          )
 dispatchFooterInput dbg FAddress form = do
    os <- get
@@ -731,10 +761,10 @@ dispatchFooterInput dbg FAddress form = do
     Just cp -> do
       asyncAction "Finding address" os (map head <$> (liftIO $ retainersOfAddress (_resultSize os) Nothing dbg [cp])) $ \cps -> do
         let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
-        res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
-        let tree = mkIOTree dbg Nothing res getChildren id
+        res <- liftIO $ mapM (completeClosureDetails dbg) cps'
+        let tree = mkIOTree dbg res getChildren renderInlineClosureDesc id
         put (os & resetFooter
-                & treeMode .~ Searched tree
+                & treeMode .~ Searched renderClosureDetails tree
             )
     Nothing -> put (os & resetFooter)
 
@@ -746,10 +776,10 @@ dispatchFooterInput dbg FInfoTable form = do
       mb_src <- liftIO $ infoSourceLocation dbg info_ptr
       asyncAction ("Finding info table " <> T.pack (show info_ptr ++ maybe "" ((" " ++) . show) mb_src)) os (map head <$> (liftIO $ retainersOfInfoTable (_resultSize os) Nothing dbg info_ptr)) $ \cps -> do
         let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
-        res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
-        let tree = mkIOTree dbg Nothing res getChildren id
+        res <- liftIO $ mapM (completeClosureDetails dbg) cps'
+        let tree = mkIOTree dbg res getChildren renderInlineClosureDesc id
         put (os & resetFooter
-                & treeMode .~ Searched tree
+                & treeMode .~ Searched renderClosureDetails tree
             )
     Nothing -> put (os & resetFooter)
 
@@ -763,36 +793,41 @@ dispatchFooterInput dbg FRetainer form = do
        go (SP _)   = Nothing
    asyncAction "Finding retainers" os (retainersOfConstructor (_resultSize os) (Just roots) dbg (T.unpack (formState form))) $ \cps -> do
       let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-      res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+      res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
       let tree = mkRetainerTree dbg res
       put (os & resetFooter
-              & treeMode .~ Retainer tree)
+              & treeMode .~ Retainer renderClosureDetails tree)
 dispatchFooterInput dbg FRetainerExact form = do
    os <- get
    asyncAction "Finding exact retainers" os (retainersOfConstructorExact (_resultSize os) dbg (T.unpack (formState form))) $ \cps -> do
     let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-    res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+    res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
     let tree = mkRetainerTree dbg res
     put (os & resetFooter
-            & treeMode .~ Retainer tree)
+            & treeMode .~ Retainer renderClosureDetails tree)
 dispatchFooterInput dbg FRetainerArrWords form = do
    os <- get
    case readMaybe  $ T.unpack (formState form) of
      Nothing -> pure ()
      Just size -> asyncAction "Finding ArrWords retainers" os (retainersOfArrWords (_resultSize os) dbg size) $ \cps -> do
        let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-       res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+       res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
        let tree = mkRetainerTree dbg res
        put (os & resetFooter
-               & treeMode .~ Retainer tree)
+               & treeMode .~ Retainer renderClosureDetails tree)
 dispatchFooterInput _ FDumpArrWords form = do
    os <- get
-   let node = pauseModeTree ioTreeSelection os
-   asyncAction_ "dumping ARR_WORDS payload" os $
-     case node of
-       Just ClosureDetails{_closure = Closure{_closureSized = Debug.unDCS -> Debug.ArrWordsClosure{..}}} ->
-          BS.writeFile (T.unpack $ formState form) $ arrWordsBS (take (fromIntegral bytes) arrWords)
-       _ -> pure ()
+   let act node = asyncAction_ "dumping ARR_WORDS payload" os $
+        case node of
+          Just ClosureDetails{_closure = Closure{_closureSized = Debug.unDCS -> Debug.ArrWordsClosure{..}}} ->
+              BS.writeFile (T.unpack $ formState form) $ arrWordsBS (take (fromIntegral bytes) arrWords)
+          _ -> pure ()
+   case view treeMode os of
+      Retainer _ iotree -> act (ioTreeSelection iotree)
+      SavedAndGCRoots _ -> act (ioTreeSelection (view treeSavedAndGCRoots os))
+      Searched {} -> put (os & footerMessage "Dump for search mode not implemented yet")
+
+
 dispatchFooterInput _ FSetResultSize form = do
    os <- get
    asyncAction "setting result size" os (pure ()) $ \() -> case readMaybe $ T.unpack (formState form) of
@@ -800,6 +835,18 @@ dispatchFooterInput _ FSetResultSize form = do
        | n <= 0 -> put (os & resultSize .~ Nothing)
        | otherwise -> put (os & resultSize .~ (Just n))
      Nothing -> pure ()
+dispatchFooterInput dbg FRetainerAddress form = do
+   os <- get
+   let address = T.unpack (formState form)
+   case readClosurePtr address of
+    Just cp -> do
+     asyncAction "Finding address retainers" os (retainersOfAddress (view resultSize os) Nothing dbg [cp]) $ \cps -> do
+      let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+      res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
+      let tree = mkRetainerTree dbg res
+      put (os & resetFooter
+              & treeMode .~ Retainer renderClosureDetails tree)
+    Nothing -> put (os & resetFooter)
 dispatchFooterInput dbg FSnapshot form = do
    os <- get
    asyncAction_ "Taking snapshot" os $ snapshot dbg (T.unpack (formState form))
@@ -825,18 +872,20 @@ mkRetainerTree :: Debuggee -> [[ClosureDetails]] -> IOTree ClosureDetails Name
 mkRetainerTree dbg stacks = do
   let stack_map = [ (cp, rest) | stack <- stacks, Just (cp, rest) <- [List.uncons stack]]
       roots = map fst stack_map
-      info_map :: M.Map Ptr [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
-      info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((show n), ListFullClosure (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
+      info_map :: M.Map Ptr [(Text, (DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr))]
+      info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((T.pack (show n)), (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
 
-      lookup_c dbg' dc = do
+      lookup_c dbg' dc'@(ClosureDetails dc _ _) = do
         let ptr = toPtr dc
             results = M.findWithDefault [] ptr info_map
         -- We are also looking up the children of the object we are retaining,
         -- and displaying them prior to the retainer stack
-        cs <- getChildren dbg' dc
-        return (cs ++ results)
+        cs <- getChildren dbg' dc'
+        results' <- liftIO $ mapM (\(l, c) -> getClosureDetails dbg' l (ListFullClosure c)) results
+        return (cs ++ results')
+      lookup_c _ _ = return []
 
-  mkIOTree dbg Nothing roots lookup_c id
+  mkIOTree dbg roots lookup_c renderInlineClosureDesc id
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set footerMode FooterInfo l)
