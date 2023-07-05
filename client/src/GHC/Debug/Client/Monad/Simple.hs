@@ -174,7 +174,10 @@ simpleReq req = do
     Nothing -> do
       mh <- asks debuggeeHandle
       case mh of
-        Nothing -> error ("Cache Miss:" ++ show req)
+        Nothing ->
+          case req of
+            RequestSRT _ -> return Nothing
+            _ -> error ("Cache Miss:" ++ show req)
         Just h -> do
           res <- liftIO $ doRequest h req
           liftIO $ modifyMVar_ rc_var (return . cacheReq req res)

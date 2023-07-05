@@ -38,10 +38,10 @@ module Lib
   , DebugClosure(..)
   , closureShowAddress
   , closureExclusiveSize
-  , closureRetainerSize
   , closureSourceLocation
   , SourceInformation(..)
   , closureReferences
+  , closureReferences'
   , closurePretty
   , fillConstrDesc
   , InfoTablePtr
@@ -53,10 +53,6 @@ module Lib
   , initialTraversal
   , HG.HeapGraph(..)
     -- * Dominator Tree
-  , dominatorRootClosures
-  , closureDominatees
-  , runAnalysis
-  , Analysis(..)
   , Size(..)
   , RetainerSize(..)
     -- * Reverse Edge Map
@@ -73,6 +69,9 @@ module Lib
   , retainersOfConstructorExact
   , retainersOfArrWords
   , retainersOfInfoTable
+
+  -- * Counting
+  , arrWordsAnalysis
 
     -- * Snapshot
   , snapshot
@@ -97,8 +96,7 @@ module Lib
   ) where
 
 import           Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.Graph as G
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (mapMaybe)
 import qualified GHC.Debug.Types as GD
 import           GHC.Debug.Types hiding (Closure, DebugClosure)
 import           GHC.Debug.Convention (socketDirectory, snapshotDirectory)
@@ -108,24 +106,17 @@ import qualified GHC.Debug.Client.Query as GD
 import qualified GHC.Debug.Profile as GD
 import qualified GHC.Debug.Retainers as GD
 import qualified GHC.Debug.Snapshot as GD
+import qualified GHC.Debug.Strings as GD
 import qualified GHC.Debug.Types.Graph as HG
-import qualified GHC.Debug.Dominators as HG
-import qualified Data.HashMap.Strict as HM
-import Data.Tree
 import Control.Monad
 import System.FilePath
 import System.Directory
 import Control.Tracer
 import Data.Bitraversable
 import Data.Text (Text, pack)
-
-data Analysis = Analysis
-  { analysisDominatorRoots :: ![ClosurePtr]
-  , analysisDominatees :: !(ClosurePtr -> [ClosurePtr])
-  -- ^ Unsorted dominatees of a closure
-  , analysisSizes :: !(ClosurePtr -> (Size, RetainerSize))
-  -- ^ Size and retainer size (via dominator tree) of closures
-  }
+import qualified Data.Map as Map
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.Set as Set
 
 initialTraversal :: Debuggee -> IO (HG.HeapGraph Size)
 initialTraversal e = run e $ do
@@ -142,6 +133,7 @@ initialTraversal e = run e $ do
     return hg
 
 -- This function is very very very slow, it needs to be optimised.
+{-
 runAnalysis :: Debuggee -> HG.HeapGraph Size -> IO Analysis
 runAnalysis e hg = run e $ do
     let drs :: [G.Tree (ClosurePtr, (Size, RetainerSize))]
@@ -168,6 +160,7 @@ runAnalysis e hg = run e $ do
               [drPtr | G.Node (drPtr, _) _ <- drs]
               ((\(_,x) -> x) . cPtrToData)
               ((\(x,_) -> x) . cPtrToData)
+              -}
 
 -- | Bracketed version of @debuggeeRun@. Runs a debuggee, connects to it, runs
 -- the action, kills the process, then closes the debuggee.
@@ -272,6 +265,13 @@ retainersOfInfoTable n mroots dbg info_ptr = do
     stack <- GD.findRetainersOfInfoTable n roots info_ptr
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
+arrWordsAnalysis :: Maybe [ClosurePtr] -> Debuggee -> IO (Map.Map BS.ByteString (Set.Set ClosurePtr))
+arrWordsAnalysis mroots dbg = do
+  run dbg $ do
+    roots <- maybe GD.gcRoots return mroots
+    arr_words <- GD.arrWordsAnalysis roots
+    return arr_words
+
 -- -- | Request the description for an info table.
 -- -- The `InfoTablePtr` is just used for the equality
 -- requestConstrDesc :: Debuggee -> PayloadWithKey InfoTablePtr ClosurePtr -> IO ConstrDesc
@@ -323,18 +323,6 @@ closureExclusiveSize :: DebugClosure srt p cd s c -> Size
 closureExclusiveSize (Stack{}) = Size (-1)
 closureExclusiveSize (Closure _ c) = (GD.dcSize c)
 
--- | Get the retained size (including all dominated closures) of a closure.
-closureRetainerSize :: Analysis -> DebugClosure srt p cd s c -> RetainerSize
-closureRetainerSize analysis c = snd (closureExcAndRetainerSizes analysis c)
-
-closureExcAndRetainerSizes :: Analysis -> DebugClosure srt p cd s c -> (Size, RetainerSize)
-closureExcAndRetainerSizes _ Stack{} = (Size (-1), RetainerSize (-1))
-  -- ^ TODO How should we handle stack size? only used space on the stack?
-  -- Include underflow frames? Return Maybe?
-closureExcAndRetainerSizes analysis (Closure cPtr _) =
-  let getSizes = analysisSizes analysis
-  in getSizes cPtr
-
 closureSourceLocation :: Debuggee -> DebugClosure srt p cd s c -> IO (Maybe SourceInformation)
 closureSourceLocation _ (Stack _ _) = return Nothing
 closureSourceLocation e (Closure _ c) = run e $ do
@@ -369,9 +357,18 @@ closureReferences e (Stack _ stack) = run e $ do
             lblAndPtrs
             closures
             -}
-closureReferences e (Closure _ closure) = run e $ do
-  closure' <- quintraverse GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
-  let refPtrs = closureReferencesAndLabels (unDCS closure')
+closureReferences e (Closure _ closure) = do
+  ps <- run e $ do
+    closure' <- quintraverse GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
+    return $ closureReferencesAndLabels (unDCS closure')
+  closureReferences' e ps
+
+
+closureReferences' :: Traversable t => Debuggee
+                   -> t (a, Either ClosurePtr StackCont)
+                  -> IO
+                    (t (a, ListItem SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr))
+closureReferences' e refPtrs = run e $ do
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
       refClosure' <- GD.dereferenceClosure cPtr
@@ -422,38 +419,6 @@ closurePretty dbg (Closure _ closure) = run dbg $  do
     0
     (unDCS closure')
 
--- $dominatorTree
---
--- Closure `a` dominates closure `b` if all paths from GC roots to `b` pass
--- through `a`. This means that if `a` is GCed then all dominated closures can
--- be GCed. The relationship is transitive. Transitive edges are omitted in the
--- "dominator tree".
---
--- see http://kohlerm.blogspot.com/2009/02/memory-leaks-are-easy-to-find.html
-
--- | The roots of the dominator tree.
-dominatorRootClosures :: Debuggee -> Analysis -> IO [Closure]
-dominatorRootClosures e analysis = run e $ do
-  let domRoots = analysisDominatorRoots analysis
-  closures <- GD.dereferenceClosures domRoots
-  return [ Closure closurePtr' closure
-            | closurePtr' <- domRoots
-            | closure <- closures
-            ]
-
--- | Get the dominatess of a closure i.e. the children in the dominator tree.
-closureDominatees :: Debuggee -> Analysis -> DebugClosure srt p cd s ClosurePtr -> IO [Closure]
-closureDominatees _ _ (Stack{}) = error "TODO dominator tree does not yet support STACKs"
-closureDominatees e analysis (Closure cPtr _) = run e $ do
-  let cPtrToDominatees = analysisDominatees analysis
-      cPtrs = cPtrToDominatees cPtr
-  closures <- GD.dereferenceClosures cPtrs
-  return [ Closure closurePtr' closure
-            | closurePtr' <- cPtrs
-            | closure <- closures
-            ]
-
---
 -- Internal Stuff
 --
 
