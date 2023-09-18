@@ -40,6 +40,7 @@ import Control.Monad
 import Data.Void
 import Control.DeepSeq
 import GHC.Exts.Heap.FFIClosures
+import Foreign.Marshal.Utils (copyBytes)
 
 import qualified Data.ByteString as B
 
@@ -76,7 +77,7 @@ allocateByCopy (BSI.PS fp o l) action =
  allocaBytes l $ \buf ->
    withForeignPtr fp $ \p -> do
      --print (fp, o, l)
-     BSI.memcpy buf (p `plusPtr` o) (fromIntegral l)
+     copyBytes buf (p `plusPtr` o) (fromIntegral l)
      action (castPtr buf)
 
 skipClosureHeader :: Get ()
