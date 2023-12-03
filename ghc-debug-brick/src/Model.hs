@@ -12,6 +12,7 @@ module Model
   , module Common
   ) where
 
+import Data.Maybe (fromMaybe)
 import Data.Sequence as Seq
 import Lens.Micro.Platform
 import Data.Time
@@ -23,11 +24,11 @@ import Brick.Forms
 import Brick.BChan
 import Brick (EventM)
 import Brick.Widgets.List
-import IOTree
 
 import Namespace
 import Common
 import Lib
+import IOTree
 import Control.Concurrent
 import qualified Graphics.Vty as Vty
 
@@ -117,6 +118,11 @@ data TreeMode = SavedAndGCRoots
               | Retainer (IOTree (ClosureDetails) Name)
               | Searched (IOTree (ClosureDetails) Name)
 
+treeLength :: TreeMode -> Maybe Int
+treeLength SavedAndGCRoots = Nothing
+treeLength (Retainer tree) = Just $ Prelude.length $ getIOTreeRoots tree
+treeLength (Searched tree) = Just $ Prelude.length $ getIOTreeRoots tree
+
 data FooterMode = FooterInfo
                 | FooterMessage Text
                 | FooterInput FooterInputMode (Form Text () Name)
@@ -184,6 +190,9 @@ data OperationalState = OperationalState
     , _event_chan :: BChan Event
     , _resultSize :: Maybe Int
     }
+
+osSize :: OperationalState -> Int
+osSize os = fromMaybe (Prelude.length (getIOTreeRoots $ _treeSavedAndGCRoots os)) $ treeLength (_treeMode os)
 
 pauseModeTree :: (IOTree ClosureDetails Name -> r) -> OperationalState -> r
 pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _) = case mode of

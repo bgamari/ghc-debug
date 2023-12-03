@@ -106,7 +106,7 @@ myAppDraw (AppState majorState' _) =
                 Searched {} -> "Search Results"
               )
               (pauseModeTree renderIOTree os)
-          , footer fmode
+          , footer (osSize os) (_resultSize os) fmode
           ]]
 
   where
@@ -201,11 +201,12 @@ myAppDraw (AppState majorState' _) =
   labelled lbl w =
     hLimit 17 (txtLabel lbl <+> vLimit 1 (fill ' ')) <+> w <+> vLimit 1 (fill ' ')
 
-footer :: FooterMode -> Widget Name
-footer m = vLimit 1 $
- case m of
+footer :: Int -> Maybe Int -> FooterMode -> Widget Name
+footer n m mode = vLimit 1 $
+ case mode of
    FooterMessage t -> withAttr menuAttr $ hBox [txt t, fill ' ']
-   FooterInfo -> withAttr menuAttr $ hBox [txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (?): full keybindings", fill ' ']
+   FooterInfo -> withAttr menuAttr $ hBox $ [padRight Max $ txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (?): full keybindings"]
+                                         ++ [padLeft  Max $ txt (T.pack (show n) <> " items/" <> maybe "inf" (T.pack . show) m <> " max")]
    FooterInput _im form -> renderForm form
 
 footerInput :: FooterInputMode -> FooterMode
@@ -551,10 +552,10 @@ handleMain dbg e = do
             PollTick -> return ()
             ProgressMessage t -> do
               put $ footerMessage t os
-            ProgressFinished  ->
+            ProgressFinished ->
               put $ os
                     & running_task .~ Nothing
-                    & resetFooter
+                    & footerMode .~ FooterInfo
             AsyncFinished action -> action
     _ | Nothing <- view running_task os ->
       case view keybindingsMode os of
