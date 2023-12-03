@@ -54,6 +54,7 @@ import GHC.Debug.Types.Closures
 import qualified Data.List.NonEmpty as NE
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Bitraversable
+import qualified Data.ByteString.Lazy as BS
 
 -- | For heap graphs, i.e. data structures that also represent sharing and
 -- cyclic structures, these are the entries. If the referenced value is
@@ -325,7 +326,7 @@ ppClosure showBox prec c = case c of
     BCOClosure {..} -> app
         ["_bco", showBox 10 bcoptrs]
     ArrWordsClosure {..} -> app
-        ["ARR_WORDS", "("++show bytes ++ " bytes)", ((show $ arrWordsBS arrWords)) ]
+        ["ARR_WORDS", "("++show bytes ++ " bytes)", ((show $ arrWordsBS $ take (min 100 $ fromIntegral bytes) arrWords)) ]
     MutArrClosure {..} -> app
         --["toMutArray", "("++show (length mccPayload) ++ " ptrs)",  intercalate "," (shorten (map (showBox 10) mccPayload))]
         ["[", intercalate ", " (shorten (map (showBox 10) mccPayload)),"]"]

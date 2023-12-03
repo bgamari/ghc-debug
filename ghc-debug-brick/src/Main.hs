@@ -11,6 +11,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main where
 
@@ -37,10 +38,13 @@ import System.FilePath
 import Data.Text (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Map as M
+import qualified Data.ByteString.Lazy as BS
 import Data.Maybe
 import qualified Data.Foldable as F
+import Text.Read (readMaybe)
 
-import GHC.Debug.Types.Ptr(readInfoTablePtr)
+import GHC.Debug.Types.Ptr(readInfoTablePtr, arrWordsBS)
+import qualified GHC.Debug.Types.Closures as Debug
 import IOTree
 import Lib as GD
 import Model
@@ -627,6 +631,10 @@ commandList =
             (modify $ footerMode .~ footerInput FRetainer)
   , Command "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FRetainerExact)
+  , Command "Find Retainers of large ARR_WORDS" (Vty.EvKey (KChar 'g') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FRetainerArrWords)
+  , Command "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FDumpArrWords)
   , Command "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSnapshot) ]
 
@@ -739,6 +747,24 @@ dispatchFooterInput dbg FRetainerExact form = do
     let tree = mkRetainerTree dbg res
     put (os & resetFooter
             & treeMode .~ Retainer tree)
+dispatchFooterInput dbg FRetainerArrWords form = do
+   os <- get
+   case readMaybe  $ T.unpack (formState form) of
+     Nothing -> pure ()
+     Just size -> asyncAction "Finding ArrWords retainers" os (retainersOfArrWords (_resultSize os) dbg size) $ \cps -> do
+       let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+       res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
+       let tree = mkRetainerTree dbg res
+       put (os & resetFooter
+               & treeMode .~ Retainer tree)
+dispatchFooterInput _ FDumpArrWords form = do
+   os <- get
+   let node = pauseModeTree ioTreeSelection os
+   asyncAction_ "dumping ARR_WORDS payload" os $
+     case node of
+       Just ClosureDetails{_closure = Closure{_closureSized = Debug.unDCS -> Debug.ArrWordsClosure{..}}} ->
+          BS.writeFile (T.unpack $ formState form) $ arrWordsBS (take (fromIntegral bytes) arrWords)
+       _ -> pure ()
 dispatchFooterInput dbg FSnapshot form = do
    os <- get
    asyncAction_ "Taking snapshot" os $ snapshot dbg (T.unpack (formState form))

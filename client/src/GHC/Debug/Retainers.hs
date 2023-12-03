@@ -1,6 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainersOfInfoTable, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack') where
+module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainersOfInfoTable, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack', findRetainersOfArrWords) where
 
 import GHC.Debug.Client
 import Control.Monad.State
@@ -45,6 +46,15 @@ findRetainersOfConstructorExact limit rroots clos_name =
         Just cur_loc ->
 
           return $ (infoName cur_loc) == clos_name
+
+findRetainersOfArrWords :: Maybe Int -> [ClosurePtr] -> Word -> DebugM [[ClosurePtr]]
+findRetainersOfArrWords limit rroots lim =
+  findRetainers limit rroots go
+  where
+    go _ sc = do
+      case noSize sc of
+        ArrWordsClosure {..} -> return $ bytes >= lim
+        _ -> return False
 
 findRetainersOfInfoTable :: Maybe Int -> [ClosurePtr] -> InfoTablePtr -> DebugM [[ClosurePtr]]
 findRetainersOfInfoTable limit rroots info_ptr =

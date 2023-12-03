@@ -71,6 +71,7 @@ module Lib
   , retainersOfConstructor
   , retainersOfAddress
   , retainersOfConstructorExact
+  , retainersOfArrWords
   , retainersOfInfoTable
 
     -- * Snapshot
@@ -255,6 +256,13 @@ retainersOfConstructorExact dbg con_name = do
   run dbg $ do
     roots <- GD.gcRoots
     stack <- GD.findRetainersOfConstructorExact (Just 100) roots con_name
+    traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
+
+retainersOfArrWords :: Debuggee -> Word -> IO [[Closure]]
+retainersOfArrWords dbg lim = do
+  run dbg $ do
+    roots <- GD.gcRoots
+    stack <- GD.findRetainersOfArrWords (Just 100) roots lim
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 retainersOfInfoTable :: Maybe [ClosurePtr] -> Debuggee -> InfoTablePtr -> IO [[Closure]]

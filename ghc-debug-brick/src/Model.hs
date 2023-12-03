@@ -125,7 +125,15 @@ isFocusedFooter :: FooterMode -> Bool
 isFocusedFooter (FooterInput {}) = True
 isFocusedFooter _ = False
 
-data FooterInputMode = FAddress | FSearch | FInfoTable | FProfile | FRetainer | FRetainerExact | FSnapshot
+data FooterInputMode = FAddress
+                     | FSearch
+                     | FInfoTable
+                     | FProfile
+                     | FRetainer
+                     | FRetainerExact
+                     | FSnapshot
+                     | FRetainerArrWords
+                     | FDumpArrWords
 
 data Command = Command { commandDescription :: Text
                        , commandKey :: Vty.Event
@@ -145,6 +153,8 @@ formatFooterMode FInfoTable = "info table pointer (0x..): "
 formatFooterMode FProfile = "filename: "
 formatFooterMode FRetainer = "constructor name: "
 formatFooterMode FRetainerExact = "closure name: "
+formatFooterMode FRetainerArrWords = "size (bytes): "
+formatFooterMode FDumpArrWords = "dump payload to file: "
 formatFooterMode FSnapshot = "snapshot name: "
 
 data ConnectedMode

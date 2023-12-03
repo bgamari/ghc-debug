@@ -20,12 +20,13 @@ executable ghc-debug-brick
                      , Lib
   build-depends:       base >=4.16 && <5
                      , brick >= 1.3
+                     , bytestring
                      , containers
                      , directory
                      , filepath
                      , microlens-platform
                      , text
-                     , vty
+                     , vty < 6
                      , time
                      , deepseq
                      , microlens
