@@ -91,7 +91,7 @@ myAppDraw (AppState majorState' _) =
         , withAttr menuAttr $ vLimit 1 $ hBox [txt "(p): Pause | (ESC): Exit", fill ' ']
         ]]
 
-      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ _ _)) -> let
+      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ _ _ _)) -> let
         in kbOverlay kbmode $ [mainBorder "ghc-debug - Paused" $ vBox
           [ -- Current closure details
               joinBorders $ borderWithLabel (txt "Closure Details") $
@@ -316,7 +316,8 @@ myAppHandleEvent brickEvent = do
                                             FooterInfo
                                             (DefaultRoots initRoots)
                                             rootsTree
-                                            eventChan ))
+                                            eventChan
+                                            (Just 100)))
 
 
 
@@ -635,6 +636,8 @@ commandList =
             (modify $ footerMode .~ footerInput FRetainerArrWords)
   , Command "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FDumpArrWords)
+  , Command "Set search limit (default 100)" (Vty.EvKey (KChar 'l') [Vty.MCtrl])
+            (modify $ footerMode .~ footerInput FSetResultSize)
   , Command "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSnapshot) ]
 
@@ -647,7 +650,7 @@ findCommand event = do
 handleMainWindowEvent :: Debuggee
                       -> Handler () OperationalState
 handleMainWindowEvent _dbg brickEvent = do
-      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _) <- get
+      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _ _) <- get
       case brickEvent of
         VtyEvent (Vty.EvKey (KChar 'p') [Vty.MCtrl]) ->
           put $ os & keybindingsMode .~ commandPickerMode
@@ -689,7 +692,7 @@ dispatchFooterInput :: Debuggee
                     -> EventM n OperationalState ()
 dispatchFooterInput dbg FSearch form = do
    os <- get
-   asyncAction "Searching for closures" os (map head <$> (liftIO $ retainersOfConstructor Nothing dbg (T.unpack (formState form)))) $ \cps -> do
+   asyncAction "Searching for closures" os (map head <$> (liftIO $ retainersOfConstructor (_resultSize os) Nothing dbg (T.unpack (formState form)))) $ \cps -> do
      let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
      res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
      let tree = mkIOTree dbg Nothing res getChildren id
@@ -701,7 +704,7 @@ dispatchFooterInput dbg FAddress form = do
    let address = T.unpack (formState form)
    case readClosurePtr address of
     Just cp -> do
-      asyncAction "Finding address" os (map head <$> (liftIO $ retainersOfAddress Nothing dbg [cp])) $ \cps -> do
+      asyncAction "Finding address" os (map head <$> (liftIO $ retainersOfAddress (_resultSize os) Nothing dbg [cp])) $ \cps -> do
         let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
         res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
         let tree = mkIOTree dbg Nothing res getChildren id
@@ -716,7 +719,7 @@ dispatchFooterInput dbg FInfoTable form = do
    case readInfoTablePtr address of
     Just info_ptr -> do
       mb_src <- liftIO $ infoSourceLocation dbg info_ptr
-      asyncAction ("Finding info table " <> T.pack (show info_ptr ++ maybe "" ((" " ++) . show) mb_src)) os (map head <$> (liftIO $ retainersOfInfoTable Nothing dbg info_ptr)) $ \cps -> do
+      asyncAction ("Finding info table " <> T.pack (show info_ptr ++ maybe "" ((" " ++) . show) mb_src)) os (map head <$> (liftIO $ retainersOfInfoTable (_resultSize os) Nothing dbg info_ptr)) $ \cps -> do
         let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
         res <- liftIO $ mapM (completeClosureDetails dbg Nothing) cps'
         let tree = mkIOTree dbg Nothing res getChildren id
@@ -733,7 +736,7 @@ dispatchFooterInput dbg FRetainer form = do
    let roots = mapMaybe go (map snd (currentRoots (view rootsFrom os)))
        go (CP p) = Just p
        go (SP _)   = Nothing
-   asyncAction "Finding retainers" os (retainersOfConstructor (Just roots) dbg (T.unpack (formState form))) $ \cps -> do
+   asyncAction "Finding retainers" os (retainersOfConstructor (_resultSize os) (Just roots) dbg (T.unpack (formState form))) $ \cps -> do
       let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
       res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
       let tree = mkRetainerTree dbg res
@@ -741,7 +744,7 @@ dispatchFooterInput dbg FRetainer form = do
               & treeMode .~ Retainer tree)
 dispatchFooterInput dbg FRetainerExact form = do
    os <- get
-   asyncAction "Finding exact retainers" os (retainersOfConstructorExact dbg (T.unpack (formState form))) $ \cps -> do
+   asyncAction "Finding exact retainers" os (retainersOfConstructorExact (_resultSize os) dbg (T.unpack (formState form))) $ \cps -> do
     let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
     res <- liftIO $ mapM (mapM (completeClosureDetails dbg Nothing)) cps'
     let tree = mkRetainerTree dbg res
@@ -765,6 +768,13 @@ dispatchFooterInput _ FDumpArrWords form = do
        Just ClosureDetails{_closure = Closure{_closureSized = Debug.unDCS -> Debug.ArrWordsClosure{..}}} ->
           BS.writeFile (T.unpack $ formState form) $ arrWordsBS (take (fromIntegral bytes) arrWords)
        _ -> pure ()
+dispatchFooterInput _ FSetResultSize form = do
+   os <- get
+   asyncAction "setting result size" os (pure ()) $ \() -> case readMaybe $ T.unpack (formState form) of
+     Just n
+       | n <= 0 -> put (os & resultSize .~ Nothing)
+       | otherwise -> put (os & resultSize .~ (Just n))
+     Nothing -> pure ()
 dispatchFooterInput dbg FSnapshot form = do
    os <- get
    asyncAction_ "Taking snapshot" os $ snapshot dbg (T.unpack (formState form))

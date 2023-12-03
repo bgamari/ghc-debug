@@ -134,6 +134,7 @@ data FooterInputMode = FAddress
                      | FSnapshot
                      | FRetainerArrWords
                      | FDumpArrWords
+                     | FSetResultSize
 
 data Command = Command { commandDescription :: Text
                        , commandKey :: Vty.Event
@@ -155,6 +156,7 @@ formatFooterMode FRetainer = "constructor name: "
 formatFooterMode FRetainerExact = "closure name: "
 formatFooterMode FRetainerArrWords = "size (bytes): "
 formatFooterMode FDumpArrWords = "dump payload to file: "
+formatFooterMode FSetResultSize = "search result limit (0 for infinity): "
 formatFooterMode FSnapshot = "snapshot name: "
 
 data ConnectedMode
@@ -180,10 +182,11 @@ data OperationalState = OperationalState
     , _treeSavedAndGCRoots :: IOTree (ClosureDetails) Name
     -- ^ Tree corresponding to SavedAndGCRoots mode
     , _event_chan :: BChan Event
+    , _resultSize :: Maybe Int
     }
 
 pauseModeTree :: (IOTree ClosureDetails Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState _ mode _kb _footer _from roots _) = case mode of
+pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _) = case mode of
   SavedAndGCRoots -> k roots
   Retainer r -> k r
   Searched r -> k r

@@ -237,39 +237,39 @@ snapshot dbg fp = do
   createDirectoryIfMissing True dir
   GD.run dbg $ GD.snapshot (dir </> fp)
 
-retainersOfAddress :: Maybe [ClosurePtr] -> Debuggee -> [ClosurePtr] -> IO [[Closure]]
-retainersOfAddress mroots dbg address = do
+retainersOfAddress :: Maybe Int -> Maybe [ClosurePtr] -> Debuggee -> [ClosurePtr] -> IO [[Closure]]
+retainersOfAddress n mroots dbg address = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots
-    stack <- GD.findRetainersOf (Just 100) roots address
+    stack <- GD.findRetainersOf n roots address
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfConstructor :: Maybe [ClosurePtr] -> Debuggee -> String -> IO [[Closure]]
-retainersOfConstructor mroots dbg con_name = do
+retainersOfConstructor :: Maybe Int -> Maybe [ClosurePtr] -> Debuggee -> String -> IO [[Closure]]
+retainersOfConstructor n mroots dbg con_name = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots
-    stack <- GD.findRetainersOfConstructor (Just 100) roots con_name
+    stack <- GD.findRetainersOfConstructor n roots con_name
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfConstructorExact :: Debuggee -> String -> IO [[Closure]]
-retainersOfConstructorExact dbg con_name = do
+retainersOfConstructorExact :: Maybe Int -> Debuggee -> String -> IO [[Closure]]
+retainersOfConstructorExact n dbg con_name = do
   run dbg $ do
     roots <- GD.gcRoots
-    stack <- GD.findRetainersOfConstructorExact (Just 100) roots con_name
+    stack <- GD.findRetainersOfConstructorExact n roots con_name
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfArrWords :: Debuggee -> Word -> IO [[Closure]]
-retainersOfArrWords dbg lim = do
+retainersOfArrWords :: Maybe Int -> Debuggee -> Word -> IO [[Closure]]
+retainersOfArrWords n dbg lim = do
   run dbg $ do
     roots <- GD.gcRoots
-    stack <- GD.findRetainersOfArrWords (Just 100) roots lim
+    stack <- GD.findRetainersOfArrWords n roots lim
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfInfoTable :: Maybe [ClosurePtr] -> Debuggee -> InfoTablePtr -> IO [[Closure]]
-retainersOfInfoTable mroots dbg info_ptr = do
+retainersOfInfoTable :: Maybe Int -> Maybe [ClosurePtr] -> Debuggee -> InfoTablePtr -> IO [[Closure]]
+retainersOfInfoTable n mroots dbg info_ptr = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots
-    stack <- GD.findRetainersOfInfoTable (Just 100) roots info_ptr
+    stack <- GD.findRetainersOfInfoTable n roots info_ptr
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 -- -- | Request the description for an info table.
