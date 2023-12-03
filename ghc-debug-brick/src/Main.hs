@@ -83,16 +83,16 @@ myAppDraw (AppState majorState' _) =
         Snapshot -> [drawSetup "snapshot" "processes" snaps]
 
 
-    Connected _socket _debuggee mode' -> case mode' of
+    Connected socket _debuggee mode' -> case mode' of
 
-      RunningMode -> [mainBorder "ghc-debug - Running" $ vBox
+      RunningMode -> [mainBorder ("ghc-debug - Running - " <> socketName socket) $ vBox
         [ txtWrap "There is nothing you can do until the process is paused by pressing (p) ..."
         , fill ' '
         , withAttr menuAttr $ vLimit 1 $ hBox [txt "(p): Pause | (ESC): Exit", fill ' ']
         ]]
 
       (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ _ _ _)) -> let
-        in kbOverlay kbmode $ [mainBorder "ghc-debug - Paused" $ vBox
+        in kbOverlay kbmode $ [mainBorder ("ghc-debug - Paused - " <> socketName socket) $ vBox
           [ -- Current closure details
               joinBorders $ borderWithLabel (txt "Closure Details") $
               vLimit 9 $
