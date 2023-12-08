@@ -212,7 +212,7 @@ footer n m mode = vLimit 1 $
  case mode of
    FooterMessage t -> withAttr menuAttr $ hBox [txt t, fill ' ']
    FooterInfo -> withAttr menuAttr $ hBox $ [padRight Max $ txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (?): full keybindings"]
-                                         ++ [padLeft  Max $ txt (T.pack (show n) <> " items/" <> maybe "∞" (T.pack . show) m <> " max")]
+                                         ++ [padLeft (Pad 1) $ txt (T.pack (show n) <> " items/" <> maybe "∞" (T.pack . show) m <> " max")]
    FooterInput _im form -> renderForm form
 
 footerInput :: FooterInputMode -> FooterMode
