@@ -60,8 +60,8 @@ module GHC.Debug.Types.Ptr( -- * InfoTables
                           , mblockMask
                           , mblockMaxSize
                           , blockMaxSize
-                          , profiling
-                          , tablesNextToCode
+                          , CCSPtr(..)
+                          , CCPtr(..)
 
                           -- * Other utility
                           , arrWordsBS
@@ -93,14 +93,6 @@ import qualified Data.Foldable as F
 prettyPrint :: BS.ByteString -> String
 prettyPrint = concatMap (flip showHex "") . BS.unpack
 
--- TODO: Fetch this from debuggee
-tablesNextToCode :: Bool
-tablesNextToCode = True
-
--- TODO: Fetch this from debuggee
-profiling :: Bool
-profiling = False
-
 newtype InfoTablePtr = InfoTablePtr Word64
                      deriving (Eq, Ord)
                      deriving newtype (Hashable)
@@ -112,6 +104,15 @@ readInfoTablePtr ('0':'x':s) = case readHex s of
     _ -> Nothing
 readInfoTablePtr _ = Nothing
 
+newtype CCSPtr = CCSPtr Word64
+                   deriving (Eq, Ord)
+                   deriving newtype (Hashable)
+                   deriving (Show, Binary) via ClosurePtr
+
+newtype CCPtr = CCPtr Word64
+                   deriving (Eq, Ord)
+                   deriving newtype (Hashable)
+                   deriving (Show, Binary) via ClosurePtr
 
 -- Invariant, ClosurePtrs are *always* untagged, we take some care to
 -- untag them when making a ClosurePtr so we don't have to do it on every

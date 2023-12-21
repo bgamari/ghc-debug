@@ -78,7 +78,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
                -> (RWST Bool () (Map.Map String (S.Set ClosurePtr)) DebugM) ()
     closAccum cp sc k = do
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure _ _ _ _ cd -> do
           cd' <- lift $ dereferenceConDesc cd
           case cd' of
             ConstrDesc _ _ cd2 | cd2 == ":" -> do
@@ -89,7 +89,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
         process :: ClosurePtr -> SizedClosure
                 -> (RWST Bool () (Map.Map String (S.Set ClosurePtr)) DebugM) ()
         process p_cp clos = do
-          clos' <- lift $ quintraverse pure pure dereferenceConDesc return return (noSize clos)
+          clos' <- lift $ quintraverse pure pure pure dereferenceConDesc return return (noSize clos)
           checked <- lift $ check_bin clos'
           if checked
             then do
@@ -105,22 +105,22 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
         process_2 p_cp = do
           cp' <- dereferenceClosure p_cp
           case noSize cp' of
-            (ConstrClosure _ _ _ cd) -> do
+            (ConstrClosure _ _ _ _ cd) -> do
               (ConstrDesc _ _ cn) <- dereferenceConDesc cd
               return (cn == "C#")
             _ -> return False
 
-        check_bin (ConstrClosure _ [h,_] _ (ConstrDesc _ _ ":")) = process_2 h
+        check_bin (ConstrClosure _ _ [h,_] _ (ConstrDesc _ _ ":")) = process_2 h
         check_bin _ = return False
 
 decodeString :: ClosurePtr -> DebugM String
 decodeString cp = do
   cp' <- dereferenceClosure cp
   case noSize cp' of
-    (ConstrClosure _ [p,ps] _ _) -> do
+    (ConstrClosure _ _ [p,ps] _ _) -> do
       cp'' <- dereferenceClosure p
       case noSize cp'' of
-        (ConstrClosure _ _ [w] _) -> do
+        (ConstrClosure _ _ _ [w] _) -> do
           (chr (fromIntegral w):) <$> decodeString ps
         _ -> return []
     _ -> return []
@@ -157,7 +157,7 @@ arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots
                -> (RWST () () (Map.Map ByteString (S.Set ClosurePtr)) DebugM) ()
     closAccum cp sc k = do
           case (noSize sc) of
-            ArrWordsClosure _ _ p ->  do
+            ArrWordsClosure _ _ _ p ->  do
               modify' (Map.insertWith (<>) (arrWordsBS p) (S.singleton cp))
               k
             _ -> k

@@ -92,7 +92,9 @@ enum commands {
     CMD_BLOCKS = 14,
     CMD_BLOCK = 15,
     CMD_FUN_BITMAP = 16,
-    CMD_GET_SRT = 17
+    CMD_GET_SRT = 17,
+    CMD_GET_CCS = 18,
+    CMD_GET_CC = 19
 };
 
 enum response_code {
@@ -398,10 +400,16 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       case CMD_VERSION:
         uint32_t ver_payload;
         uint32_t ver_payload1;
+        uint8_t ver_payload2;
+        uint8_t ver_payload3;
         ver_payload=htonl(__GLASGOW_HASKELL__) ;
         ver_payload1=htonl(__GLASGOW_HASKELL_PATCHLEVEL1__) ;
+        ver_payload2=rts_isProfiled();
+        ver_payload3=TABLES_NEXT_TO_CODE;
         resp.write(ver_payload);
         resp.write(ver_payload1);
+        resp.write(ver_payload2);
+        resp.write(ver_payload3);
         resp.finish(RESP_OKAY);
         break;
 
@@ -628,6 +636,46 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
       //  resp.finish(RESP_OKAY);
       //  break;
 
+      case CMD_GET_CCS:
+        {
+        trace("GET_CCS\n");
+        CostCentreStack *ptr = (CostCentreStack *) p.get<uint64_t>();
+        uint16_t len = sizeof(CostCentreStack);
+        resp.write(htons(len));
+        resp.write((char *) ptr, len);
+
+        // trace("GET_CCS id %d\n", ptr -> ccsID);
+        // resp.write((uint64_t)ptr -> ccsID);
+        // trace("GET_CCS cc %p\n", ptr -> cc);
+        // resp.write((uint64_t)ptr -> cc);
+        // resp.write((uint64_t)ptr -> prevStack);
+        // resp.write((uint64_t)ptr -> indexTable);
+        // resp.write((uint64_t)ptr -> root);
+        // resp.write((uint64_t)ptr -> depth);
+        // resp.write((uint64_t)ptr -> scc_count);
+        // resp.write((uint64_t)ptr -> selected);
+        // resp.write((uint64_t)ptr -> time_ticks);
+        // resp.write((uint64_t)ptr -> mem_alloc);
+        // resp.write((uint64_t)ptr -> inherited_alloc);
+        // resp.write((uint64_t)ptr -> inherited_ticks);
+        resp.finish(RESP_OKAY);
+        break;
+        }
+      case CMD_GET_CC:
+        {
+        trace("GET_CC\n");
+        CostCentre *ptr = (CostCentre *) p.get<uint64_t>();
+        resp.write((uint64_t)ptr -> ccID);
+        write_string(resp, ptr -> label);
+        write_string(resp, ptr -> module);
+        write_string(resp, ptr -> srcloc);
+        resp.write((uint64_t)ptr -> mem_alloc);
+        resp.write((uint64_t)ptr -> time_ticks);
+        resp.write((uint64_t)ptr -> is_caf);
+        resp.write((uint64_t)ptr -> link);
+        resp.finish(RESP_OKAY);
+        break;
+        }
       case CMD_CON_DESCR:
         {
         trace("CON_DESCR\n");

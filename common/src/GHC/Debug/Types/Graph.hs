@@ -65,7 +65,7 @@ import qualified Data.ByteString.Lazy as BS
 -- have a slot for arbitrary data, for the user's convenience.
 data HeapGraphEntry a = HeapGraphEntry {
         hgeClosurePtr :: ClosurePtr,
-        hgeClosure :: DebugClosure SrtHI PapHI ConstrDesc StackHI (Maybe HeapGraphIndex),
+        hgeClosure :: DebugClosure CCSPtr SrtHI PapHI ConstrDesc StackHI (Maybe HeapGraphIndex),
         hgeData :: a}
     deriving (Show, Functor, Foldable, Traversable)
 type HeapGraphIndex = ClosurePtr
@@ -119,7 +119,7 @@ buildHeapGraph deref limit initialBox =
 -- dereferenced, but also, not such a big deal. It could lead to additional
 -- requests to the debuggee which are not necessary and causes a mismatch
 -- with the step-by-step decoding functions in `Client.hs`
-type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a SrtPayload PapPayload ConstrDesc (GenStackFrames SrtPayload ClosurePtr) ClosurePtr)
+type DerefFunction m a = ClosurePtr -> m (DebugClosureWithExtra a CCSPtr SrtPayload PapPayload ConstrDesc (GenStackFrames SrtPayload ClosurePtr) ClosurePtr)
 
 -- | Creates a 'HeapGraph' for the values in multiple boxes, but not recursing
 --   further than the given limit.
@@ -170,7 +170,7 @@ generalBuildHeapGraph deref limit hg addBoxes = do
                 -- get into an infinite loop with cycles in the heap.
                 rec modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
                     -- Add the resulting closure below to the map (above):
-                    DCS e c' <- quintraverse (traverse new_add) (traverse new_add) pure (bitraverse (traverse new_add) new_add) new_add c
+                    DCS e c' <- quintraverse pure (traverse new_add) (traverse new_add) pure (bitraverse (traverse new_add) new_add) new_add c
                 return (Just cp)
 
 -- | Pretty-prints a HeapGraph. The resulting string contains newlines. Example
@@ -229,7 +229,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
         | cp `elem` bindings = Nothing
         | otherwise         = IM.lookup (fromIntegral i) m
 
-    isList :: DebugClosure srt p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe [Maybe HeapGraphIndex]
+    isList :: DebugClosure ccs srt p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe [Maybe HeapGraphIndex]
     isList c
         | isNil c =
             return []
@@ -240,7 +240,7 @@ ppHeapGraph printData (HeapGraph (heapGraphRoot :| rs) m) = letWrapper ++ "(" ++
             t' <- isList (hgeClosure e)
             return $ (:) h t'
 
-    isString :: DebugClosure srt p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe String
+    isString :: DebugClosure ccs srt p ConstrDesc s (Maybe HeapGraphIndex) -> Maybe String
     isString e = do
         list <- isList e
         -- We do not want to print empty lists as "" as we do not know that they
@@ -266,19 +266,19 @@ braceize :: [String] -> String
 braceize [] = ""
 braceize xs = "{" ++ intercalate "," xs ++ "}"
 
-isChar :: DebugClosure srt p ConstrDesc s c -> Maybe Char
+isChar :: DebugClosure ccs srt p ConstrDesc s c -> Maybe Char
 isChar ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "C#"}, dataArgs = [ch], ptrArgs = []} = Just (chr (fromIntegral ch))
 isChar _ = Nothing
 
-isNil :: DebugClosure srt p ConstrDesc s c -> Bool
+isNil :: DebugClosure ccs srt p ConstrDesc s c -> Bool
 isNil ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = "[]"}, dataArgs = _, ptrArgs = []} = True
 isNil _ = False
 
-isCons :: DebugClosure srt p ConstrDesc s c -> Maybe (c, c)
+isCons :: DebugClosure ccs srt p ConstrDesc s c -> Maybe (c, c)
 isCons ConstrClosure{ constrDesc = ConstrDesc {pkg = "ghc-prim", modl = "GHC.Types", name = ":"}, dataArgs = [], ptrArgs = [h,t]} = Just (h,t)
 isCons _ = Nothing
 
-isTup :: DebugClosure srt p ConstrDesc s c -> Maybe [c]
+isTup :: DebugClosure ccs srt p ConstrDesc s c -> Maybe [c]
 isTup ConstrClosure{ dataArgs = [], ..} =
     if length (name constrDesc) >= 3 &&
        head (name constrDesc) == '(' && last (name constrDesc) == ')' &&
@@ -293,7 +293,7 @@ isTup _ = Nothing
 -- using 'Data.Foldable.map' or, if you need to do IO, 'Data.Foldable.mapM'.
 --
 -- The parameter gives the precedendence, to avoid avoidable parenthesises.
-ppClosure :: (Int -> c -> String) -> Int -> DebugClosure (GenSrtPayload c) p ConstrDesc s c -> String
+ppClosure :: (Int -> c -> String) -> Int -> DebugClosure ccs (GenSrtPayload c) p ConstrDesc s c -> String
 ppClosure showBox prec c = case c of
     _ | Just ch <- isChar c -> app
         ["C#", show ch]

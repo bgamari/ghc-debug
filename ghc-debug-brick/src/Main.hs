@@ -360,16 +360,16 @@ myAppHandleEvent brickEvent = do
           where
 
 
-getChildren :: Debuggee -> DebugClosure SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+getChildren :: Debuggee -> DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
             -> IO
-                 [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
+                 [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
 getChildren d c = do
   children <- closureReferences d c
   traverse (traverse (fillListItem d)) children
 
 fillListItem :: Debuggee
-             -> ListItem SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
-             -> IO (ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)
+             -> ListItem CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+             -> IO (ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)
 fillListItem _ (ListOnlyInfo x) = return $ ListOnlyInfo x
 fillListItem d(ListFullClosure cd) = ListFullClosure <$> fillConstrDesc d cd
 fillListItem _ ListData = return ListData
@@ -379,8 +379,8 @@ mkIOTree :: Debuggee
          -> Maybe Analysis
          -> [ClosureDetails]
          -> (Debuggee -> DebugClosure
-                  SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
- -> IO [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)])
+                  CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+ -> IO [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)])
          -> ([ClosureDetails] -> [ClosureDetails])
          -> IOTree ClosureDetails Name
 mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_ClosureTree
@@ -491,7 +491,7 @@ renderInlineClosureDesc closureDesc =
                         <> _pretty (_info closureDesc)
                     ]
 completeClosureDetails :: Debuggee -> Maybe Analysis
-                                            -> (Text, DebugClosure SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
+                                            -> (Text, DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
                                             -> IO ClosureDetails
 
 completeClosureDetails dbg manalysis (label', clos)  =
@@ -502,7 +502,7 @@ completeClosureDetails dbg manalysis (label', clos)  =
 getClosureDetails :: Debuggee
                             -> Maybe Analysis
                             -> Text
-                            -> ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+                            -> ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
                             -> IO ClosureDetails
 getClosureDetails debuggee' _ t (ListOnlyInfo info_ptr) = do
   info' <- getInfoInfo debuggee' t info_ptr
@@ -801,7 +801,7 @@ mkRetainerTree :: Debuggee -> [[ClosureDetails]] -> IOTree ClosureDetails Name
 mkRetainerTree dbg stacks = do
   let stack_map = [ (cp, rest) | stack <- stacks, Just (cp, rest) <- [List.uncons stack]]
       roots = map fst stack_map
-      info_map :: M.Map Ptr [(String, ListItem SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
+      info_map :: M.Map Ptr [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr)]
       info_map = M.fromList [(toPtr (_closure k), zipWith (\n cp -> ((show n), ListFullClosure (_closure cp))) [0 :: Int ..] v) | (k, v) <- stack_map]
 
       lookup_c dbg' dc = do

@@ -16,7 +16,7 @@ findConstructors con_name hg = findClosures predicate hg
     where
       predicate h = checkConstrTable (hgeClosure h)
 
-      checkConstrTable (ConstrClosure _ _ _ (ConstrDesc _ _ n)) = n == con_name
+      checkConstrTable (ConstrClosure _ _ _ _ (ConstrDesc _ _ n)) = n == con_name
       checkConstrTable _ = False
 
 findWithInfoTable :: InfoTablePtr -> HeapGraph a -> [HeapGraphEntry a]

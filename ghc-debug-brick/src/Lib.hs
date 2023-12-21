@@ -10,6 +10,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Lib
   ( -- * Running/Connecting to a debuggee
@@ -79,6 +80,7 @@ module Lib
 
   -- * Types
   , Ptr(..)
+  , CCSPtr
   , toPtr
   , dereferencePtr
   , ConstrDesc(..)
@@ -135,7 +137,7 @@ initialTraversal e = run e $ do
     rs <- request RequestRoots
     let derefFuncM cPtr = do
           c <- GD.dereferenceClosure cPtr
-          quintraverse GD.dereferenceSRT GD.dereferencePapPayload GD.dereferenceConDesc (bitraverse GD.dereferenceSRT pure <=< GD.dereferenceStack) pure c
+          quintraverse pure GD.dereferenceSRT GD.dereferencePapPayload GD.dereferenceConDesc (bitraverse GD.dereferenceSRT pure <=< GD.dereferenceStack) pure c
     hg <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
@@ -285,49 +287,49 @@ retainersOfInfoTable n mroots dbg info_ptr = do
 -- requestClosures :: Debuggee -> [ClosurePtr] -> IO [RawClosure]
 -- requestClosures (Debuggee e _) = run e $ request RequestClosures
 
-type Closure = DebugClosure SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+type Closure = DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
 
-data ListItem srt a b c d = ListData | ListOnlyInfo InfoTablePtr | ListFullClosure (DebugClosure srt a b c d)
+data ListItem ccs srt a b c d = ListData | ListOnlyInfo InfoTablePtr | ListFullClosure (DebugClosure ccs srt a b c d)
 
-data DebugClosure srt p cd s c
+data DebugClosure ccs srt p cd s c
   = Closure
     { _closurePtr :: ClosurePtr
-    , _closureSized :: DebugClosureWithSize srt p cd s c
+    , _closureSized :: DebugClosureWithSize ccs srt p cd s c
     }
   | Stack
     { _stackPtr :: StackCont
     , _stackStack :: GD.GenStackFrames srt c
     }
 
-toPtr :: DebugClosure srt p cd s c -> Ptr
+toPtr :: DebugClosure ccs srt p cd s c -> Ptr
 toPtr (Closure cp _) = CP cp
 toPtr (Stack sc _)   = SP sc
 
 data Ptr = CP ClosurePtr | SP StackCont deriving (Eq, Ord)
 
 
-dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
+dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
 dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceClosure cp)
 dereferencePtr dbg (SP sc) = run dbg (Stack <$> pure sc <*> GD.dereferenceStack sc)
 
 instance Quintraversable DebugClosure where
-  quintraverse p f g h i (Closure cp c) = Closure cp <$> quintraverse p f g h i c
-  quintraverse p _ _ _ h (Stack sp s) = Stack sp <$> bitraverse p h s
+  quintraverse p f g h i j (Closure cp c) = Closure cp <$> quintraverse p f g h i j c
+  quintraverse _ p _ _ _ h (Stack sp s) = Stack sp <$> bitraverse p h s
 
-closureShowAddress :: DebugClosure srt p cd s c -> String
+closureShowAddress :: DebugClosure ccs srt p cd s c -> String
 closureShowAddress (Closure c _) = show c
 closureShowAddress (Stack  (StackCont s _) _) = show s
 
 -- | Get the exclusive size (not including any referenced closures) of a closure.
-closureExclusiveSize :: DebugClosure srt p cd s c -> Size
+closureExclusiveSize :: DebugClosure ccs srt p cd s c -> Size
 closureExclusiveSize (Stack{}) = Size (-1)
 closureExclusiveSize (Closure _ c) = (GD.dcSize c)
 
 -- | Get the retained size (including all dominated closures) of a closure.
-closureRetainerSize :: Analysis -> DebugClosure srt p cd s c -> RetainerSize
+closureRetainerSize :: Analysis -> DebugClosure ccs srt p cd s c -> RetainerSize
 closureRetainerSize analysis c = snd (closureExcAndRetainerSizes analysis c)
 
-closureExcAndRetainerSizes :: Analysis -> DebugClosure srt p cd s c -> (Size, RetainerSize)
+closureExcAndRetainerSizes :: Analysis -> DebugClosure ccs srt p cd s c -> (Size, RetainerSize)
 closureExcAndRetainerSizes _ Stack{} = (Size (-1), RetainerSize (-1))
   -- ^ TODO How should we handle stack size? only used space on the stack?
   -- Include underflow frames? Return Maybe?
@@ -335,12 +337,12 @@ closureExcAndRetainerSizes analysis (Closure cPtr _) =
   let getSizes = analysisSizes analysis
   in getSizes cPtr
 
-closureSourceLocation :: Debuggee -> DebugClosure srt p cd s c -> IO (Maybe SourceInformation)
+closureSourceLocation :: Debuggee -> DebugClosure ccs srt p cd s c -> IO (Maybe SourceInformation)
 closureSourceLocation _ (Stack _ _) = return Nothing
 closureSourceLocation e (Closure _ c) = run e $ do
   request (RequestSourceInfo (tableId (info (noSize c))))
 
-closureInfoPtr :: DebugClosure srt p cd s c -> Maybe InfoTablePtr
+closureInfoPtr :: DebugClosure ccs srt p cd s c -> Maybe InfoTablePtr
 closureInfoPtr (Stack {}) = Nothing
 closureInfoPtr (Closure _ c) = Just (tableId (info (noSize c)))
 
@@ -348,7 +350,7 @@ infoSourceLocation :: Debuggee -> InfoTablePtr -> IO (Maybe SourceInformation)
 infoSourceLocation e ip = run e $ request (RequestSourceInfo ip)
 
 -- | Get the directly referenced closures (with a label) of a closure.
-closureReferences :: Debuggee -> DebugClosure SrtCont PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, ListItem SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)]
+closureReferences :: Debuggee -> DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr -> IO [(String, ListItem CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)]
 closureReferences e (Stack _ stack) = run e $ do
   stack' <- bitraverse GD.dereferenceSRT pure stack
   let action (GD.SPtr ptr) = ("Pointer", ListFullClosure . Closure ptr <$> GD.dereferenceClosure ptr)
@@ -370,7 +372,7 @@ closureReferences e (Stack _ stack) = run e $ do
             closures
             -}
 closureReferences e (Closure _ closure) = run e $ do
-  closure' <- quintraverse GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
+  closure' <- quintraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
   let refPtrs = closureReferencesAndLabels (unDCS closure')
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
@@ -383,8 +385,9 @@ closureReferences e (Closure _ closure) = run e $ do
 reverseClosureReferences :: HG.HeapGraph Size
                          -> HG.ReverseGraph
                          -> Debuggee
-                         -> DebugClosure HG.SrtHI HG.PapHI ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex)
+                         -> DebugClosure CCSPtr HG.SrtHI HG.PapHI ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex)
                          -> IO [(String, DebugClosure
+                                            CCSPtr
                                             HG.SrtHI
                                             HG.PapHI
                                             ConstrDesc HG.StackHI
@@ -400,23 +403,23 @@ reverseClosureReferences hg rm _ c =
                                                (DCS (HG.hgeData hge) (HG.hgeClosure hge) ))
                                     | (n, hge) <- zip [0 :: Int ..] revs]
 
-lookupHeapGraph :: HG.HeapGraph Size -> ClosurePtr -> Maybe (DebugClosure HG.SrtHI HG.PapHI ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex))
+lookupHeapGraph :: HG.HeapGraph Size -> ClosurePtr -> Maybe (DebugClosure CCSPtr HG.SrtHI HG.PapHI ConstrDesc HG.StackHI (Maybe HG.HeapGraphIndex))
 lookupHeapGraph hg cp =
   case HG.lookupHeapGraph cp hg of
     Just (HG.HeapGraphEntry ptr d s) -> Just (Closure ptr (DCS s d))
     Nothing -> Nothing
 
 fillConstrDesc :: Debuggee
-               -> DebugClosure srt pap ConstrDescCont s c
-               -> IO (DebugClosure srt pap ConstrDesc s c)
+               -> DebugClosure ccs srt pap ConstrDescCont s c
+               -> IO (DebugClosure ccs srt pap ConstrDesc s c)
 fillConstrDesc e closure = do
-  run e $ GD.quintraverse pure pure GD.dereferenceConDesc pure pure closure
+  run e $ GD.quintraverse pure pure pure GD.dereferenceConDesc pure pure closure
 
 -- | Pretty print a closure
-closurePretty :: Debuggee -> DebugClosure InfoTablePtr PayloadCont ConstrDesc s ClosurePtr ->  IO String
+closurePretty :: Debuggee -> DebugClosure CCSPtr InfoTablePtr PayloadCont ConstrDesc s ClosurePtr ->  IO String
 closurePretty _ (Stack _ frames) = return $ (show (length frames) ++ " frames")
 closurePretty dbg (Closure _ closure) = run dbg $  do
-  closure' <- quintraverse GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
+  closure' <- quintraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
   return $ HG.ppClosure
     (\_ refPtr -> show refPtr)
     0
@@ -442,7 +445,7 @@ dominatorRootClosures e analysis = run e $ do
             ]
 
 -- | Get the dominatess of a closure i.e. the children in the dominator tree.
-closureDominatees :: Debuggee -> Analysis -> DebugClosure srt p cd s ClosurePtr -> IO [Closure]
+closureDominatees :: Debuggee -> Analysis -> DebugClosure ccs srt p cd s ClosurePtr -> IO [Closure]
 closureDominatees _ _ (Stack{}) = error "TODO dominator tree does not yet support STACKs"
 closureDominatees e analysis (Closure cPtr _) = run e $ do
   let cPtrToDominatees = analysisDominatees analysis
@@ -457,7 +460,7 @@ closureDominatees e analysis (Closure cPtr _) = run e $ do
 -- Internal Stuff
 --
 
-closureReferencesAndLabels :: GD.DebugClosure (GenSrtPayload pointer) PapPayload string stack pointer -> [(String, Either pointer stack)]
+closureReferencesAndLabels :: GD.DebugClosure ccs (GenSrtPayload pointer) PapPayload string stack pointer -> [(String, Either pointer stack)]
 closureReferencesAndLabels closure = case closure of
   TSOClosure {..} ->
     [ ("Thread label", Left lbl) | Just lbl <- pure threadLabel ] ++

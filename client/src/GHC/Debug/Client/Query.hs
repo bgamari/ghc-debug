@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingVia #-}
 module GHC.Debug.Client.Query
   ( -- * Pause/Resume
@@ -32,6 +33,8 @@ module GHC.Debug.Client.Query
   , dereferenceConDesc
   , dereferenceInfoTable
   , dereferenceSRT
+  , dereferenceCCS
+  , dereferenceCC
   ) where
 
 import           Control.Exception
@@ -71,8 +74,10 @@ withPause dbg act = bracket_ (pause dbg) (resume dbg) act
 lookupInfoTable :: RawClosure -> DebugM (StgInfoTableWithPtr, RawInfoTable, RawClosure)
 lookupInfoTable rc = do
     let ptr = getInfoTblPtr rc
-    (itbl, rit) <- request (RequestInfoTable ptr)
-    return (itbl,rit, rc)
+    rit <- request (RequestInfoTable ptr)
+    ver <- version
+    let !it = D.decodeInfoTable ver rit
+    return (StgInfoTableWithPtr ptr it,rit, rc)
 
 pauseThen :: Debuggee -> DebugM b -> IO b
 pauseThen e d =
@@ -84,12 +89,12 @@ dereferenceClosureC cp = addConstrDesc =<< dereferenceClosure cp
 
 addConstrDesc :: SizedClosure -> DebugM SizedClosureC
 addConstrDesc c =
-  quintraverse pure pure dereferenceConDesc pure pure c
+  quintraverse pure pure pure dereferenceConDesc pure pure c
 
 -- Derefence other structures so we just have 'ClosurePtr' at leaves.
 dereferenceToClosurePtr :: SizedClosure -> DebugM SizedClosureP
 dereferenceToClosurePtr c = do
-  quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc pure pure c
+  quintraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc pure pure c
 
 
 -- | Decode a closure corresponding to the given 'ClosurePtr'
@@ -100,14 +105,15 @@ dereferenceClosureDirect c = do
     raw_c <- request (RequestClosure c)
     let it = getInfoTblPtr raw_c
     raw_it <- request (RequestInfoTable it)
-    decodeClosure raw_it (c, raw_c)
+    decodeClosure (it, raw_it) (c, raw_c)
 
-decodeClosure :: (StgInfoTableWithPtr, RawInfoTable)
+decodeClosure :: (InfoTablePtr, RawInfoTable)
               -> (ClosurePtr, RawClosure)
               -> DebugM SizedClosure
-decodeClosure it c = do
+decodeClosure (itp, raw_it) c = do
   ver <- version
-  return $ D.decodeClosure ver it c
+  let !it = D.decodeInfoTable ver raw_it
+  return $ D.decodeClosure ver (StgInfoTableWithPtr itp it, raw_it) c
 
 dereferenceClosures  :: [ClosurePtr] -> DebugM [SizedClosure]
 dereferenceClosures cs = mapM dereferenceClosure cs
@@ -175,7 +181,7 @@ dereferenceClosure cp
         else do
           let it = getInfoTblPtr rc
           st_it <- request (RequestInfoTable it)
-          decodeClosure st_it (cp, rc)
+          decodeClosure (it, st_it) (cp, rc)
 
 -- | Fetch all the blocks from the debuggee and add them to the block cache
 precacheBlocks :: DebugM [RawBlock]
@@ -203,7 +209,17 @@ version :: DebugM Version
 version = request RequestVersion
 
 dereferenceInfoTable :: InfoTablePtr -> DebugM StgInfoTable
-dereferenceInfoTable it = decodedTable . fst <$> request (RequestInfoTable it)
+dereferenceInfoTable it = do
+  rit <- request (RequestInfoTable it)
+  ver <- version
+  let !it = D.decodeInfoTable ver rit
+  pure it
 
 dereferenceSRT :: InfoTablePtr -> DebugM SrtPayload
 dereferenceSRT it = GenSrtPayload <$> request (RequestSRT it)
+
+dereferenceCCS :: CCSPtr -> DebugM (Maybe CCSPayload)
+dereferenceCCS it = request (RequestCCS it)
+
+dereferenceCC :: CCPtr -> DebugM CCPayload
+dereferenceCC it = request (RequestCC it)

@@ -76,7 +76,7 @@ typePointsFrom cs = traceParFromM funcs (map (ClosurePtrWithInfo Root) cs)
 
   where
     nop = const (return ())
-    funcs = TraceFunctionsIO nop nop nop clos visit nop
+    funcs = TraceFunctionsIO nop nop nop clos visit nop nop
 
     visit :: ClosurePtr -> Context -> DebugM TypePointsFrom
     visit cp ctx = do

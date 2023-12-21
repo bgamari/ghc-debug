@@ -41,6 +41,7 @@ import Data.Void
 import Control.DeepSeq
 import GHC.Exts.Heap.FFIClosures
 import Foreign.Marshal.Utils (copyBytes)
+import Data.Functor
 
 import qualified Data.ByteString as B
 
@@ -80,40 +81,49 @@ allocateByCopy (BSI.PS fp o l) action =
      copyBytes buf (p `plusPtr` o) (fromIntegral l)
      action (castPtr buf)
 
-skipClosureHeader :: Get ()
-skipClosureHeader
-  | profiling = () <$ skip (8 * 3)
-  | otherwise = () <$ skip (8 * 1)
+skipClosureHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
+skipClosureHeader ver = do
+  () <$ skip (8 * 1)
+  getProfHeader ver
 
-decodePAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodePAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+getProfHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
+getProfHeader Version{..}
+  | v_profiling = do
+      ccs <- get
+      header <- getWord64le
+      pure $ Just $ ProfHeader ccs header
+  | otherwise = pure Nothing
+
+decodePAPClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodePAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   carity <- getWord32le
   nargs <- getWord32le
   funp <- getClosurePtr
   cpayload <- replicateM (fromIntegral nargs) getWord64le
   let cont = PayloadCont funp cpayload
-  return $ (GHC.Debug.Types.Closures.PAPClosure infot carity nargs funp cont)
+  return $ (GHC.Debug.Types.Closures.PAPClosure infot prof carity nargs funp cont)
 
-decodeAPClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeAPClosure (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
-  _itbl <- skipClosureHeader
+decodeAPClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
+  _smp_header <- getWord64le
+  -- _itbl <- skipClosureHeader
   carity <- getWord32le
   nargs <- getWord32le
   funp <- getClosurePtr
   cpayload <- replicateM (fromIntegral nargs) getWord64le
   let cont = PayloadCont funp cpayload
-  return $ (GHC.Debug.Types.Closures.APClosure infot carity nargs funp cont)
+  return $ (GHC.Debug.Types.Closures.APClosure infot prof carity nargs funp cont)
 
 
-decodeTVarClosure :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeTVarClosure (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+decodeTVarClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeTVarClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   ptr <- getClosurePtr
   watch_queue <- getClosurePtr
   updates <- getInt64le
-  return $ (TVarClosure infot ptr watch_queue (fromIntegral updates))
+  return $ (TVarClosure infot prof ptr watch_queue (fromIntegral updates))
 
 getClosurePtr :: Get ClosurePtr
 getClosurePtr = get
@@ -121,22 +131,22 @@ getClosurePtr = get
 getWord :: Get Word64
 getWord = getWord64le
 
-decodeMutPrim :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeMutPrim (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+decodeMutPrim :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeMutPrim ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   let kptrs = fromIntegral (ptrs (decodedTable infot))
       kdat = fromIntegral (nptrs (decodedTable infot))
   pts <- replicateM kptrs getClosurePtr
   dat <- replicateM kdat (fromIntegral <$> getWord64le)
-  return $ (MutPrimClosure infot pts dat)
+  return $ (MutPrimClosure infot prof pts dat)
 
-decodeTrecChunk :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeTrecChunk (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+decodeTrecChunk :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeTrecChunk ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   prev <- getClosurePtr
   clos_next_idx <- getWord64le
   chunks <- replicateM (fromIntegral clos_next_idx) getChunk
-  return $ (TRecChunkClosure infot prev (fromIntegral clos_next_idx) chunks)
+  return $ (TRecChunkClosure infot prof prev (fromIntegral clos_next_idx) chunks)
   where
     getChunk = do
       TRecEntry <$> getClosurePtr
@@ -146,20 +156,20 @@ decodeTrecChunk (infot, _) (_, rc) = decodeFromBS rc $ do
                                                   -- Not sure how it should
                                                   -- be decoded
 
-decodeBlockingQueue :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeBlockingQueue (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+decodeBlockingQueue :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeBlockingQueue ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   q <- getClosurePtr
   bh <- getClosurePtr
   tso <- getClosurePtr
   bh_q <- getClosurePtr
-  return $ (GHC.Debug.Types.Closures.BlockingQueueClosure infot q bh tso bh_q)
+  return $ (GHC.Debug.Types.Closures.BlockingQueueClosure infot prof q bh tso bh_q)
 
 -- It is just far simpler to directly decode the stack here rather than use
 -- the existing logic in ghc-heap......
-decodeStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
-   _itbl <- skipClosureHeader
+decodeStack :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeStack ver (infot, _) (cp, rc) = decodeFromBS rc $ do
+   prof <- skipClosureHeader ver
    st_size <- getWord32le
    st_dirty <- getWord8
    st_marking <- getWord8
@@ -179,13 +189,14 @@ decodeStack (infot, _) (cp, rc) = decodeFromBS rc $ do
    raw_stack <- RawStack <$> getByteString (fromIntegral len)
    return (GHC.Debug.Types.Closures.StackClosure
             infot
+            prof
             st_size
             st_dirty
             st_marking
             (StackCont st_sp raw_stack))
 
-decodeFromBS :: RawClosure -> Get (DebugClosure srt pap string s b)
-                           -> DebugClosureWithExtra Size srt pap string s b
+decodeFromBS :: RawClosure -> Get (DebugClosure ccs srt pap string s b)
+                           -> DebugClosureWithExtra Size ccs srt pap string s b
 decodeFromBS (RawClosure rc) parser =
   case runGetOrFail parser (BSL.fromStrict rc) of
     Left err -> error ("DEC:" ++ show err ++ printBS rc)
@@ -193,10 +204,10 @@ decodeFromBS (RawClosure rc) parser =
       let !s = fromIntegral o
       in DCS (Size s) v
 
-decodeAPStack :: (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
-decodeAPStack (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
-  _itbl <- skipClosureHeader
+decodeAPStack :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeAPStack ver (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
+  _smp_header <- getWord64le
   st_size <- getWord
   fun_closure <- getClosurePtr
   k <- bytesRead
@@ -204,44 +215,49 @@ decodeAPStack (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
   clos_payload <- RawStack <$> getByteString (fromIntegral st_size)
   return $ GHC.Debug.Types.Closures.APStackClosure
               infot
+              prof
               (fromIntegral st_size)
               fun_closure
               (StackCont sp clos_payload)
 
-decodeStandardLayout :: Get ()
-                     -> ([ClosurePtr] -> [Word] -> Closure)
+decodeStandardLayout :: Version
+                     -> Get ()
+                     -> (Maybe ProfHeaderWithPtr -> [ClosurePtr] -> [Word] -> Closure)
                      -> (StgInfoTableWithPtr, RawInfoTable)
                      -> (ClosurePtr, RawClosure)
                      -> SizedClosure
-decodeStandardLayout extra k (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+decodeStandardLayout ver extra k (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   -- For the THUNK header
   extra
   pts <- replicateM (fromIntegral (ptrs (decodedTable infot))) getClosurePtr
   cwords <- replicateM (fromIntegral (nptrs (decodedTable infot))) getWord
-  return $ k pts (map fromIntegral cwords)
+  return $ k prof pts (map fromIntegral cwords)
 
-decodeArrWords :: (StgInfoTableWithPtr, b)
-               -> (a, RawClosure) -> DebugClosureWithExtra Size src pap string s b1
-decodeArrWords  (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+decodeArrWords :: Version -> (StgInfoTableWithPtr, b)
+               -> (a, RawClosure) -> SizedClosure
+decodeArrWords ver  (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
   bytes <- getWord64le
   payload <- replicateM (fromIntegral $ bytes `ceilIntDiv` 8) getWord
-  return $ GHC.Debug.Types.Closures.ArrWordsClosure infot (fromIntegral bytes) (map fromIntegral payload)
+  return $ GHC.Debug.Types.Closures.ArrWordsClosure infot prof (fromIntegral bytes) (map fromIntegral payload)
 
 -- | Compute @ceiling (a/b)@.
 ceilIntDiv :: Integral a => a -> a -> a
 ceilIntDiv a b = (a + b - 1) `div` b
 
-tsoVersionChanged :: Version
-tsoVersionChanged = Version 905 20220925
+tsoVersionChanged :: Version -> Bool
+tsoVersionChanged (Version maj min _ _) = (maj > 905) || (maj == 905 && min >= 20220925)
+
+weakNotNull :: Version -> Bool
+weakNotNull (Version maj min _ _) = (maj > 904) || (maj == 904 && min >= 2)
 
 decodeTSO :: Version
           -> (StgInfoTableWithPtr, RawInfoTable)
           -> (a, RawClosure)
           -> SizedClosure
 decodeTSO ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  _itbl <- skipClosureHeader
+  prof <- skipClosureHeader ver
   link <- getClosurePtr
   global_link <- getClosurePtr
   tsoStack <- getClosurePtr
@@ -257,7 +273,7 @@ decodeTSO ver (infot, _) (_, rc) = decodeFromBS rc $ do
   _cap         <- getClosurePtr
   trec           <- getClosurePtr
   threadLabel <-
-    if ver >= tsoVersionChanged
+    if tsoVersionChanged ver
       then do
         thread_label <- getClosurePtr
         return $ if thread_label == mkClosurePtr 0 then Nothing else Just thread_label
@@ -268,14 +284,11 @@ decodeTSO ver (infot, _) (_, rc) = decodeFromBS rc $ do
   tot_stack_size <- getWord32le
   let res :: Closure = (GHC.Debug.Types.Closures.TSOClosure
             { info = infot
+            , profHeader = prof
             , _link = link
             , prof = Nothing
             , .. })
   return res
-
-
-
-
 
 decodeClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeClosure ver i@(itb, _) c
@@ -283,37 +296,115 @@ decodeClosure ver i@(itb, _) c
   -- ghc-heap using binary rather than patching GHC and going through that
   -- dance. I think in the future it's better to do this for all the
   -- closures... it's simpler and probably much faster.
---  | traceShow itb False = undefined
-  | (StgInfoTable { tipe = ARR_WORDS }) <- decodedTable itb = decodeArrWords i c
-  | (StgInfoTable { tipe = PAP }) <- decodedTable itb = decodePAPClosure i c
-  | (StgInfoTable { tipe = AP }) <- decodedTable itb = decodeAPClosure i c
-  | (StgInfoTable { tipe = TVAR }) <- decodedTable itb = decodeTVarClosure i c
-  | (StgInfoTable { tipe = MUT_PRIM }) <- decodedTable itb = decodeMutPrim i c
-  | (StgInfoTable { tipe = TREC_CHUNK }) <- decodedTable itb = decodeTrecChunk i c
-  | (StgInfoTable { tipe = BLOCKING_QUEUE }) <- decodedTable itb = decodeBlockingQueue i c
-  | (StgInfoTable { tipe = TSO }) <- decodedTable itb = decodeTSO ver i c
-  | (StgInfoTable { tipe = STACK }) <- decodedTable itb = decodeStack i c
-  | (StgInfoTable { tipe = AP_STACK }) <- decodedTable itb = decodeAPStack i c
-  | (StgInfoTable { tipe = ty }) <- decodedTable itb
-  , CONSTR <= ty && ty <= CONSTR_0_2 =
-      decodeStandardLayout (return ()) (\pts ws -> ConstrClosure itb pts ws (tableId itb)) i c
-  | (StgInfoTable { tipe = ty }) <- decodedTable itb
-  , CONSTR <= ty && ty <= CONSTR_NOCAF =
-      decodeStandardLayout (return ()) (\pts ws -> ConstrClosure itb pts ws (tableId itb)) i c
-  | (StgInfoTable { tipe = ty }) <- decodedTable itb
-  , FUN <= ty && ty <= FUN_STATIC =
-      decodeStandardLayout (return ()) (FunClosure itb (tableId itb)) i c
-  | (StgInfoTable { tipe = ty }) <- decodedTable itb
-  , THUNK <= ty && ty <= THUNK_0_2 =
-      decodeStandardLayout (() <$ getWord) (ThunkClosure itb (tableId itb)) i c
-decodeClosure _ rit rc =
-  decodeWithLibrary rit rc
+  = case tipe (decodedTable itb) of
+      ARR_WORDS -> decodeArrWords ver i c
+      PAP -> decodePAPClosure ver i c
+      AP -> decodeAPClosure ver i c
+      TVAR -> decodeTVarClosure ver i c
+      MUT_PRIM -> decodeMutPrim ver i c
+      TREC_CHUNK -> decodeTrecChunk ver i c
+      BLOCKING_QUEUE -> decodeBlockingQueue ver i c
+      TSO -> decodeTSO ver i c
+      STACK -> decodeStack ver i c
+      AP_STACK -> decodeAPStack ver i c
+      THUNK_STATIC -> decodeStandardLayout ver (return ()) (\ph -> ThunkClosure itb ph (tableId itb)) i c
+      THUNK_SELECTOR -> decodeThunkSelector ver i c
+      BCO -> decodeBCO ver i c
+      IND        -> decodeIndirectee ver IndClosure i c
+      IND_STATIC -> decodeIndirectee ver IndClosure i c
+      BLACKHOLE  -> decodeIndirectee ver BlackholeClosure i c
+      MVAR_CLEAN -> decodeMVar ver i c
+      MVAR_DIRTY -> decodeMVar ver i c
+      MUT_VAR_CLEAN -> decodeMutVar ver i c
+      MUT_VAR_DIRTY -> decodeMutVar ver i c
+      WEAK -> decodeWeakClosure ver i c
+      ty
+        | CONSTR <= ty && ty <= CONSTR_0_2 ->
+            decodeStandardLayout ver (return ()) (\ph pts ws -> ConstrClosure itb ph pts ws (tableId itb)) i c
+        | CONSTR <= ty && ty <= CONSTR_NOCAF ->
+            decodeStandardLayout ver (return ()) (\ph pts ws -> ConstrClosure itb ph pts ws (tableId itb)) i c
+        | FUN <= ty && ty <= FUN_STATIC ->
+            decodeStandardLayout ver (return ()) (\ph -> FunClosure itb ph (tableId itb)) i c
+        | THUNK <= ty && ty <= THUNK_0_2 ->
+            decodeStandardLayout ver (() <$ getWord) (\ph -> ThunkClosure itb ph (tableId itb)) i c
+        | MUT_ARR_PTRS_CLEAN <= ty && ty <= MUT_ARR_PTRS_FROZEN_CLEAN ->
+            decodeMutArr ver i c
+        | SMALL_MUT_ARR_PTRS_CLEAN <= ty && ty <= SMALL_MUT_ARR_PTRS_FROZEN_CLEAN ->
+            decodeSmallMutArr ver i c
+        | otherwise -> decodeWithLibrary ver i c
+
+decodeWeakClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeWeakClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  profHeader <- skipClosureHeader ver
+  cfinalizers <- getClosurePtr
+  key <- getClosurePtr
+  value <- getClosurePtr
+  finalizer <- getClosurePtr
+  mlink <- do
+    p@(ClosurePtr w) <- getClosurePtr
+    pure $ if w == 0 then Nothing else Just p
+  pure $ WeakClosure infot profHeader cfinalizers key value finalizer mlink
+
+decodeMVar :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeMVar ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  profHeader <- skipClosureHeader ver
+  hd <- getClosurePtr
+  tl <- getClosurePtr
+  val <- getClosurePtr
+  pure $ MVarClosure infot profHeader hd tl val
+
+decodeMutVar :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeMutVar ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  profHeader <- skipClosureHeader ver
+  val <- getClosurePtr
+  pure $ MutVarClosure infot profHeader val
+
+decodeMutArr :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeMutArr ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  profHeader <- skipClosureHeader ver
+  nptrs <- getWord64le
+  size <- getWord64le
+  payload <- replicateM (fromIntegral nptrs) getClosurePtr
+  pure $ MutArrClosure infot profHeader (fromIntegral nptrs) (fromIntegral size) payload
+
+decodeSmallMutArr :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeSmallMutArr ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  profHeader <- skipClosureHeader ver
+  nptrs <- getWord64le
+  payload <- replicateM (fromIntegral nptrs) getClosurePtr
+  pure $ SmallMutArrClosure infot profHeader (fromIntegral nptrs) payload
+
+decodeIndirectee :: Version
+                 -> (StgInfoTableWithPtr -> Maybe ProfHeaderWithPtr -> ClosurePtr -> Closure)
+                 -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
+decodeIndirectee ver mk (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
+  ind <- getClosurePtr
+  pure $ mk infot prof ind
+
+decodeBCO :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeBCO ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
+  instrs <- getClosurePtr
+  literals <- getClosurePtr
+  bcoptrs <- getClosurePtr
+  arity <- getWord32le
+  size <- getWord32le
+  bitmap <- replicateM (fromIntegral size) (fromIntegral <$> getWord64le) -- TODO getWord?
+  pure (BCOClosure infot prof instrs literals bcoptrs arity size bitmap)
 
 
-decodeWithLibrary :: (StgInfoTableWithPtr, RawInfoTable)
+decodeThunkSelector :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodeThunkSelector ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- skipClosureHeader ver
+  (() <$ getWord)
+  selectee <- getClosurePtr
+  pure (SelectorClosure infot prof selectee)
+
+decodeWithLibrary :: Version -> (StgInfoTableWithPtr, RawInfoTable)
                       -> (a, RawClosure)
                       -> SizedClosure
-decodeWithLibrary (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
+decodeWithLibrary ver (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
     allocate rit $ \itblPtr -> do
       allocate clos $ \closPtr -> do
         let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
@@ -322,7 +413,7 @@ decodeWithLibrary (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerform
         -- Info table is two words long which is why we subtract 16 from
         -- the pointer
         --print (itblPtr, closPtr)
-        poke ptr_to_itbl_ptr (fixTNTC itblPtr)
+        poke ptr_to_itbl_ptr (fixTNTC ver itblPtr)
         -- You should be able to print these addresses in gdb
         -- and observe the memory layout is identical to the debugee
         -- process
@@ -335,24 +426,51 @@ decodeWithLibrary (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerform
         -- the itbl pointer will point somewhere into our address space
         -- rather than the debuggee address space
         --
-        return $ DCS s . quinmap id absurd
+        return $ DCS s . quinmap id id absurd
                         id
                         absurd
                         mkClosurePtr . convertClosure itb
           $ fmap (fromIntegral @Word @Word64) r
 
 
-fixTNTC :: Ptr a -> Ptr StgInfoTable
-fixTNTC ptr
-  | tablesNextToCode = castPtr $ ptr  `plusPtr` realItblSize
+fixTNTC :: Version -> Ptr a -> Ptr StgInfoTable
+fixTNTC ver ptr
+  | v_tntc ver  = castPtr $ ptr  `plusPtr` realItblSize ver
   | otherwise        = castPtr $ ptr
 
-realItblSize :: Int
-realItblSize
-  | profiling  = ItblProf.itblSize
+realItblSize :: Version -> Int
+realItblSize Version{..}
+  | v_profiling  = ItblProf.itblSize
   | otherwise  = Itbl.itblSize
 
-decodeInfoTable :: RawInfoTable -> StgInfoTable
-decodeInfoTable (RawInfoTable itbl) = unsafePerformIO $ do
-  allocate itbl $ \itblPtr -> do
-    peekItbl itblPtr
+decodeInfoTable :: Version -> RawInfoTable -> StgInfoTable
+decodeInfoTable Version{..} (RawInfoTable itbl) =
+  case runGetOrFail itParser (BSL.fromStrict itbl) of
+    Left err -> error ("DEC:" ++ show err ++ printBS itbl)
+    Right (_rem, o, v) ->
+      let !s = fromIntegral o
+      in v
+  where
+    itParser = do
+      entry <- case v_tntc of
+        True -> pure Nothing
+        False -> do
+          getWord64le -- todo return funptr
+          pure Nothing
+      when v_profiling $ do
+        () <$ getWord64le
+        () <$ getWord64le
+      ptrs <- getWord32le
+      nptrs <- getWord32le
+      tipe <- getWord32le
+      srtlen <- getWord32le
+      return $
+        StgInfoTable
+        { entry = entry
+        , ptrs = ptrs
+        , nptrs = nptrs
+        , tipe = toEnum (fromIntegral tipe)
+        , srtlen = srtlen
+        , code = Nothing
+        }
+

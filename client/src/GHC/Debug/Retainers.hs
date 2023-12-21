@@ -30,7 +30,7 @@ findRetainersOfConstructor limit rroots con_name =
   where
     go _ sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure _ _ _ _ cd -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == con_name
         _ -> return $ False

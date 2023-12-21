@@ -56,6 +56,11 @@ module GHC.Debug.Types.Closures (
     , GenSrtPayload(..)
     , SrtPayload
     , SrtCont
+    , ProfHeader(..)
+    , ProfHeaderWithPtr
+    , CCSPayload
+    , GenCCSPayload(..)
+    , CCPayload(..)
 
     -- * Traversing functions
     , Quintraversable(..)
@@ -90,10 +95,10 @@ import Data.Bifoldable
 -- Closures
 
 
-type Closure = DebugClosure SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
-type SizedClosure = DebugClosureWithSize SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
-type SizedClosureC = DebugClosureWithSize SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
-type SizedClosureP = DebugClosureWithSize SrtPayload PapPayload ConstrDesc StackCont ClosurePtr
+type Closure = DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+type SizedClosure = DebugClosureWithSize CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
+type SizedClosureC = DebugClosureWithSize CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+type SizedClosureP = DebugClosureWithSize CCSPtr SrtPayload PapPayload ConstrDesc StackCont ClosurePtr
 
 -- | Information needed to decode a 'ConstrDesc'
 type ConstrDescCont = InfoTablePtr
@@ -103,8 +108,9 @@ data PayloadCont = PayloadCont ClosurePtr [Word64] deriving (Show, Eq)
 
 type DebugClosureWithSize = DebugClosureWithExtra Size
 
-data DebugClosureWithExtra x srt pap string s b = DCS { extraDCS :: x
-                                              , unDCS :: DebugClosure srt pap string s b }
+data DebugClosureWithExtra x ccs srt pap string s b
+  = DCS { extraDCS :: x
+        , unDCS :: DebugClosure ccs srt pap string s b }
     deriving (Show, Ord, Eq)
 
 -- | Exclusive size
@@ -122,14 +128,14 @@ newtype RetainerSize = RetainerSize { getRetainerSize :: Int }
   deriving (Semigroup, Monoid) via (Sum Int)
 
 
-noSize :: DebugClosureWithSize srt pap string s b -> DebugClosure srt pap string s b
+noSize :: DebugClosureWithSize ccs srt pap string s b -> DebugClosure ccs srt pap string s b
 noSize = unDCS
 
-dcSize :: DebugClosureWithSize srt pap string s b -> Size
+dcSize :: DebugClosureWithSize ccs srt pap string s b -> Size
 dcSize = extraDCS
 
 instance Quintraversable (DebugClosureWithExtra x) where
-  quintraverse f g h i j (DCS x v) = DCS x <$> quintraverse f g h i j v
+  quintraverse f g h i j k (DCS x v) = DCS x <$> quintraverse f g h i j k v
 
 data StgInfoTableWithPtr = StgInfoTableWithPtr {
                               tableId :: InfoTablePtr
@@ -142,6 +148,10 @@ instance Ord StgInfoTableWithPtr where
 instance Eq StgInfoTableWithPtr where
   t1 == t2 = tableId t1 == tableId t2
 
+data ProfHeader a = ProfHeader { ccs :: a, hp :: Word64 }
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+type ProfHeaderWithPtr = ProfHeader CCSPtr
 
 -- | This is the representation of a Haskell value on the heap. It reflects
 -- <https://gitlab.haskell.org/ghc/ghc/blob/master/includes/rts/storage/Closures.h>
@@ -157,10 +167,11 @@ instance Eq StgInfoTableWithPtr where
 -- See
 -- <https://gitlab.haskell.org/ghc/ghc/wikis/commentary/rts/storage/heap-objects>
 -- for more information.
-data DebugClosure srt pap string s b
+data DebugClosure ccs srt pap string s b
   = -- | A data constructor
     ConstrClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
         , constrDesc :: !string
@@ -169,6 +180,7 @@ data DebugClosure srt pap string s b
     -- | A function
   | FunClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , srt        :: !(srt)
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
@@ -177,6 +189,7 @@ data DebugClosure srt pap string s b
     -- | A thunk, an expression not obviously in head normal form
   | ThunkClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , srt        :: !(srt)
         , ptrArgs    :: ![b]            -- ^ Pointer arguments
         , dataArgs   :: ![Word]         -- ^ Non-pointer arguments
@@ -185,6 +198,7 @@ data DebugClosure srt pap string s b
     -- | A thunk which performs a simple selection operation
   | SelectorClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , selectee   :: !b              -- ^ Pointer to the object being
                                         --   selected from
         }
@@ -192,6 +206,7 @@ data DebugClosure srt pap string s b
     -- | An unsaturated function application
   | PAPClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , arity      :: !HalfWord       -- ^ Arity of the partial application
         , n_args     :: !HalfWord       -- ^ Size of the payload in words
         , fun        :: !b              -- ^ Pointer to a 'FunClosure'
@@ -206,6 +221,7 @@ data DebugClosure srt pap string s b
     -- | A function application
   | APClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , arity      :: !HalfWord       -- ^ Always 0
         , n_args     :: !HalfWord       -- ^ Size of payload in words
         , fun        :: !b              -- ^ Pointer to a 'FunClosure'
@@ -216,6 +232,7 @@ data DebugClosure srt pap string s b
     -- | A suspended thunk evaluation
   | APStackClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , ap_st_size :: !Word
         , fun        :: !b              -- ^ Function closure
         , payload    :: !s            -- ^ Stack right before suspension
@@ -225,6 +242,7 @@ data DebugClosure srt pap string s b
     -- to point at its value
   | IndClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , indirectee :: !b              -- ^ Target closure
         }
 
@@ -232,6 +250,7 @@ data DebugClosure srt pap string s b
    -- interpreter (e.g. as used by GHCi)
   | BCOClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , instrs     :: !b              -- ^ A pointer to an ArrWords
                                         --   of instructions
         , literals   :: !b              -- ^ A pointer to an ArrWords
@@ -247,12 +266,14 @@ data DebugClosure srt pap string s b
     -- | A thunk under evaluation by another thread
   | BlackholeClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , indirectee :: !b              -- ^ The target closure
         }
 
     -- | A @ByteArray#@
   | ArrWordsClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , bytes      :: !Word           -- ^ Size of array in bytes
         , arrWords   :: ![Word]         -- ^ Array payload
         }
@@ -260,6 +281,7 @@ data DebugClosure srt pap string s b
     -- | A @MutableByteArray#@
   | MutArrClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , mccPtrs    :: !Word           -- ^ Number of pointers
         , mccSize    :: !Word           -- ^ ?? Closures.h vs ClosureMacros.h
         , mccPayload :: ![b]            -- ^ Array payload
@@ -271,6 +293,7 @@ data DebugClosure srt pap string s b
     -- @since 8.10.1
   | SmallMutArrClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , mccPtrs    :: !Word           -- ^ Number of pointers
         , mccPayload :: ![b]            -- ^ Array payload
         }
@@ -278,6 +301,7 @@ data DebugClosure srt pap string s b
     -- | An @MVar#@, with a queue of thread state objects blocking on them
   | MVarClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , queueHead  :: !b              -- ^ Pointer to head of queue
         , queueTail  :: !b              -- ^ Pointer to tail of queue
         , value      :: !b              -- ^ Pointer to closure
@@ -286,12 +310,14 @@ data DebugClosure srt pap string s b
     -- | A @MutVar#@
   | MutVarClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , var        :: !b              -- ^ Pointer to contents
         }
 
     -- | An STM blocking queue.
   | BlockingQueueClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , link       :: !b              -- ^ ?? Here so it looks like an IND
         , blackHole  :: !b              -- ^ The blackhole closure
         , owner      :: !b              -- ^ The owning thread state object
@@ -300,6 +326,7 @@ data DebugClosure srt pap string s b
 
   | TSOClosure
       { info :: !StgInfoTableWithPtr
+      , profHeader :: Maybe (ProfHeader ccs)
       -- pointers
       , _link :: !b
       , global_link :: !b
@@ -322,6 +349,7 @@ data DebugClosure srt pap string s b
 
  | StackClosure
      { info :: !StgInfoTableWithPtr
+     , profHeader :: Maybe (ProfHeader ccs)
      , stack_size :: !Word32 -- ^ stack size in *words*
      , stack_dirty :: !Word8 -- ^ non-zero => dirty
      , stack_marking :: !Word8
@@ -331,6 +359,7 @@ data DebugClosure srt pap string s b
 
   | WeakClosure
      { info        :: !StgInfoTableWithPtr
+     , profHeader :: Maybe (ProfHeader ccs)
      , cfinalizers :: !b
      , key         :: !b
      , value       :: !b
@@ -340,12 +369,14 @@ data DebugClosure srt pap string s b
 
   | TVarClosure
     { info :: !StgInfoTableWithPtr
+    , profHeader :: Maybe (ProfHeader ccs)
     , current_value :: !b
     , tvar_watch_queue :: !b
     , num_updates :: !Int }
 
   | TRecChunkClosure
     { info :: !StgInfoTableWithPtr
+    , profHeader :: Maybe (ProfHeader ccs)
     , prev_chunk  :: !b
     , next_idx :: !Word
     , entries :: ![TRecEntry b]
@@ -353,6 +384,7 @@ data DebugClosure srt pap string s b
 
   | MutPrimClosure
     { info :: !StgInfoTableWithPtr
+    , profHeader :: Maybe (ProfHeader ccs)
     , ptrArgs :: ![b]
     , dataArgs :: ![Word]
     }
@@ -363,12 +395,14 @@ data DebugClosure srt pap string s b
     -- | Another kind of closure
   | OtherClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         , hvalues    :: ![b]
         , rawWords   :: ![Word]
         }
 
   | UnsupportedClosure
         { info       :: !StgInfoTableWithPtr
+        , profHeader :: Maybe (ProfHeader ccs)
         }
   deriving (Show, Generic, Functor, Foldable, Traversable, Ord, Eq)
 
@@ -391,6 +425,49 @@ newtype GenSrtPayload b = GenSrtPayload { getSrt :: Maybe b }
 type SrtPayload = GenSrtPayload ClosurePtr
 
 type SrtCont = InfoTablePtr
+
+data GenCCSPayload ccsPtr ccPtr
+  = CCSPayload
+  { ccsID :: !Int64
+  , ccsCc :: ccPtr
+  , ccsPrevStack :: Maybe ccsPtr
+  , ccsIndexTable :: Word -- TODO
+  , ccsRoot :: Maybe CCSPtr -- todo ccsPtr?
+  , ccsDepth :: Word
+  , ccsSccCount :: Word64
+  , ccsSelected :: Word
+  , ccsTimeTicks :: Word
+  , ccsMemAlloc :: Word64
+  , ccsInheritedAlloc :: Word64
+  , ccsInheritedTicks :: Word
+  } deriving (Show, Ord, Eq, Functor)
+
+instance Bifunctor GenCCSPayload where
+  bimap f g CCSPayload{..} = (\a b -> CCSPayload{ccsPrevStack = a, ccsCc = b, ..})
+                              (fmap f ccsPrevStack)
+                              (g ccsCc)
+
+instance Bifoldable GenCCSPayload where
+  bifoldMap f g CCSPayload{..} = foldMap f ccsPrevStack <> g ccsCc
+
+instance Bitraversable GenCCSPayload where
+  bitraverse f g CCSPayload{..} = (\a b -> CCSPayload{ccsPrevStack = a, ccsCc = b, ..})
+                              <$> traverse f ccsPrevStack
+                              <*> g ccsCc
+
+type CCSPayload = GenCCSPayload CCSPtr CCPtr
+
+data CCPayload
+  = CCPayload
+  { ccID :: !Int64
+  , ccLabel :: String
+  , ccMod :: String
+  , ccLoc :: String
+  , ccMemAlloc :: Word64
+  , ccTimeTicks :: Word
+  , ccIsCaf :: Bool
+  , ccLink :: Maybe CCPtr -- todo ccPtr?
+  } deriving (Show, Ord, Eq)
 
 -- | Information needed to decode a set of stack frames
 data StackCont = StackCont StackPtr -- Address of start of frames
@@ -474,55 +551,57 @@ class Quintraversable m where
                   -> (e -> f g)
                   -> (h -> f i)
                   -> (j -> f k)
-                  -> m a c e h j
-                  -> f (m b d g i k)
+                  -> (l -> f n)
+                  ->    m a c e h j l
+                  -> f (m b d g i k n)
 
-quinmap :: forall a b c d e f g h i j t . Quintraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> (i -> j) -> t a c e g i -> t b d f h j
+quinmap :: forall a b c d e f g h i j k l t . Quintraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> (i -> j) -> (k -> l) -> t a c e g i k -> t b d f h j l
 quinmap = coerce
   (quintraverse :: (a -> Identity b)
               -> (c -> Identity d)
               -> (e -> Identity f)
               -> (g -> Identity h)
               -> (i -> Identity j)
-              -> t a c e g i -> Identity (t b d f h j))
+              -> (k -> Identity l)
+              -> t a c e g i k -> Identity (t b d f h j l))
 
-allClosures :: DebugClosure (GenSrtPayload c) (GenPapPayload c) a (GenStackFrames (GenSrtPayload c) c) c -> [c]
-allClosures c = getConst $ quintraverse (traverse (Const . (:[]))) (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
+allClosures :: DebugClosure ccs (GenSrtPayload c) (GenPapPayload c) a (GenStackFrames (GenSrtPayload c) c) c -> [c]
+allClosures c = getConst $ quintraverse (const (Const [])) (traverse (Const . (:[]))) (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b
                   | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable, Ord, Eq)
 
 
 instance Quintraversable DebugClosure where
-  quintraverse srt p h f g c =
+  quintraverse fccs srt p h f g c =
     case c of
-      ConstrClosure a1 bs ds str ->
-        (\cs cstr -> ConstrClosure a1 cs ds cstr) <$> traverse g bs <*> h str
-      FunClosure a1 srt_p bs ws -> (\srt' cs -> FunClosure a1 srt' cs ws) <$> srt srt_p <*> traverse g bs
-      ThunkClosure a1 srt_p bs ws -> (\srt' cs -> ThunkClosure a1 srt' cs ws) <$> srt srt_p <*> traverse g bs
-      SelectorClosure a1 b  -> SelectorClosure a1 <$> g b
-      PAPClosure a1 a2 a3 a4 a5 -> PAPClosure a1 a2 a3 <$> g a4 <*> p a5
-      APClosure a1 a2 a3 a4 a5 -> APClosure a1 a2 a3 <$> g a4 <*> p a5
-      APStackClosure a1 s b bs   -> APStackClosure a1 s <$> g b <*> f bs
-      IndClosure a1 b -> IndClosure a1 <$> g b
-      BCOClosure a1 b1 b2 b3 a2 a3 a4 ->
-        (\c1 c2 c3 -> BCOClosure a1 c1 c2 c3 a2 a3 a4) <$> g b1 <*> g b2 <*> g b3
-      BlackholeClosure a1 b -> BlackholeClosure a1 <$> g b
-      ArrWordsClosure a1 a2 a3 -> pure (ArrWordsClosure a1 a2 a3)
-      MutArrClosure a1 a2 a3 bs -> MutArrClosure a1 a2 a3 <$> traverse g bs
-      SmallMutArrClosure a1 a2 bs -> SmallMutArrClosure a1 a2 <$> traverse g bs
-      MVarClosure a1 b1 b2 b3     -> MVarClosure a1 <$> g b1 <*> g b2 <*> g b3
-      MutVarClosure a1 b -> MutVarClosure a1 <$> g b
-      BlockingQueueClosure a1 b1 b2 b3 b4 ->
-        BlockingQueueClosure a1 <$> g b1 <*> g b2 <*> g b3 <*> g b4
-      TSOClosure a1 b1 b2 b3 b4 b5 b6 b7 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
-        (\c1 c2 c3 c4 c5 c6 c7 -> TSOClosure a1 c1 c2 c3 c4 c5 c6 c7 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6 <*> traverse g b7
-      StackClosure a1 a2 a3 a4 a5 -> StackClosure a1 a2 a3 a4 <$> f a5
-      WeakClosure a1 a2 a3 a4 a5 a6 ->
-        WeakClosure a1 <$> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
-      TVarClosure a1 a2 a3 a4 ->
-        TVarClosure a1 <$> g a2 <*> g a3 <*> pure a4
-      TRecChunkClosure a1 a2 a3 a4 -> TRecChunkClosure a1 <$> g a2 <*>  pure a3 <*> traverse (traverse g) a4
-      MutPrimClosure a1 a2 a3 -> MutPrimClosure a1 <$> traverse g a2 <*> pure a3
-      OtherClosure a1 bs ws -> OtherClosure a1 <$> traverse g bs <*> pure ws
-      UnsupportedClosure i  -> pure (UnsupportedClosure i)
+      ConstrClosure a1 ph bs ds str ->
+        (\ph1 cs cstr -> ConstrClosure a1 ph1 cs ds cstr) <$> (traverse . traverse) fccs ph <*> traverse g bs <*> h str
+      FunClosure a1 ph srt_p bs ws -> (\ph1 srt' cs -> FunClosure a1 ph1 srt' cs ws) <$> (traverse . traverse) fccs ph <*> srt srt_p <*> traverse g bs
+      ThunkClosure a1 ph srt_p bs ws -> (\ph1 srt' cs -> ThunkClosure a1 ph1 srt' cs ws) <$> (traverse . traverse) fccs ph <*> srt srt_p <*> traverse g bs
+      SelectorClosure a1 ph b  -> SelectorClosure a1 <$> (traverse . traverse) fccs ph <*> g b
+      PAPClosure a1 a2 a3 a4 a5 a6 -> (\a2 -> PAPClosure a1 a2 a3 a4) <$> (traverse . traverse) fccs a2 <*> g a5 <*> p a6
+      APClosure a1 a2 a3 a4 a5 a6 -> (\a2 -> APClosure a1 a2 a3 a4) <$> (traverse . traverse) fccs a2 <*> g a5 <*> p a6
+      APStackClosure a1 ph s b bs   -> (\ph -> APStackClosure a1 ph s) <$> (traverse . traverse) fccs ph <*> g b <*> f bs
+      IndClosure a1 ph b -> IndClosure a1 <$> (traverse . traverse) fccs ph <*> g b
+      BCOClosure a1 ph b1 b2 b3 a2 a3 a4 ->
+        (\ph c1 c2 c3 -> BCOClosure a1 ph c1 c2 c3 a2 a3 a4) <$> (traverse . traverse) fccs ph <*> g b1 <*> g b2 <*> g b3
+      BlackholeClosure a1 ph b -> BlackholeClosure a1 <$> (traverse . traverse) fccs ph <*> g b
+      ArrWordsClosure a1 ph a2 a3 -> (\ph -> ArrWordsClosure a1 ph a2 a3) <$> (traverse . traverse) fccs ph
+      MutArrClosure a1 ph a2 a3 bs -> (\ph -> MutArrClosure a1 ph a2 a3) <$> (traverse . traverse) fccs ph <*> traverse g bs
+      SmallMutArrClosure a1 ph a2 bs -> (\ph -> SmallMutArrClosure a1 ph a2) <$> (traverse . traverse) fccs ph <*> traverse g bs
+      MVarClosure a1 ph b1 b2 b3     -> MVarClosure a1 <$> (traverse . traverse) fccs ph <*> g b1 <*> g b2 <*> g b3
+      MutVarClosure a1 ph b -> MutVarClosure a1 <$> (traverse . traverse) fccs ph <*> g b
+      BlockingQueueClosure a1 ph b1 b2 b3 b4 ->
+        BlockingQueueClosure a1 <$> (traverse . traverse) fccs ph <*> g b1 <*> g b2 <*> g b3 <*> g b4
+      TSOClosure a1 ph b1 b2 b3 b4 b5 b6 b7 a2 a3 a4 a5 a6 a7 a8 a9 a10 ->
+        (\ph c1 c2 c3 c4 c5 c6 c7 -> TSOClosure a1 ph c1 c2 c3 c4 c5 c6 c7 a2 a3 a4 a5 a6 a7 a8 a9 a10) <$> (traverse . traverse) fccs ph <*> g b1 <*> g b2 <*> g b3 <*> g b4 <*> g b5 <*> g b6 <*> traverse g b7
+      StackClosure a1 ph a2 a3 a4 a5 -> (\ph -> StackClosure a1 ph a2 a3 a4) <$> (traverse . traverse) fccs ph <*> f a5
+      WeakClosure a1 ph a2 a3 a4 a5 a6 ->
+        WeakClosure a1 <$> (traverse . traverse) fccs ph <*> g a2 <*> g a3 <*> g a4 <*> g a5 <*> traverse g a6
+      TVarClosure a1 ph a2 a3 a4 ->
+        TVarClosure a1 <$> (traverse . traverse) fccs ph <*> g a2 <*> g a3 <*> pure a4
+      TRecChunkClosure a1 ph a2 a3 a4 -> TRecChunkClosure a1 <$> (traverse . traverse) fccs ph <*> g a2 <*>  pure a3 <*> traverse (traverse g) a4
+      MutPrimClosure a1 ph a2 a3 -> MutPrimClosure a1 <$> (traverse . traverse) fccs ph <*> traverse g a2 <*> pure a3
+      OtherClosure a1 ph bs ws -> OtherClosure a1 <$> (traverse . traverse) fccs ph <*> traverse g bs <*> pure ws
+      UnsupportedClosure i ph -> UnsupportedClosure i <$> (traverse . traverse) fccs ph

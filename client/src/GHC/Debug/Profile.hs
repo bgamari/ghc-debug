@@ -55,7 +55,7 @@ censusClosureType = closureCensusBy go
     go :: ClosurePtr -> SizedClosure
        -> DebugM (Maybe (Text, CensusStats))
     go _ s = do
-      d <- quintraverse pure pure dereferenceConDesc pure pure s
+      d <- quintraverse pure pure pure dereferenceConDesc pure pure s
       let siz :: Size
           siz = dcSize d
           v =  mkCS siz
@@ -63,7 +63,7 @@ censusClosureType = closureCensusBy go
 
 
 
-closureToKey :: DebugClosure srt a ConstrDesc c d -> Text
+closureToKey :: DebugClosure ccs srt a ConstrDesc c d -> Text
 closureToKey d =
   case d of
      ConstrClosure { constrDesc = ConstrDesc a b c }
@@ -86,7 +86,7 @@ closureCensusBy f cps = do
               , closTrace = closAccum
               , visitedVal = const (const (return MMap.empty))
               , conDescTrace = const (return ())
-
+              , ccsTrace = const (return ())
             }
     -- Add cos
     closAccum  :: ClosurePtr
@@ -120,9 +120,9 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                -> (StateT CensusByClosureType DebugM) ()
                -> (StateT CensusByClosureType DebugM) ()
     closAccum _ s k = do
-      s' <- lift $ quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure s
+      s' <- lift $ quintraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure s
       pts <- lift $ mapM dereferenceClosure (allClosures (noSize s'))
-      pts' <- lift $ mapM (quintraverse pure pure dereferenceConDesc pure pure) pts
+      pts' <- lift $ mapM (quintraverse pure pure pure dereferenceConDesc pure pure) pts
 
 
       modify' (go s' pts')

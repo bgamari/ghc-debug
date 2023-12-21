@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module GHC.Debug.Types(module T
                       , Request(..)
@@ -31,6 +32,10 @@ module GHC.Debug.Types(module T
                       , getInfoTable
                       , putInfoTable
                       , putRequest
+                      , getCCS
+                      , getCC
+                      , putCCS
+                      , putCC
                       , getRequest ) where
 
 import Control.Applicative
@@ -84,7 +89,7 @@ data Request a where
     -- | Request a closure
     RequestClosure :: ClosurePtr -> Request RawClosure
     -- | Request an info table
-    RequestInfoTable :: InfoTablePtr -> Request (StgInfoTableWithPtr, RawInfoTable)
+    RequestInfoTable :: InfoTablePtr -> Request RawInfoTable
 
     -- | Request the SRT of an info table. Some closures, like constructors, can never have SRTs.
     -- Thunks, functions and stack frames may have SRTs.
@@ -114,6 +119,11 @@ data Request a where
     -- | Request the block which contains a specific pointer
     RequestBlock :: ClosurePtr -> Request RawBlock
 
+    -- | Request the cost center stack
+    RequestCCS :: CCSPtr -> Request (Maybe CCSPayload)
+    -- | Request the cost center entry
+    RequestCC :: CCPtr -> Request CCPayload
+
 data SourceInformation = SourceInformation { infoName        :: !String
                                          , infoClosureType :: !ClosureType
                                          , infoType        :: !String
@@ -140,6 +150,8 @@ eq1request r1 r2 =
     RequestSourceInfo itp  -> case r2 of { (RequestSourceInfo itp') -> itp == itp'; _ -> False }
     RequestAllBlocks       -> case r2 of { RequestAllBlocks -> True; _ -> False }
     RequestBlock cp        -> case r2 of { RequestBlock cp' -> cp == cp'; _ -> False }
+    RequestCCS cp       -> case r2 of { RequestCCS cp' -> cp == cp'; _ -> False }
+    RequestCC cp       -> case r2 of { RequestCC cp' -> cp == cp'; _ -> False }
 
 -- | Whether a request mutates the debuggee state, don't cache these ones
 isWriteRequest :: Request a -> Bool
@@ -165,6 +177,8 @@ isImmutableRequest r =
     RequestSRT {} -> True
     RequestSourceInfo {} -> True
     RequestConstrDesc {} -> True
+    RequestCCS {} -> True
+    RequestCC {} -> True
     _ -> False
 
 
@@ -188,6 +202,8 @@ instance Hashable (Request a) where
     RequestSourceInfo itp  -> s `hashWithSalt` cmdRequestSourceInfo `hashWithSalt` itp
     RequestAllBlocks       -> s `hashWithSalt` cmdRequestAllBlocks
     RequestBlock cp        -> s `hashWithSalt` cmdRequestBlock `hashWithSalt` cp
+    RequestCCS cp          -> s `hashWithSalt` cmdRequestCCS `hashWithSalt` cp
+    RequestCC cp           -> s `hashWithSalt` cmdRequestCC  `hashWithSalt` cp
 
 
 newtype CommandId = CommandId Word32
@@ -211,6 +227,8 @@ requestCommandId r = case r of
     RequestSourceInfo {}   -> cmdRequestSourceInfo
     RequestAllBlocks {} -> cmdRequestAllBlocks
     RequestBlock {} -> cmdRequestBlock
+    RequestCCS{} -> cmdRequestCCS
+    RequestCC{} -> cmdRequestCC
 
 cmdRequestVersion :: CommandId
 cmdRequestVersion = CommandId 1
@@ -256,6 +274,12 @@ cmdRequestFunBitmap = CommandId 16
 
 cmdRequestSRT :: CommandId
 cmdRequestSRT  = CommandId 17
+
+cmdRequestCCS :: CommandId
+cmdRequestCCS  = CommandId 18
+
+cmdRequestCC :: CommandId
+cmdRequestCC  = CommandId 19
 
 data AnyReq = forall req . AnyReq !(Request req)
 
@@ -305,6 +329,8 @@ putRequest RequestSavedObjects   = putCommand cmdRequestSavedObjects mempty
 putRequest (RequestSourceInfo it) = putCommand cmdRequestSourceInfo $ put it
 putRequest (RequestAllBlocks) = putCommand cmdRequestAllBlocks $ return ()
 putRequest (RequestBlock cp)  = putCommand cmdRequestBlock $ put cp
+putRequest (RequestCCS cp)  = putCommand cmdRequestCCS $ put cp
+putRequest (RequestCC cp)  = putCommand cmdRequestCC $ put cp
 
 -- This is used to serialise the RequestCache
 getRequest :: Get AnyReq
@@ -353,16 +379,22 @@ getRequest = do
       | cmd == cmdRequestBlock -> do
             cp <- get
             return (AnyReq (RequestBlock cp))
+      | cmd == cmdRequestCCS -> do
+            cp <- get
+            return (AnyReq (RequestCCS cp))
+      | cmd == cmdRequestCC -> do
+            cp <- get
+            return (AnyReq (RequestCC cp))
       | otherwise -> error (show cmd)
 
 
 getResponse :: Request a -> Get a
-getResponse RequestVersion       = Version <$> get <*> get
+getResponse RequestVersion       = Version <$> get <*> get <*> get <*> get
 getResponse RequestPause {}      = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
 getResponse (RequestClosure {}) = get
-getResponse (RequestInfoTable itbp) = (\(it, r) -> (StgInfoTableWithPtr itbp it, r)) <$> getInfoTable
+getResponse (RequestInfoTable itbp) = getInfoTable
 getResponse (RequestSRT {}) = do
   cptr <- get
   pure $ guard (cptr /= UntaggedClosurePtr 0) $> cptr
@@ -377,6 +409,90 @@ getResponse RequestSavedObjects  = many get
 getResponse (RequestSourceInfo _c) = getIPE
 getResponse RequestAllBlocks = many get
 getResponse RequestBlock {}  = get
+getResponse (RequestCCS cptr)
+  | cptr == CCSPtr 0 = pure Nothing
+  | otherwise = Just <$> getCCS
+getResponse (RequestCC {}) = getCC
+
+getCCS :: Get CCSPayload
+getCCS = do
+  len <- fromIntegral <$> getInt16be
+  let go = isolate len $ do
+        ccsID <- getInt64le
+        ccsCc <- get
+        ccsPrevStack <- do
+          p <- get
+          pure $ guard (p /= CCSPtr 0) $>  p
+        ccsIndexTable <- get
+        ccsRoot <- do
+          p <- get
+          pure $ guard (p /= CCSPtr 0) $>  p
+        ccsDepth <- fromIntegral <$> getWord64le
+        ccsSccCount <- getWord64le
+        ccsSelected <- fromIntegral <$> getWord64le
+        ccsTimeTicks <- fromIntegral <$> getWord64le
+        ccsMemAlloc <- getWord64le
+        ccsInheritedAlloc <- getWord64le
+        ccsInheritedTicks <- fromIntegral <$> getWord64le
+        pure CCSPayload{..}
+  go
+
+putCCS :: CCSPayload -> Put
+putCCS CCSPayload{..} = do
+  putInt16be 96 -- todo size
+  putInt64le ccsID
+  put ccsCc
+  case ccsPrevStack of
+    Nothing -> put (CCSPtr 0)
+    Just x -> put x
+  put ccsIndexTable
+  case ccsRoot of
+    Nothing -> put (CCSPtr 0)
+    Just x -> put x
+  putWord64le $ fromIntegral ccsDepth
+  putWord64le $ fromIntegral ccsSccCount
+  putWord64le $ fromIntegral ccsSelected
+  putWord64le $ fromIntegral ccsTimeTicks
+  putWord64le $ fromIntegral ccsMemAlloc
+  putWord64le $ fromIntegral ccsInheritedAlloc
+  putWord64le $ fromIntegral ccsInheritedTicks
+
+getCC :: Get CCPayload
+getCC = do
+  ccID <- getInt64le
+  ccLabel <- getString
+  ccMod <- getString
+  ccLoc <- getString
+  ccMemAlloc <- get
+  ccTimeTicks <- get
+  ccIsCaf <- (\i -> if i == 0 then False else True ) <$> getWord64be
+  ccLink <- do
+    p <- get
+    pure $ guard (p /= CCPtr 0) $>  p
+  pure CCPayload{..}
+  where
+    getString = do
+      len <- getInt32be
+      C8.unpack <$> getByteString (fromIntegral len)
+
+putCC :: CCPayload -> Put
+putCC CCPayload{..} = do
+  putInt64le ccID
+  putString ccLabel
+  putString ccMod
+  putString ccLoc
+  put ccMemAlloc
+  put ccTimeTicks
+  if ccIsCaf
+    then putWord64le 0
+    else putWord64le 1
+  case ccLink of
+    Nothing -> put (CCPtr 0)
+    Just x -> put x
+  where
+    putString xs = do
+      putInt32be (fromIntegral $ length xs)
+      putByteString (C8.pack xs)
 
 
 getConstrDesc :: Get ConstrDesc
@@ -421,12 +537,11 @@ putIPE (Just (SourceInformation a ty b c d e)) = do
 
 
 
-getInfoTable :: Get (StgInfoTable, RawInfoTable)
+getInfoTable :: Get RawInfoTable
 getInfoTable = do
   !len <- getInt32be
   !r <- RawInfoTable <$> getByteString (fromIntegral len)
-  let !it = decodeInfoTable r
-  return (it, r)
+  return r
 
 putInfoTable :: RawInfoTable -> Put
 putInfoTable (RawInfoTable rc) = do

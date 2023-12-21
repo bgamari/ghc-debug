@@ -30,6 +30,7 @@ import Control.Concurrent.Async
 import Data.IORef
 import Control.Exception.Base
 import Control.Concurrent.STM
+import Data.Bitraversable
 
 threads :: Int
 threads = 64
@@ -135,7 +136,7 @@ workerThread n k worker_active ref go oc = DebugM $ do
               sc <- dereferenceClosure cp
               (a', s, cont) <- closTrace k cp sc a
               unsafeLiftIO $ modifyIORef' ref (s <>)
-              cont (() <$ quintraverse (gosrt r a') (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
+              cont (() <$ quintraverse goCCS (gosrt r a') (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
 
     goc r c@(ClosurePtrWithInfo _i cp) =
       let mkey = getMBlockKey cp
@@ -153,6 +154,14 @@ workerThread n k worker_active ref go oc = DebugM $ do
     gocd d = do
       cd <- dereferenceConDesc d
       conDescTrace k cd
+
+    goCCS p = do
+      ccs <- dereferenceCCS p
+      traverse (ccsTrace k) ccs
+      () <$ traverse (bitraverse goCCS goCC) ccs
+
+    goCC p = do
+      () <$ dereferenceCC p
 
     gop r a p = do
       p' <- dereferencePapPayload p
@@ -204,6 +213,7 @@ data TraceFunctionsIO a s =
       , closTrace :: !(ClosurePtr -> SizedClosure -> a -> DebugM (a, s, DebugM () -> DebugM ()))
       , visitedVal :: !(ClosurePtr -> a -> DebugM s)
       , conDescTrace :: !(ConstrDesc -> DebugM ())
+      , ccsTrace :: !(CCSPayload -> DebugM ())
       }
 
 
@@ -250,7 +260,7 @@ tracePar :: [ClosurePtr] -> DebugM ()
 tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
     nop = const (return ())
-    funcs = TraceFunctionsIO nop nop stack clos (const (const (return ()))) nop
+    funcs = TraceFunctionsIO nop nop stack clos (const (const (return ()))) nop (const (return ()))
 
     stack :: GenStackFrames SrtCont ClosurePtr -> DebugM ()
     stack fs =
@@ -263,5 +273,3 @@ tracePar = traceParFromM funcs . map (ClosurePtrWithInfo ())
       let itb = info (noSize sc)
       _traced <- getSourceInfo (tableId itb)
       return ((), (), id)
-
-

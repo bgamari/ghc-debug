@@ -41,13 +41,12 @@ emptyRequestCache = RequestCache HM.empty
 -- amount of input.
 
 getResponseBinary :: Request a -> Get a
-getResponseBinary RequestVersion       = Version <$> get <*> get
+getResponseBinary RequestVersion       = Version <$> get <*> get <*> get <*> get
 getResponseBinary (RequestPause {})    = get
 getResponseBinary RequestResume        = get
 getResponseBinary RequestRoots         = get
 getResponseBinary (RequestClosure {}) = get
-getResponseBinary (RequestInfoTable itps) =
-      (\(it, r) -> (StgInfoTableWithPtr itps it, r)) <$> getInfoTable
+getResponseBinary (RequestInfoTable{}) = getInfoTable
 getResponseBinary (RequestSRT {}) = get
 getResponseBinary (RequestStackBitmap {}) = get
 getResponseBinary (RequestFunBitmap {}) = get
@@ -57,14 +56,16 @@ getResponseBinary RequestSavedObjects  = get
 getResponseBinary (RequestSourceInfo _c) = getIPE
 getResponseBinary RequestAllBlocks = get
 getResponseBinary RequestBlock {}  = get
+getResponseBinary RequestCCS {}  = getMaybe getCCS
+getResponseBinary RequestCC {}  = getCC
 
 putResponseBinary :: Request a -> a -> Put
-putResponseBinary RequestVersion (Version w1 w2) = put w1 >> put w2
+putResponseBinary RequestVersion (Version w1 w2 prof tntc) = put w1 >> put w2 >> put prof >> put tntc
 putResponseBinary (RequestPause {}) w  = put w
 putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs
 putResponseBinary (RequestClosure {}) rcs = put rcs
-putResponseBinary (RequestInfoTable {}) (_, r) = putInfoTable r
+putResponseBinary (RequestInfoTable {}) r = putInfoTable r
 putResponseBinary (RequestSRT {}) rcs = put rcs
 putResponseBinary (RequestStackBitmap {}) pbm = put pbm
 putResponseBinary (RequestFunBitmap {}) pbm = put pbm
@@ -74,6 +75,19 @@ putResponseBinary RequestSavedObjects os = putList os
 putResponseBinary (RequestSourceInfo _c) ipe = putIPE ipe
 putResponseBinary RequestAllBlocks rs = put rs
 putResponseBinary RequestBlock {} r = put r
+putResponseBinary RequestCCS{} r = putMaybe putCCS r
+putResponseBinary RequestCC{} r = putCC r
+
+putMaybe :: (a -> Put) -> Maybe a -> Put
+putMaybe f Nothing  = putWord8 0
+putMaybe f (Just x) = putWord8 1 <> f x
+
+getMaybe :: Get a -> Get (Maybe a)
+getMaybe f = do
+    w <- getWord8
+    case w of
+        0 -> return Nothing
+        _ -> liftM Just f
 
 putConstrDescCache :: ConstrDesc -> Put
 putConstrDescCache (ConstrDesc a b c) = do

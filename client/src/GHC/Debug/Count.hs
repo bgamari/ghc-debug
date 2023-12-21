@@ -13,7 +13,7 @@ parCount :: [ClosurePtr] -> DebugM CensusStats
 parCount = traceParFromM funcs . map (ClosurePtrWithInfo ())
   where
     nop = const (return ())
-    funcs = TraceFunctionsIO nop nop nop clos (const (const (return mempty))) nop
+    funcs = TraceFunctionsIO nop nop nop clos (const (const (return mempty))) nop nop
 
     clos :: ClosurePtr -> SizedClosure -> ()
               -> DebugM ((), CensusStats, DebugM () -> DebugM ())
@@ -32,7 +32,6 @@ count cps = snd <$> runStateT (traceFromM funcs cps) (CS 0 0 0)
               , closTrace = closAccum
               , visitedVal = const (return ())
               , conDescTrace = const (return ())
-
             }
 
     closAccum  :: ClosurePtr

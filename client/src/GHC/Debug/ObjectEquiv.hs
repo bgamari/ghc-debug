@@ -18,7 +18,7 @@ import GHC.Debug.Client
 import GHC.Debug.Trace
 import GHC.Debug.Profile
 import GHC.Debug.Types.Graph (ppClosure)
-import GHC.Debug.Types(ClosurePtr(..))
+import GHC.Debug.Types(ClosurePtr(..), CCSPtr)
 
 import Control.Monad.State
 import Data.List (sortBy)
@@ -86,7 +86,7 @@ trimMap o = if checkSize o > limit
 checkSize :: ObjectEquivState -> Int
 checkSize (ObjectEquivState e1 _ _) = PS.size e1
 
-type PtrClosure = DebugClosureWithSize SrtPayload PapPayload ConstrDesc StackFrames ClosurePtr
+type PtrClosure = DebugClosureWithSize CCSPtr SrtPayload PapPayload ConstrDesc StackFrames ClosurePtr
 
 -- | General function for performing a heap census in constant memory
 censusObjectEquiv :: [ClosurePtr] -> DebugM ObjectEquivState
@@ -111,10 +111,10 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
       -- for this cp
       -- Step 1: Decode a bit more of the object, so we can see all the
       -- pointers.
-      s' <- lift $ quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc dereferenceStack pure s
+      s' <- lift $ quintraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc dereferenceStack pure s
       -- Step 2: Replace all the pointers in the closure by things they are
       -- equivalent to we have already seen.
-      s''  <- quintraverse (traverse rep_c) (traverse rep_c) pure (traverse rep_c) rep_c s'
+      s''  <- quintraverse pure (traverse rep_c) (traverse rep_c) pure (traverse rep_c) rep_c s'
       -- Step 3: Have we seen a closure like this one before?
       modify' (addEquiv cp s'')
 

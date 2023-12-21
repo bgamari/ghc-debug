@@ -106,7 +106,7 @@ data InfoInfo = InfoInfo
   , _constructor :: Maybe Text }
 
 data ClosureDetails = ClosureDetails
-  { _closure :: DebugClosure SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
+  { _closure :: DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
   , _retainerSize :: Maybe RetainerSize
   , _excSize :: Size
   , _info :: InfoInfo
