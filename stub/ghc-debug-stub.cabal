@@ -17,7 +17,7 @@ extra-source-files:  CHANGELOG.md, cbits/socket.h, cbits/trace.h, cbits/parser.h
 
 flag trace
   Description: Enable tracing
-  Default:     False
+  Default:     True
   Manual:      True
 
 flag eras
@@ -42,4 +42,3 @@ library
     cxx-options: -DTRACE
   if flag(eras)
     cxx-options: -DGHC_SUPPORTS_ERAS
-

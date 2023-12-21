@@ -290,7 +290,10 @@ retainersOfInfoTable n mroots dbg info_ptr = do
 
 type Closure = DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr
 
-data ListItem ccs srt a b c d = ListData | ListOnlyInfo InfoTablePtr | ListFullClosure (DebugClosure ccs srt a b c d)
+data ListItem ccs srt a b c d
+  = ListData
+  | ListOnlyInfo InfoTablePtr
+  | ListFullClosure (DebugClosure ccs srt a b c d)
 
 data DebugClosure ccs srt p cd s c
   = Closure
@@ -301,29 +304,45 @@ data DebugClosure ccs srt p cd s c
     { _stackPtr :: StackCont
     , _stackStack :: GD.GenStackFrames srt c
     }
+  | CCS
+    { _ccsPtr :: CCSPtr
+    , _ccPayload :: Maybe (GenCCSPayload CCSPtr CCPayload)
+    }
+  deriving Show
 
 toPtr :: DebugClosure ccs srt p cd s c -> Ptr
 toPtr (Closure cp _) = CP cp
 toPtr (Stack sc _)   = SP sc
+toPtr (CCS ccsp _ )  = CCSP ccsp
 
-data Ptr = CP ClosurePtr | SP StackCont deriving (Eq, Ord)
+data Ptr = CP ClosurePtr | SP StackCont | CCSP CCSPtr deriving (Eq, Ord)
 
 
 dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure CCSPtr SrtCont PayloadCont ConstrDescCont StackCont ClosurePtr)
 dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceClosure cp)
 dereferencePtr dbg (SP sc) = run dbg (Stack <$> pure sc <*> GD.dereferenceStack sc)
+dereferencePtr dbg (CCSP ccsp) = run dbg (CCS <$> pure ccsp <*> go)
+  where
+    go = do
+      mccs <- GD.dereferenceCCS ccsp
+      case mccs of
+        Nothing -> pure Nothing
+        Just ccs -> Just <$> bitraverse pure GD.dereferenceCC ccs
 
 instance Hextraversable DebugClosure where
   hextraverse p f g h i j (Closure cp c) = Closure cp <$> hextraverse p f g h i j c
   hextraverse _ p _ _ _ h (Stack sp s) = Stack sp <$> bitraverse p h s
+  hextraverse p _ _ _ _ _ (CCS sp s) = pure $ CCS sp s
 
 closureShowAddress :: DebugClosure ccs srt p cd s c -> String
 closureShowAddress (Closure c _) = show c
 closureShowAddress (Stack  (StackCont s _) _) = show s
+closureShowAddress (CCS c _) = show c
 
 -- | Get the exclusive size (not including any referenced closures) of a closure.
 closureExclusiveSize :: DebugClosure ccs srt p cd s c -> Size
 closureExclusiveSize (Stack{}) = Size (-1)
+closureExclusiveSize (CCS{}) = Size (-1)
 closureExclusiveSize (Closure _ c) = (GD.dcSize c)
 
 -- | Get the retained size (including all dominated closures) of a closure.
@@ -332,6 +351,7 @@ closureRetainerSize analysis c = snd (closureExcAndRetainerSizes analysis c)
 
 closureExcAndRetainerSizes :: Analysis -> DebugClosure ccs srt p cd s c -> (Size, RetainerSize)
 closureExcAndRetainerSizes _ Stack{} = (Size (-1), RetainerSize (-1))
+closureExcAndRetainerSizes _ CCS{} = (Size (-1), RetainerSize (-1))
   -- ^ TODO How should we handle stack size? only used space on the stack?
   -- Include underflow frames? Return Maybe?
 closureExcAndRetainerSizes analysis (Closure cPtr _) =
@@ -339,12 +359,14 @@ closureExcAndRetainerSizes analysis (Closure cPtr _) =
   in getSizes cPtr
 
 closureSourceLocation :: Debuggee -> DebugClosure ccs srt p cd s c -> IO (Maybe SourceInformation)
+closureSourceLocation _ (CCS{}) = return Nothing
 closureSourceLocation _ (Stack _ _) = return Nothing
 closureSourceLocation e (Closure _ c) = run e $ do
   request (RequestSourceInfo (tableId (info (noSize c))))
 
 closureInfoPtr :: DebugClosure ccs srt p cd s c -> Maybe InfoTablePtr
 closureInfoPtr (Stack {}) = Nothing
+closureInfoPtr (CCS {}) = Nothing
 closureInfoPtr (Closure _ c) = Just (tableId (info (noSize c)))
 
 infoSourceLocation :: Debuggee -> InfoTablePtr -> IO (Maybe SourceInformation)
@@ -374,14 +396,30 @@ closureReferences e (Stack _ stack) = run e $ do
             -}
 closureReferences e (Closure _ closure) = run e $ do
   closure' <- hextraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
-  let refPtrs = closureReferencesAndLabels (unDCS closure')
-  forM refPtrs $ \(label, ptr) -> case ptr of
-    Left cPtr -> do
-      refClosure' <- GD.dereferenceClosure cPtr
-      return (label, ListFullClosure $ Closure cPtr refClosure')
-    Right sPtr -> do
-      refStack' <- GD.dereferenceStack sPtr
-      return (label, ListFullClosure $ Stack sPtr refStack')
+  let wrapClosure cPtr = do
+        refClosure' <- GD.dereferenceClosure cPtr
+        return $ ListFullClosure $ Closure cPtr refClosure'
+      wrapStack sPtr = do
+        refStack' <- GD.dereferenceStack sPtr
+        return $ ListFullClosure $ Stack sPtr refStack'
+      wrapCCS ccsPtr = do
+        refCCS <- do
+          GD.dereferenceCCS ccsPtr >>= \case
+            Nothing -> pure Nothing
+            Just ccs -> Just <$> bitraverse pure GD.dereferenceCC ccs
+        return $ ListFullClosure $ CCS ccsPtr refCCS
+  closureReferencesAndLabels wrapClosure
+                             wrapStack
+                             wrapCCS
+                             (unDCS closure')
+closureReferences e (CCS _ Nothing) = pure []
+closureReferences e (CCS _ (Just ccs)) = do
+  case ccsPrevStack ccs of
+    Nothing -> pure []
+    Just ccsPtr -> run e $ do
+      child' <- GD.dereferenceCCS ccsPtr
+      child <- traverse (bitraverse pure GD.dereferenceCC) child'
+      pure [("child",ListFullClosure $ CCS ccsPtr child)]
 
 reverseClosureReferences :: HG.HeapGraph Size
                          -> HG.ReverseGraph
@@ -396,6 +434,7 @@ reverseClosureReferences :: HG.HeapGraph Size
 reverseClosureReferences hg rm _ c =
   case c of
     Stack {} -> error "Nope - Stack"
+    CCS {} -> error "Nope - CCS"
     Closure cp _ -> case (HG.reverseEdges cp rm) of
                       Nothing -> return []
                       Just es ->
@@ -418,6 +457,7 @@ fillConstrDesc e closure = do
 
 -- | Pretty print a closure
 closurePretty :: Debuggee -> DebugClosure CCSPtr InfoTablePtr PayloadCont ConstrDesc s ClosurePtr ->  IO String
+closurePretty _ (CCS _ ccs) = return $ (show $ fmap ccsCc ccs)
 closurePretty _ (Stack _ frames) = return $ (show (length frames) ++ " frames")
 closurePretty dbg (Closure _ closure) = run dbg $  do
   closure' <- hextraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
@@ -461,65 +501,67 @@ closureDominatees e analysis (Closure cPtr _) = run e $ do
 -- Internal Stuff
 --
 
-closureReferencesAndLabels :: GD.DebugClosure ccs (GenSrtPayload pointer) PapPayload string stack pointer -> [(String, Either pointer stack)]
-closureReferencesAndLabels closure = case closure of
+closureReferencesAndLabels :: Monad m => (pointer -> m a) -> (stack -> m a) -> (ccs -> m a) -> GD.DebugClosure ccs (GenSrtPayload pointer) PapPayload string stack pointer -> m [(String, a)]
+closureReferencesAndLabels pointer stack fccs closure = sequence . map sequence $ case closure of
   TSOClosure {..} ->
-    [ ("Thread label", Left lbl) | Just lbl <- pure threadLabel ] ++
-    [ ("Stack", Left tsoStack)
-    , ("Link", Left _link)
-    , ("Global Link", Left global_link)
-    , ("TRec", Left trec)
-    , ("Blocked Exceptions", Left blocked_exceptions)
-    , ("Blocking Queue", Left bq)
+    [ ("Thread label", pointer lbl) | Just lbl <- pure threadLabel ] ++
+    [ ("Stack", pointer tsoStack)
+    , ("Link", pointer _link)
+    , ("Global Link", pointer global_link)
+    , ("TRec", pointer trec)
+    , ("Blocked Exceptions", pointer blocked_exceptions)
+    , ("Blocking Queue", pointer bq)
     ]
-  StackClosure{..} -> [("Frames", Right frames )]
-  WeakClosure {..} -> [ ("Key", Left key)
-                      , ("Value", Left value)
-                      , ("C Finalizers", Left cfinalizers)
-                      , ("Finalizer", Left finalizer)
+  StackClosure{..} -> [("Frames", stack frames )]
+  WeakClosure {..} -> [ ("Key", pointer key)
+                      , ("Value", pointer value)
+                      , ("C Finalizers", pointer cfinalizers)
+                      , ("Finalizer", pointer finalizer)
                       ] ++
-                      [ ("Link", Left link)
+                      [ ("Link", pointer link)
                       | Just link <- [mlink] -- TODO do we want to show NULL pointers some how?
                       ]
-  TVarClosure {..} -> [("val", Left current_value)]
+  TVarClosure {..} -> [("val", pointer current_value)]
   MutPrimClosure {..} -> withArgLables ptrArgs
   PrimClosure{..} -> withArgLables ptrArgs
-  ConstrClosure {..} -> withFieldLables ptrArgs
-  ThunkClosure {..} -> [ ("SRT", Left cp) | Just cp <- [getSrt srt]]
-                        ++ withArgLables ptrArgs
-  SelectorClosure {..} -> [("Selectee", Left selectee)]
-  IndClosure {..} -> [("Indirectee", Left indirectee)]
-  BlackholeClosure {..} -> [("Indirectee", Left indirectee)]
-  APClosure {..} -> ("Function", Left fun) : [] -- TODO withBitmapLables ap_payload
-  PAPClosure {..} -> ("Function", Left fun) : [] -- TODO: withBitmapLables pap_payload
-  APStackClosure {..} -> ("Function", Left fun) : ("Frames", Right payload) : []
-  BCOClosure {..} -> [ ("Instructions", Left instrs)
-                      , ("Literals", Left literals)
-                      , ("Byte Code Objects", Left bcoptrs)
+  ConstrClosure {..} -> [("CCS", fccs (ccs ph)) | Just ph <- pure profHeader] ++ withFieldLables ptrArgs
+  ThunkClosure {..} ->  [("CCS", fccs (ccs ph)) | Just ph <- pure profHeader]
+                     ++ [("SRT", pointer cp) | Just cp <- [getSrt srt]]
+                     ++ withArgLables ptrArgs
+  SelectorClosure {..} -> [("Selectee", pointer selectee)]
+  IndClosure {..} -> [("Indirectee", pointer indirectee)]
+  BlackholeClosure {..} -> [("Indirectee", pointer indirectee)]
+  APClosure {..} -> ("Function", pointer fun) : [] -- TODO withBitmapLables ap_payload
+  PAPClosure {..} -> ("Function", pointer fun) : [] -- TODO: withBitmapLables pap_payload
+  APStackClosure {..} -> ("Function", pointer fun) : ("Frames", stack payload) : []
+  BCOClosure {..} -> [ ("Instructions", pointer instrs)
+                      , ("Literals", pointer literals)
+                      , ("Byte Code Objects", pointer bcoptrs)
                       ]
   ArrWordsClosure {} -> []
   MutArrClosure {..} -> withIxLables mccPayload
   SmallMutArrClosure {..} -> withIxLables mccPayload
-  MutVarClosure {..} -> [("Value", Left var)]
-  MVarClosure {..} -> [ ("Queue Head", Left queueHead)
-                      , ("Queue Tail", Left queueTail)
-                      , ("Value", Left value)
+  MutVarClosure {..} -> [("Value", pointer var)]
+  MVarClosure {..} -> [ ("Queue Head", pointer queueHead)
+                      , ("Queue Tail", pointer queueTail)
+                      , ("Value", pointer value)
                       ]
   FunClosure {..} ->
-    [ ("SRT", Left cp) | Just cp <- [getSrt srt]]
+       [("CCS", fccs (ccs ph)) | Just ph <- pure profHeader]
+    ++ [ ("SRT", pointer cp) | Just cp <- [getSrt srt]]
     ++ withArgLables ptrArgs
-  BlockingQueueClosure {..} -> [ ("Link", Left link)
-                                , ("Black Hole", Left blackHole)
-                                , ("Owner", Left owner)
-                                , ("Queue", Left queue)
+  BlockingQueueClosure {..} -> [ ("Link", pointer link)
+                                , ("Black Hole", pointer blackHole)
+                                , ("Owner", pointer owner)
+                                , ("Queue", pointer queue)
                                 ]
-  OtherClosure {..} -> ("",) . Left <$> hvalues
+  OtherClosure {..} -> ("",) . pointer <$> hvalues
   TRecChunkClosure{}  -> [] --TODO
   UnsupportedClosure {} -> []
   where
-  withIxLables elements   = [("[" <> show i <> "]" , Left x) | (i, x) <- zip [(0::Int)..] elements]
-  withArgLables ptrArgs   = [("Argument " <> show i, Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
-  withFieldLables ptrArgs = [("Field " <> show i   , Left x) | (i, x) <- zip [(0::Int)..] ptrArgs]
+  withIxLables elements   = [("[" <> show i <> "]" , pointer x) | (i, x) <- zip [(0::Int)..] elements]
+  withArgLables ptrArgs   = [("Argument " <> show i, pointer x) | (i, x) <- zip [(0::Int)..] ptrArgs]
+  withFieldLables ptrArgs = [("Field " <> show i   , pointer x) | (i, x) <- zip [(0::Int)..] ptrArgs]
 --  withBitmapLables pap = [("Argument " <> show i   , Left x) | (i, SPtr x) <- zip [(0::Int)..] (getValues pap)]
 
 --

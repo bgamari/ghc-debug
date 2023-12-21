@@ -12,6 +12,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 
@@ -173,6 +174,9 @@ myAppDraw (AppState majorState' _) =
       [ hBox [
         txtLabel $ "Exclusive Size   "
         <> maybe "" (pack . show @Int . GD.getSize) (Just $ _excSize cd) <> " bytes"
+        ],
+        hBox [
+        txtLabel $ "CCS   TODO"
         ]
       ]
   renderClosureDetails Nothing = emptyWidget
@@ -182,6 +186,8 @@ myAppDraw (AppState majorState' _) =
   renderInfoInfo :: InfoInfo -> [Widget Name]
   renderInfoInfo info' =
     maybe [] renderSourceInformation (_sourceLocation info')
+    ++ [labelled "Era" $ vLimit 1 (str $ show $ _era info')
+       ,labelled "type" $ vLimit 1 (str $ show $ _closureType info')]
       -- TODO these aren't actually implemented yet
       -- , txt $ "Type             "
       --       <> fromMaybe "" (_closureType =<< cd)
@@ -398,13 +404,22 @@ mkIOTree debuggee' manalysis cs getChildren sort = ioTree Connected_Paused_Closu
         -- rendering the row
         (\state selected ctx depth closureDesc ->
           let
+            colorId = _era $ _info closureDesc
+            colorEra = case colorId of
+              _ -> id
+              -- Nothing -> id
+              -- Just i -> modifyDefAttr (flip Vty.withBackColor (era_colors !! (1 + (fromIntegral $ abs i) `mod` (length era_colors - 1))))
             body =
               (if selected then visible . highlighted else id) $
+                colorEra $
                 hBox $
                 renderInlineClosureDesc closureDesc
           in
             vdecorate state ctx depth body -- body (T.concat context)
         )
+
+era_colors :: [Vty.Color]
+era_colors = [Vty.black, Vty.green, Vty.magenta, Vty.cyan]
 
 -- | Draw the tree structure around the row item. Inspired by the
 -- 'border' functions in brick.
@@ -520,8 +535,15 @@ getClosureDetails debuggee' manalysis label' (ListFullClosure c) = do
        _pretty = pack pretty'
       , _labelInParent = label'
       , _sourceLocation = sourceLoc
-      , _closureType = Nothing
+      , _closureType = Just (T.pack $ show c)
       , _constructor = Nothing
+      , _era = case c of
+          Closure{_closureSized=c1} -> case Debug.unDCS c1 of
+            Debug.ConstrClosure{profHeader} -> Debug.hp <$> profHeader
+            Debug.FunClosure{profHeader} -> Debug.hp <$> profHeader
+            Debug.ThunkClosure{profHeader} -> Debug.hp <$> profHeader
+            _ -> Nothing
+          _ -> Nothing
       }
     , _excSize = excSize'
     , _retainerSize = retSize'
@@ -540,6 +562,7 @@ getInfoInfo debuggee' label' infoPtr = do
       , _sourceLocation = sourceLoc
       , _closureType = Nothing
       , _constructor = Nothing
+      , _era = Nothing
       }
 
 

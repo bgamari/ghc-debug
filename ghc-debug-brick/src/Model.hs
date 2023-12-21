@@ -31,6 +31,7 @@ import Lib
 import IOTree
 import Control.Concurrent
 import qualified Graphics.Vty as Vty
+import Data.Word
 
 data Event
   = PollTick  -- Used to perform arbitrary polling based tasks e.g. looking for new debuggees
@@ -103,7 +104,9 @@ data InfoInfo = InfoInfo
   , _pretty :: Text
   , _sourceLocation :: Maybe SourceInformation
   , _closureType :: Maybe Text
-  , _constructor :: Maybe Text }
+  , _constructor :: Maybe Text
+  , _era :: !(Maybe Word64)
+  }
 
 data ClosureDetails = ClosureDetails
   { _closure :: DebugClosure CCSPtr SrtCont PayloadCont ConstrDesc StackCont ClosurePtr
