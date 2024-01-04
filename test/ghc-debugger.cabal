@@ -17,7 +17,6 @@ executable debugger
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
-                     , ghc-heap
                      , containers
                      , extra
                      , process
@@ -33,7 +32,6 @@ executable string-analysis
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
-                     , ghc-heap
                      , containers
                      , extra
                      , process
@@ -92,7 +90,6 @@ executable save-one-pause
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
-                     , ghc-heap
                      , containers
                      , extra
                      , process
@@ -107,7 +104,6 @@ executable save-ipe-pause
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
-                     , ghc-heap
                      , containers
                      , extra
                      , process
@@ -133,7 +129,6 @@ executable cycles
   build-depends:       base
                      , ghc-debug-client
                      , ghc-debug-common
-                     , ghc-heap
                      , containers
                      , extra
                      , process

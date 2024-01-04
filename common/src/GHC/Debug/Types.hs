@@ -36,6 +36,8 @@ module GHC.Debug.Types(module T
                       , getCC
                       , putCCS
                       , putCC
+                      , getProfilingMode
+                      , putProfilingMode
                       , getRequest ) where
 
 import Control.Applicative
@@ -389,7 +391,7 @@ getRequest = do
 
 
 getResponse :: Request a -> Get a
-getResponse RequestVersion       = Version <$> get <*> get <*> get <*> get
+getResponse RequestVersion       = Version <$> get <*> get <*> getProfilingMode <*> get
 getResponse RequestPause {}      = get
 getResponse RequestResume        = get
 getResponse RequestRoots         = many get
@@ -413,6 +415,28 @@ getResponse (RequestCCS cptr)
   | cptr == CCSPtr 0 = pure Nothing
   | otherwise = Just <$> getCCS
 getResponse (RequestCC {}) = getCC
+
+getProfilingMode :: Get (Maybe ProfilingMode)
+getProfilingMode = do
+  w <- getWord8
+  case w of
+    0 -> pure $ Nothing
+    1 -> pure $ Just NoProfiling
+    2 -> pure $ Just RetainerProfiling
+    3 -> pure $ Just LDVProfiling
+    4 -> pure $ Just EraProfiling
+    5 -> pure $ Just OtherProfiling
+    _ -> error $ "Unknown profiling mode: " ++ (show w)
+
+putProfilingMode :: Maybe ProfilingMode -> Put
+putProfilingMode Nothing = putWord8 0
+putProfilingMode (Just mode) =
+  case mode of
+    NoProfiling -> putWord8 1
+    RetainerProfiling -> putWord8 2
+    LDVProfiling -> putWord8 3
+    EraProfiling -> putWord8 4
+    OtherProfiling -> putWord8 5
 
 getCCS :: Get CCSPayload
 getCCS = do
@@ -439,23 +463,26 @@ getCCS = do
 
 putCCS :: CCSPayload -> Put
 putCCS CCSPayload{..} = do
-  putInt16be 96 -- todo size
-  putInt64le ccsID
-  put ccsCc
-  case ccsPrevStack of
-    Nothing -> put (CCSPtr 0)
-    Just x -> put x
-  put ccsIndexTable
-  case ccsRoot of
-    Nothing -> put (CCSPtr 0)
-    Just x -> put x
-  putWord64le $ fromIntegral ccsDepth
-  putWord64le $ fromIntegral ccsSccCount
-  putWord64le $ fromIntegral ccsSelected
-  putWord64le $ fromIntegral ccsTimeTicks
-  putWord64le $ fromIntegral ccsMemAlloc
-  putWord64le $ fromIntegral ccsInheritedAlloc
-  putWord64le $ fromIntegral ccsInheritedTicks
+  putInt16be (fromIntegral $ BSL.length bs)
+  putLazyByteString bs
+  where
+    bs = runPut $ do
+      putInt64le ccsID
+      put ccsCc
+      case ccsPrevStack of
+        Nothing -> put (CCSPtr 0)
+        Just x -> put x
+      put ccsIndexTable
+      case ccsRoot of
+        Nothing -> put (CCSPtr 0)
+        Just x -> put x
+      putWord64le $ fromIntegral ccsDepth
+      putWord64le $ fromIntegral ccsSccCount
+      putWord64le $ fromIntegral ccsSelected
+      putWord64le $ fromIntegral ccsTimeTicks
+      putWord64le $ fromIntegral ccsMemAlloc
+      putWord64le $ fromIntegral ccsInheritedAlloc
+      putWord64le $ fromIntegral ccsInheritedTicks
 
 getCC :: Get CCPayload
 getCC = do

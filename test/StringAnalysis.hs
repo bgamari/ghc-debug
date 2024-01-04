@@ -30,7 +30,6 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Control.Monad.State
 import Data.Text (Text)
-import GHC.Exts.Heap.ClosureTypes
 import qualified Data.Foldable as F
 
 import Control.Monad
@@ -126,7 +125,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
                -> (RWST () () (Map.Map _ _) DebugM) ()
     closAccum cp sc k = do
       case noSize sc of
-        ConstrClosure info ps ds cd -> do
+        ConstrClosure _ info ps ds cd -> do
           cd' <- lift $ dereferenceConDesc cd
           case cd' of
             ConstrDesc _ _ cd | cd /= ":" -> do
@@ -136,7 +135,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
       k
       where
         process sc = do
-          s' <- lift $ quintraverse dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure sc
+          s' <- lift $ hextraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure sc
           pts <- lift $ mapM dereferenceClosure (allClosures (noSize s'))
           pts' <- lift $ mapM addConstrDesc pts
           checked <- lift $ filterM (\(_, c) -> check_bin (noSize c)) (zip (allClosures (noSize s')) pts')
@@ -155,26 +154,26 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
           cp' <- dereferenceClosure cp
 --          traceShowM cp'
           case noSize cp' of
-            (ConstrClosure _ _ _ cd) -> do
+            (ConstrClosure _ _ _ _ cd) -> do
               (ConstrDesc _ _ cn) <- dereferenceConDesc cd
               return (cn == "C#")
             _ -> return False
 
 
-        check_char (ConstrClosure _ _ _ (ConstrDesc _ _ "C#")) = True
+        check_char (ConstrClosure _ _ _ _ (ConstrDesc _ _ "C#")) = True
         check_char _ = False
 
-        check_bin (ConstrClosure _ (p:_) _ (ConstrDesc _ _ ":")) = process_2 p
+        check_bin (ConstrClosure _ _ (p:_) _ (ConstrDesc _ _ ":")) = process_2 p
         check_bin _ = return False
 
 decodeString :: ClosurePtr -> DebugM String
 decodeString cp = do
   cp' <- dereferenceClosure cp
   case noSize cp' of
-    (ConstrClosure _ [p,ps] _ cd) -> do
+    (ConstrClosure _ _ [p,ps] _ cd) -> do
       cp' <- dereferenceClosure p
       case noSize cp' of
-        (ConstrClosure _ _ [w] _) -> do
+        (ConstrClosure _ _ _ [w] _) -> do
           (chr (fromIntegral w):) <$> decodeString ps
         _ -> return []
     _ -> return []
@@ -203,7 +202,7 @@ arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots
                -> (RWST () () (Map.Map _ _) DebugM) ()
     closAccum cp sc k = do
           case (noSize sc) of
-            ArrWordsClosure _ _ p ->  do
+            ArrWordsClosure _ _ _ p ->  do
               modify' (Map.insertWith (<>) (arrWordsBS p) (S.singleton cp))
               k
             _ -> k

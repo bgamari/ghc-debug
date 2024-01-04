@@ -41,7 +41,7 @@ emptyRequestCache = RequestCache HM.empty
 -- amount of input.
 
 getResponseBinary :: Request a -> Get a
-getResponseBinary RequestVersion       = Version <$> get <*> get <*> get <*> get
+getResponseBinary RequestVersion       = Version <$> get <*> get <*> getProfilingMode <*> get
 getResponseBinary (RequestPause {})    = get
 getResponseBinary RequestResume        = get
 getResponseBinary RequestRoots         = get
@@ -60,7 +60,7 @@ getResponseBinary RequestCCS {}  = getMaybe getCCS
 getResponseBinary RequestCC {}  = getCC
 
 putResponseBinary :: Request a -> a -> Put
-putResponseBinary RequestVersion (Version w1 w2 prof tntc) = put w1 >> put w2 >> put prof >> put tntc
+putResponseBinary RequestVersion (Version w1 w2 prof tntc) = put w1 >> put w2 >> putProfilingMode prof >> put tntc
 putResponseBinary (RequestPause {}) w  = put w
 putResponseBinary RequestResume w      = put w
 putResponseBinary RequestRoots  rs     = put rs

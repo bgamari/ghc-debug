@@ -404,7 +404,25 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
         uint8_t ver_payload3;
         ver_payload=htonl(__GLASGOW_HASKELL__) ;
         ver_payload1=htonl(__GLASGOW_HASKELL_PATCHLEVEL1__) ;
-        ver_payload2=rts_isProfiled();
+        if (rts_isProfiled()) {
+          if (RtsFlags.ProfFlags.doHeapProfile == 0) {
+            ver_payload2 = 1;
+#if defined(PROFILING)
+          } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_RETAINER || RtsFlags.ProfFlags.retainerSelector != NULL) {
+            ver_payload2 = 2;
+          } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_LDV || RtsFlags.ProfFlags.bioSelector != NULL) {
+            ver_payload2 = 3;
+#if MIN_VERSION_GLASGOW_HASKELL(9,9,0,0)
+          } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_ERA || RtsFlags.ProfFlags.eraSelector != NULL) {
+            ver_payload2 = 4;
+#endif
+#endif
+          } else {
+            ver_payload2 = 5;
+          }
+        } else {
+          ver_payload2 = 0;
+        }
         ver_payload3=TABLES_NEXT_TO_CODE;
         resp.write(ver_payload);
         resp.write(ver_payload1);

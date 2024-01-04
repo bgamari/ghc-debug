@@ -29,7 +29,6 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Control.Monad.State
 import Data.Text (Text)
-import GHC.Exts.Heap.ClosureTypes
 import qualified Data.Foldable as F
 
 import Control.Monad
@@ -563,7 +562,7 @@ arrWordsAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots
                -> (RWST () () (Map.Map _ Count) DebugM) ()
     closAccum cp sc k = do
           case (noSize sc) of
-            ArrWordsClosure _ _ p ->  do
+            ArrWordsClosure _ _ _ p ->  do
               modify' (Map.insertWith (<>) (arrWordsBS p) (Count 1))
               k
             _ -> k
@@ -595,7 +594,7 @@ sebAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) () 
 checkTyConAppTyCon :: (StgInfoTableWithPtr -> [ClosurePtr] -> [Word] -> DebugM (Maybe k)) -> ClosurePtr -> SizedClosure -> DebugM (Maybe k)
 checkTyConAppTyCon k cp sc = do
   case noSize sc of
-    ConstrClosure info ps ds cd -> do
+    ConstrClosure info _ ps ds cd -> do
       cd' <- dereferenceConDesc cd
       case cd' of
         ConstrDesc _ _ "TyConApp" -> do
@@ -632,8 +631,8 @@ follow [] cp = return cp
 follow (x:xs) cp = do
   sc <- dereferenceClosure cp
   case noSize sc of
-    IndClosure _ p -> follow (x:xs) p
-    ConstrClosure _ ps _ _ -> do
+    IndClosure _ _ p -> follow (x:xs) p
+    ConstrClosure _ _ ps _ _ -> do
       follow xs (ps !! x)
     _ -> do
       c' <- dereferenceToClosurePtr sc
@@ -643,7 +642,7 @@ follow (x:xs) cp = do
 getDescriptionName :: ClosurePtr -> SizedClosure -> DebugM (Maybe ByteString)
 getDescriptionName cp sc = do
   case noSize sc of
-    ConstrClosure _ ps _ cd -> do
+    ConstrClosure _ _ ps _ cd -> do
       cd' <- dereferenceConDesc cd
       case cd' of
         ConstrDesc _ "Hasura.GraphQL.Parser.Schema" "Definition" -> do
@@ -655,11 +654,11 @@ getDescriptionName cp sc = do
         follow p = do
           sc' <- (dereferenceClosure p)
           case noSize sc' of
-            IndClosure _ p -> follow p
-            ConstrClosure _ ps _ cd -> do
+            IndClosure _ _ p -> follow p
+            ConstrClosure _ _ ps _ cd -> do
               s <- noSize <$> (dereferenceClosure (head ps))
               case s of
-                ArrWordsClosure _ _ ws -> do
+                ArrWordsClosure _ _ _ ws -> do
                   return (arrWordsBS ws)
                 _ -> error "No ArrWords"
 
@@ -1079,7 +1078,7 @@ modIface rroots = findRetainers (Just 100) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "HomeModInfo"
         _ -> return $ False
@@ -1088,7 +1087,7 @@ tyConApp rroots = findRetainers (Just 100) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ ps _ cd -> do
+        ConstrClosure _ _ ps _ cd -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "TyConApp"
         _ -> return $ False
@@ -1097,7 +1096,7 @@ typeEnv rroots = findRetainers (Just 300) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ ps _ cd -> do
+        ConstrClosure _ _ ps _ cd -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "TypeEnv"
         _ -> return $ False
@@ -1106,7 +1105,7 @@ tcModResult rroots = findRetainers (Just 10) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "TcModuleResult"
         _ -> return $ False
@@ -1115,7 +1114,7 @@ tcGblEnv rroots = findRetainers (Just 10) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "TcGblEnv"
         _ -> return $ False
@@ -1124,7 +1123,7 @@ moduleCon rroots = findRetainers (Just 100) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "Module"
         _ -> return $ False
@@ -1133,7 +1132,7 @@ splitEnv rroots = findRetainers (Just 10) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _ _  cname <- dereferenceConDesc cd
           return $ cname == "MkSplitUniqSupply"
         _ -> return $ False
@@ -1142,7 +1141,7 @@ dmaps rroots = findRetainers (Just 10) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _  mname cname <- dereferenceConDesc cd
           return $ mname == "Data.Dependent.Map.Internal" && (cname == "Tip" || cname == "Bin")
         _ -> return $ False
@@ -1151,7 +1150,7 @@ roleContext rroots = findRetainers (Just 2) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _  mname cname <- dereferenceConDesc cd
           return $ mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "RebuildableSchemaCache")
         _ -> return $ False
@@ -1160,7 +1159,7 @@ buildOutputs rroots = findRetainers (Just 2) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _  mname cname <- dereferenceConDesc cd
           return $ mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "BuildOutputs")
         _ -> return $ False
@@ -1169,7 +1168,7 @@ hashTuples rroots = findRetainers (Just 100) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _  mname cname <- dereferenceConDesc cd
           loc <- getSourceLoc sc
           return $ (cname == "(,)" && ((infoLabel <$> loc) == Just "pruneDanglingDependents"))
@@ -1179,7 +1178,7 @@ enumTuples rroots = findRetainers (Just 100) rroots go
   where
     go cp sc =
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _  mname cname <- dereferenceConDesc cd
           loc <- getSourceLoc sc
 --          return $ (cname == "(,)" && ((infoLabel <$> loc) == Just "tableSelectColumnsEnum"))
@@ -1205,7 +1204,7 @@ findTcModResult rroots = execStateT (traceFromM funcs rroots) []
                -> StateT [ClosurePtr] DebugM ()
     closAccum cp sc k = do
       case noSize sc of
-        ConstrClosure _ _ _ cd -> do
+        ConstrClosure{constrDesc = cd} -> do
           ConstrDesc _ _  cname <- lift $ dereferenceConDesc cd
           if (cname == "TcModuleResult")
             then modify' (cp :) >> k

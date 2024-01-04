@@ -23,15 +23,15 @@ import qualified Data.ByteString.Internal as BSI
 import Data.ByteString.Short.Internal (ShortByteString(..), toShort)
 import qualified Data.ByteString.Lazy as BSL
 
-import GHC.Exts.Heap (GenClosure)
-import GHC.Exts.Heap hiding (GenClosure(..), Closure)
-import qualified GHC.Exts.Heap.InfoTable as Itbl
-import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
+-- import GHC.Exts.Heap (GenClosure)
+-- import GHC.Exts.Heap hiding (GenClosure(..), Closure)
+-- import qualified GHC.Exts.Heap.InfoTable as Itbl
+-- import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
+-- import GHC.Exts.Heap.FFIClosures
 
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Version
 import GHC.Debug.Types.Closures
-import GHC.Debug.Decode.Convert
 import Foreign.Marshal.Alloc    (allocaBytes)
 import Foreign.ForeignPtr       (withForeignPtr)
 import Data.Binary.Get as B
@@ -39,9 +39,9 @@ import Data.Binary
 import Control.Monad
 import Data.Void
 import Control.DeepSeq
-import GHC.Exts.Heap.FFIClosures
 import Foreign.Marshal.Utils (copyBytes)
 import Data.Functor
+import Data.Bits
 
 import qualified Data.ByteString as B
 
@@ -50,21 +50,6 @@ foreign import prim "unpackClosurePtrzh" unpackClosurePtr# ::
 
 foreign import prim "closureSizezh" closureSize# ::
               Addr# -> (# Word# #)
-
-getClosureRaw :: StgInfoTable -> Ptr a -> BSI.ByteString -> IO (GenClosure Word, Size)
-getClosureRaw itb (Ptr closurePtr) datString = do
-  let !(# pointers #) = unpackClosurePtr# closurePtr
-      !(# raw_size_wh #) = closureSize# closurePtr
-      raw_size = fromIntegral (W# raw_size_wh) * 8
-  -- Not strictly necessary to take the size of the raw string but its
-  -- a good sanity check. In particular it helps with stack decoding.
-  let !(SBS datArr) = (toShort (B.take raw_size datString))
-  let nelems_ptrs = (I# (sizeofByteArray# pointers)) `div` 8
-      end_ptrs = fromIntegral nelems_ptrs - 1
-      rawPtrs = force [W# (indexWordArray# pointers i) | I# i <- [0.. end_ptrs] ]
-  gen_closure <- getClosureDataFromHeapRepPrim (return ("", "", ""))
-                                               (\_ -> return Nothing) itb datArr  rawPtrs
-  return (gen_closure, Size raw_size)
 
 -- | Allow access directly to the chunk of memory used by a bytestring
 allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
@@ -81,22 +66,32 @@ allocateByCopy (BSI.PS fp o l) action =
      copyBytes buf (p `plusPtr` o) (fromIntegral l)
      action (castPtr buf)
 
-skipClosureHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
-skipClosureHeader ver = do
+decodeClosureHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
+decodeClosureHeader ver = do
   () <$ skip (8 * 1)
   getProfHeader ver
 
 getProfHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
-getProfHeader Version{..}
-  | v_profiling = do
+getProfHeader ver =
+  case v_profiling ver of
+    Nothing -> pure Nothing
+    Just mode -> do
       ccs <- get
       header <- getWord64le
-      pure $ Just $ ProfHeader ccs header
-  | otherwise = pure Nothing
+      pure $ Just $ ProfHeader ccs (decodeHeader mode header)
+
+decodeHeader :: ProfilingMode -> Word64 -> ProfHeaderWord
+decodeHeader mode hp = case mode of
+  NoProfiling -> OtherHeader hp
+  OtherProfiling -> OtherHeader hp
+  -- TODO handle 32 bit
+  RetainerProfiling -> RetainerHeader (testBit hp 0) (RetainerSetPtr $ clearBit hp 0)
+  LDVProfiling -> LDVWord (testBit hp 60) (fromIntegral ((hp .&. 0x0FFFFFFFC0000000) `shiftR` 30)) (fromIntegral (hp .&. 0x000000003FFFFFFF))
+  EraProfiling -> EraWord hp
 
 decodePAPClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodePAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   carity <- getWord32le
   nargs <- getWord32le
   funp <- getClosurePtr
@@ -106,9 +101,9 @@ decodePAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeAPClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   _smp_header <- getWord64le
-  -- _itbl <- skipClosureHeader
+  -- _itbl <- decodeClosureHeader
   carity <- getWord32le
   nargs <- getWord32le
   funp <- getClosurePtr
@@ -119,7 +114,7 @@ decodeAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeTVarClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeTVarClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   ptr <- getClosurePtr
   watch_queue <- getClosurePtr
   updates <- getInt64le
@@ -133,7 +128,7 @@ getWord = getWord64le
 
 decodeMutPrim :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeMutPrim ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   let kptrs = fromIntegral (ptrs (decodedTable infot))
       kdat = fromIntegral (nptrs (decodedTable infot))
   pts <- replicateM kptrs getClosurePtr
@@ -142,7 +137,7 @@ decodeMutPrim ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeTrecChunk :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeTrecChunk ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   prev <- getClosurePtr
   clos_next_idx <- getWord64le
   chunks <- replicateM (fromIntegral clos_next_idx) getChunk
@@ -158,7 +153,7 @@ decodeTrecChunk ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeBlockingQueue :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeBlockingQueue ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   q <- getClosurePtr
   bh <- getClosurePtr
   tso <- getClosurePtr
@@ -169,7 +164,7 @@ decodeBlockingQueue ver (infot, _) (_, rc) = decodeFromBS rc $ do
 -- the existing logic in ghc-heap......
 decodeStack :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeStack ver (infot, _) (cp, rc) = decodeFromBS rc $ do
-   prof <- skipClosureHeader ver
+   prof <- decodeClosureHeader ver
    st_size <- getWord32le
    st_dirty <- getWord8
    st_marking <- getWord8
@@ -206,7 +201,7 @@ decodeFromBS (RawClosure rc) parser =
 
 decodeAPStack :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeAPStack ver (infot, _) (ClosurePtr cp, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   _smp_header <- getWord64le
   st_size <- getWord
   fun_closure <- getClosurePtr
@@ -227,7 +222,7 @@ decodeStandardLayout :: Version
                      -> (ClosurePtr, RawClosure)
                      -> SizedClosure
 decodeStandardLayout ver extra k (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   -- For the THUNK header
   extra
   pts <- replicateM (fromIntegral (ptrs (decodedTable infot))) getClosurePtr
@@ -237,7 +232,7 @@ decodeStandardLayout ver extra k (infot, _) (_, rc) = decodeFromBS rc $ do
 decodeArrWords :: Version -> (StgInfoTableWithPtr, b)
                -> (a, RawClosure) -> SizedClosure
 decodeArrWords ver  (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   bytes <- getWord64le
   payload <- replicateM (fromIntegral $ bytes `ceilIntDiv` 8) getWord
   return $ GHC.Debug.Types.Closures.ArrWordsClosure infot prof (fromIntegral bytes) (map fromIntegral payload)
@@ -257,7 +252,7 @@ decodeTSO :: Version
           -> (a, RawClosure)
           -> SizedClosure
 decodeTSO ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   link <- getClosurePtr
   global_link <- getClosurePtr
   tsoStack <- getClosurePtr
@@ -289,6 +284,44 @@ decodeTSO ver (infot, _) (_, rc) = decodeFromBS rc $ do
             , prof = Nothing
             , .. })
   return res
+
+parseWhatNext :: Word16 -> WhatNext
+parseWhatNext i = case i of
+  1 -> ThreadRunGHC
+  2 -> ThreadInterpret
+  3 -> ThreadKilled
+  4 -> ThreadComplete
+  _ -> WhatNextUnknownValue i
+
+parseWhyBlocked :: Word16 -> WhyBlocked
+parseWhyBlocked i = case i of
+  0  -> NotBlocked
+  1  -> BlockedOnMVar
+  14 -> BlockedOnMVarRead
+  2  -> BlockedOnBlackHole
+  3  -> BlockedOnRead
+  4  -> BlockedOnWrite
+  5  -> BlockedOnDelay
+  6  -> BlockedOnSTM
+  7  -> BlockedOnDoProc
+  10 -> BlockedOnCCall
+  11 -> BlockedOnCCall_Interruptible
+  12 -> BlockedOnMsgThrowTo
+  13 -> ThreadMigrating
+  _  -> WhyBlockedUnknownValue i
+
+parseTsoFlags :: Word32 -> [TsoFlags]
+parseTsoFlags w =
+  go [ (TsoLocked             , 1)
+     , (TsoBlockx             , 2)
+     , (TsoInterruptible      , 3)
+     , (TsoStoppedOnBreakpoint, 4)
+     , (TsoMarked             , 5)
+     , (TsoSqueezed           , 6)
+     , (TsoAllocLimit         , 7)
+     ]
+  where
+    go xs = [flag | (flag, i) <- xs, testBit w i]
 
 decodeClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeClosure ver i@(itb, _) c
@@ -331,11 +364,11 @@ decodeClosure ver i@(itb, _) c
             decodeMutArr ver i c
         | SMALL_MUT_ARR_PTRS_CLEAN <= ty && ty <= SMALL_MUT_ARR_PTRS_FROZEN_CLEAN ->
             decodeSmallMutArr ver i c
-        | otherwise -> decodeWithLibrary ver i c
+        | otherwise -> error $ "unhandled closure type" ++ show ty
 
 decodeWeakClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeWeakClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  profHeader <- skipClosureHeader ver
+  profHeader <- decodeClosureHeader ver
   cfinalizers <- getClosurePtr
   key <- getClosurePtr
   value <- getClosurePtr
@@ -347,7 +380,7 @@ decodeWeakClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeMVar :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeMVar ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  profHeader <- skipClosureHeader ver
+  profHeader <- decodeClosureHeader ver
   hd <- getClosurePtr
   tl <- getClosurePtr
   val <- getClosurePtr
@@ -355,13 +388,13 @@ decodeMVar ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeMutVar :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeMutVar ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  profHeader <- skipClosureHeader ver
+  profHeader <- decodeClosureHeader ver
   val <- getClosurePtr
   pure $ MutVarClosure infot profHeader val
 
 decodeMutArr :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeMutArr ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  profHeader <- skipClosureHeader ver
+  profHeader <- decodeClosureHeader ver
   nptrs <- getWord64le
   size <- getWord64le
   payload <- replicateM (fromIntegral nptrs) getClosurePtr
@@ -369,7 +402,7 @@ decodeMutArr ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeSmallMutArr :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeSmallMutArr ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  profHeader <- skipClosureHeader ver
+  profHeader <- decodeClosureHeader ver
   nptrs <- getWord64le
   payload <- replicateM (fromIntegral nptrs) getClosurePtr
   pure $ SmallMutArrClosure infot profHeader (fromIntegral nptrs) payload
@@ -378,13 +411,13 @@ decodeIndirectee :: Version
                  -> (StgInfoTableWithPtr -> Maybe ProfHeaderWithPtr -> ClosurePtr -> Closure)
                  -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) -> SizedClosure
 decodeIndirectee ver mk (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   ind <- getClosurePtr
   pure $ mk infot prof ind
 
 decodeBCO :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeBCO ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   instrs <- getClosurePtr
   literals <- getClosurePtr
   bcoptrs <- getClosurePtr
@@ -396,55 +429,13 @@ decodeBCO ver (infot, _) (_, rc) = decodeFromBS rc $ do
 
 decodeThunkSelector :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeThunkSelector ver (infot, _) (_, rc) = decodeFromBS rc $ do
-  prof <- skipClosureHeader ver
+  prof <- decodeClosureHeader ver
   (() <$ getWord)
   selectee <- getClosurePtr
   pure (SelectorClosure infot prof selectee)
 
-decodeWithLibrary :: Version -> (StgInfoTableWithPtr, RawInfoTable)
-                      -> (a, RawClosure)
-                      -> SizedClosure
-decodeWithLibrary ver (itb, RawInfoTable rit) (_, (RawClosure clos)) = unsafePerformIO $ do
-    allocate rit $ \itblPtr -> do
-      allocate clos $ \closPtr -> do
-        let ptr_to_itbl_ptr :: Ptr (Ptr StgInfoTable)
-            ptr_to_itbl_ptr = castPtr closPtr
-        -- The pointer is to the end of the info table (not the start)
-        -- Info table is two words long which is why we subtract 16 from
-        -- the pointer
-        --print (itblPtr, closPtr)
-        poke ptr_to_itbl_ptr (fixTNTC ver itblPtr)
-        -- You should be able to print these addresses in gdb
-        -- and observe the memory layout is identical to the debugee
-        -- process
-        -- Printing this return value can lead to segfaults because the
-        -- pointer for constrDesc won't point to a string after being
-        -- decoded.
-        --print (tipe (decodedTable itb), ptr, closPtr, itblPtr)
-        (!r, !s) <- getClosureRaw (decodedTable itb) closPtr clos
-        -- Mutate back the ByteArray as if we attempt to use it again then
-        -- the itbl pointer will point somewhere into our address space
-        -- rather than the debuggee address space
-        --
-        return $ DCS s . quinmap id id absurd
-                        id
-                        absurd
-                        mkClosurePtr . convertClosure itb
-          $ fmap (fromIntegral @Word @Word64) r
-
-
-fixTNTC :: Version -> Ptr a -> Ptr StgInfoTable
-fixTNTC ver ptr
-  | v_tntc ver  = castPtr $ ptr  `plusPtr` realItblSize ver
-  | otherwise        = castPtr $ ptr
-
-realItblSize :: Version -> Int
-realItblSize Version{..}
-  | v_profiling  = ItblProf.itblSize
-  | otherwise  = Itbl.itblSize
-
 decodeInfoTable :: Version -> RawInfoTable -> StgInfoTable
-decodeInfoTable Version{..} (RawInfoTable itbl) =
+decodeInfoTable ver@Version{..} (RawInfoTable itbl) =
   case runGetOrFail itParser (BSL.fromStrict itbl) of
     Left err -> error ("DEC:" ++ show err ++ printBS itbl)
     Right (_rem, o, v) ->
@@ -452,12 +443,12 @@ decodeInfoTable Version{..} (RawInfoTable itbl) =
       in v
   where
     itParser = do
-      entry <- case v_tntc of
+      _entry <- case v_tntc of
         True -> pure Nothing
         False -> do
           getWord64le -- todo return funptr
           pure Nothing
-      when v_profiling $ do
+      when (isProfiledRTS ver) $ do
         () <$ getWord64le
         () <$ getWord64le
       ptrs <- getWord32le
@@ -466,11 +457,9 @@ decodeInfoTable Version{..} (RawInfoTable itbl) =
       srtlen <- getWord32le
       return $
         StgInfoTable
-        { entry = entry
-        , ptrs = ptrs
+        { ptrs = ptrs
         , nptrs = nptrs
         , tipe = toEnum (fromIntegral tipe)
         , srtlen = srtlen
-        , code = Nothing
         }
 

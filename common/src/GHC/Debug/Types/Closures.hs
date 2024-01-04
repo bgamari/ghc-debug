@@ -36,7 +36,10 @@ module GHC.Debug.Types.Closures (
     , allClosures
     -- * Info Table Representation
     , StgInfoTable(..)
-    , GHC.ClosureType(..)
+    , ClosureType(..)
+    , WhatNext(..)
+    , WhyBlocked(..)
+    , TsoFlags(..)
     , StgInfoTableWithPtr(..)
     -- * Stack Frame Representation
     , DebugStackFrame(..)
@@ -57,22 +60,23 @@ module GHC.Debug.Types.Closures (
     , SrtPayload
     , SrtCont
     , ProfHeader(..)
+    , ProfHeaderWord(..)
     , ProfHeaderWithPtr
     , CCSPayload
     , GenCCSPayload(..)
     , CCPayload(..)
 
     -- * Traversing functions
-    , Quintraversable(..)
-    , quinmap
+    , Hextraversable(..)
+    , hexmap
     ) where
 
 import Prelude -- See note [Why do we import Prelude here?]
 -- TODO: Support profiling
 --import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
-import GHC.Exts.Heap.InfoTable
-import qualified GHC.Exts.Heap as GHC
-import GHC.Exts.Heap.ProfInfo.Types as ProfTypes
+-- import GHC.Exts.Heap.InfoTable
+-- import qualified GHC.Exts.Heap as GHC
+-- import GHC.Exts.Heap.ProfInfo.Types as ProfTypes
 
 
 import Data.Functor.Identity
@@ -90,6 +94,127 @@ import Data.Bitraversable
 import Data.Bifunctor
 import Data.Bifoldable
 
+------------------------------------------------------------------------
+-- GHC Heap
+
+
+data ClosureType
+    = INVALID_OBJECT
+    | CONSTR
+    | CONSTR_1_0
+    | CONSTR_0_1
+    | CONSTR_2_0
+    | CONSTR_1_1
+    | CONSTR_0_2
+    | CONSTR_NOCAF
+    | FUN
+    | FUN_1_0
+    | FUN_0_1
+    | FUN_2_0
+    | FUN_1_1
+    | FUN_0_2
+    | FUN_STATIC
+    | THUNK
+    | THUNK_1_0
+    | THUNK_0_1
+    | THUNK_2_0
+    | THUNK_1_1
+    | THUNK_0_2
+    | THUNK_STATIC
+    | THUNK_SELECTOR
+    | BCO
+    | AP
+    | PAP
+    | AP_STACK
+    | IND
+    | IND_STATIC
+    | RET_BCO
+    | RET_SMALL
+    | RET_BIG
+    | RET_FUN
+    | UPDATE_FRAME
+    | CATCH_FRAME
+    | UNDERFLOW_FRAME
+    | STOP_FRAME
+    | BLOCKING_QUEUE
+    | BLACKHOLE
+    | MVAR_CLEAN
+    | MVAR_DIRTY
+    | TVAR
+    | ARR_WORDS
+    | MUT_ARR_PTRS_CLEAN
+    | MUT_ARR_PTRS_DIRTY
+    | MUT_ARR_PTRS_FROZEN_DIRTY
+    | MUT_ARR_PTRS_FROZEN_CLEAN
+    | MUT_VAR_CLEAN
+    | MUT_VAR_DIRTY
+    | WEAK
+    | PRIM
+    | MUT_PRIM
+    | TSO
+    | STACK
+    | TREC_CHUNK
+    | ATOMICALLY_FRAME
+    | CATCH_RETRY_FRAME
+    | CATCH_STM_FRAME
+    | WHITEHOLE
+    | SMALL_MUT_ARR_PTRS_CLEAN
+    | SMALL_MUT_ARR_PTRS_DIRTY
+    | SMALL_MUT_ARR_PTRS_FROZEN_DIRTY
+    | SMALL_MUT_ARR_PTRS_FROZEN_CLEAN
+    | COMPACT_NFDATA
+    | CONTINUATION
+    | N_CLOSURE_TYPES
+ deriving (Enum, Eq, Ord, Show, Generic)
+
+type HalfWord = Word32 -- TODO support 32 bit
+
+data StgInfoTable = StgInfoTable {
+   ptrs   :: HalfWord,
+   nptrs  :: HalfWord,
+   tipe   :: ClosureType,
+   srtlen :: HalfWord 
+  } deriving (Eq, Show, Generic)
+
+data WhatNext
+  = ThreadRunGHC
+  | ThreadInterpret
+  | ThreadKilled
+  | ThreadComplete
+  | WhatNextUnknownValue Word16 -- ^ Please report this as a bug
+  deriving (Eq, Show, Generic, Ord)
+
+data WhyBlocked
+  = NotBlocked
+  | BlockedOnMVar
+  | BlockedOnMVarRead
+  | BlockedOnBlackHole
+  | BlockedOnRead
+  | BlockedOnWrite
+  | BlockedOnDelay
+  | BlockedOnSTM
+  | BlockedOnDoProc
+  | BlockedOnCCall
+  | BlockedOnCCall_Interruptible
+  | BlockedOnMsgThrowTo
+  | ThreadMigrating
+  | WhyBlockedUnknownValue Word16 -- ^ Please report this as a bug
+  deriving (Eq, Show, Generic, Ord)
+
+data TsoFlags
+  = TsoLocked
+  | TsoBlockx
+  | TsoInterruptible
+  | TsoStoppedOnBreakpoint
+  | TsoMarked
+  | TsoSqueezed
+  | TsoAllocLimit
+  | TsoFlagsUnknownValue Word32 -- ^ Please report this as a bug
+  deriving (Eq, Show, Generic, Ord)
+
+newtype StgTSOProfInfo = StgTSOProfInfo {
+    cccs :: Maybe CCSPtr
+} deriving (Show, Generic, Eq, Ord)
 
 ------------------------------------------------------------------------
 -- Closures
@@ -134,8 +259,9 @@ noSize = unDCS
 dcSize :: DebugClosureWithSize ccs srt pap string s b -> Size
 dcSize = extraDCS
 
-instance Quintraversable (DebugClosureWithExtra x) where
-  quintraverse f g h i j k (DCS x v) = DCS x <$> quintraverse f g h i j k v
+instance Hextraversable (DebugClosureWithExtra x) where
+  hextraverse f g h i j k (DCS x v) = DCS x <$> hextraverse f g h i j k v
+
 
 data StgInfoTableWithPtr = StgInfoTableWithPtr {
                               tableId :: InfoTablePtr
@@ -148,8 +274,15 @@ instance Ord StgInfoTableWithPtr where
 instance Eq StgInfoTableWithPtr where
   t1 == t2 = tableId t1 == tableId t2
 
-data ProfHeader a = ProfHeader { ccs :: a, hp :: Word64 }
+data ProfHeader a = ProfHeader { ccs :: a, hp :: ProfHeaderWord }
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+data ProfHeaderWord
+  = RetainerHeader { trav :: !Bool, retainerSet :: !RetainerSetPtr }
+  | LDVWord { state :: !Bool, creationTime :: !Word32, lastUseTime :: !Word32 }
+  | EraWord Word64
+  | OtherHeader Word64
+  deriving (Eq, Ord, Show)
 
 type ProfHeaderWithPtr = ProfHeader CCSPtr
 
@@ -336,15 +469,15 @@ data DebugClosure ccs srt pap string s b
       , bq :: !b
       , threadLabel :: !(Maybe b)
       -- values
-      , what_next :: GHC.WhatNext
-      , why_blocked :: GHC.WhyBlocked
-      , flags :: [GHC.TsoFlags]
+      , what_next :: WhatNext
+      , why_blocked :: WhyBlocked
+      , flags :: [TsoFlags]
       , threadId :: Word64
       , saved_errno :: Word32
       , dirty :: Word32
       , alloc_limit :: Int64
       , tot_stack_size :: Word32
-      , prof :: Maybe ProfTypes.StgTSOProfInfo
+      , prof :: Maybe StgTSOProfInfo
       }
 
  | StackClosure
@@ -544,8 +677,8 @@ parseConstrDesc input =
                 (top, _:bot) -> parseModOcc (top : acc) bot
     parseModOcc acc str = (acc, str)
 
-class Quintraversable m where
-  quintraverse ::
+class Hextraversable m where
+  hextraverse ::
     Applicative f => (a -> f b)
                   -> (c -> f d)
                   -> (e -> f g)
@@ -555,9 +688,9 @@ class Quintraversable m where
                   ->    m a c e h j l
                   -> f (m b d g i k n)
 
-quinmap :: forall a b c d e f g h i j k l t . Quintraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> (i -> j) -> (k -> l) -> t a c e g i k -> t b d f h j l
-quinmap = coerce
-  (quintraverse :: (a -> Identity b)
+hexmap :: forall a b c d e f g h i j k l t . Hextraversable t => (a -> b) -> (c -> d) -> (e -> f) -> (g -> h) -> (i -> j) -> (k -> l) -> t a c e g i k -> t b d f h j l
+hexmap = coerce
+  (hextraverse :: (a -> Identity b)
               -> (c -> Identity d)
               -> (e -> Identity f)
               -> (g -> Identity h)
@@ -566,14 +699,14 @@ quinmap = coerce
               -> t a c e g i k -> Identity (t b d f h j l))
 
 allClosures :: DebugClosure ccs (GenSrtPayload c) (GenPapPayload c) a (GenStackFrames (GenSrtPayload c) c) c -> [c]
-allClosures c = getConst $ quintraverse (const (Const [])) (traverse (Const . (:[]))) (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
+allClosures c = getConst $ hextraverse (const (Const [])) (traverse (Const . (:[]))) (traverse (Const . (:[]))) (const (Const [])) (traverse (Const . (:[]))) (Const . (:[])) c
 
 data FieldValue b = SPtr b
                   | SNonPtr !Word64 deriving (Show, Traversable, Functor, Foldable, Ord, Eq)
 
 
-instance Quintraversable DebugClosure where
-  quintraverse fccs srt p h f g c =
+instance Hextraversable DebugClosure where
+  hextraverse fccs srt p h f g c =
     case c of
       ConstrClosure a1 ph bs ds str ->
         (\ph1 cs cstr -> ConstrClosure a1 ph1 cs ds cstr) <$> (traverse . traverse) fccs ph <*> traverse g bs <*> h str

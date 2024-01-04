@@ -111,10 +111,10 @@ censusObjectEquiv cps = snd <$> runStateT (traceFromM funcs cps) (ObjectEquivSta
       -- for this cp
       -- Step 1: Decode a bit more of the object, so we can see all the
       -- pointers.
-      s' <- lift $ quintraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc dereferenceStack pure s
+      s' <- lift $ hextraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc dereferenceStack pure s
       -- Step 2: Replace all the pointers in the closure by things they are
       -- equivalent to we have already seen.
-      s''  <- quintraverse pure (traverse rep_c) (traverse rep_c) pure (traverse rep_c) rep_c s'
+      s''  <- hextraverse pure (traverse rep_c) (traverse rep_c) pure (traverse rep_c) rep_c s'
       -- Step 3: Have we seen a closure like this one before?
       modify' (addEquiv cp s'')
 

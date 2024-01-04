@@ -89,7 +89,7 @@ stringAnalysis rroots = (\(_, r, _) -> r) <$> runRWST (traceFromM funcs rroots) 
         process :: ClosurePtr -> SizedClosure
                 -> (RWST Bool () (Map.Map String (S.Set ClosurePtr)) DebugM) ()
         process p_cp clos = do
-          clos' <- lift $ quintraverse pure pure pure dereferenceConDesc return return (noSize clos)
+          clos' <- lift $ hextraverse pure pure pure dereferenceConDesc return return (noSize clos)
           checked <- lift $ check_bin clos'
           if checked
             then do

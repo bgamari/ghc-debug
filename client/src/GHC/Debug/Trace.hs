@@ -92,7 +92,7 @@ traceClosureFromM !k = go
         else do
         sc <- lift $ lift $ dereferenceClosure cp
         ReaderT $ \st -> closTrace k cp sc
-         (runReaderT (() <$ quintraverse pure gosrt gop gocd gos go sc) st)
+         (runReaderT (() <$ hextraverse pure gosrt gop gocd gos go sc) st)
 
 
     gos st = do

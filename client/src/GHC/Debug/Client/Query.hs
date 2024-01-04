@@ -89,12 +89,12 @@ dereferenceClosureC cp = addConstrDesc =<< dereferenceClosure cp
 
 addConstrDesc :: SizedClosure -> DebugM SizedClosureC
 addConstrDesc c =
-  quintraverse pure pure pure dereferenceConDesc pure pure c
+  hextraverse pure pure pure dereferenceConDesc pure pure c
 
 -- Derefence other structures so we just have 'ClosurePtr' at leaves.
 dereferenceToClosurePtr :: SizedClosure -> DebugM SizedClosureP
 dereferenceToClosurePtr c = do
-  quintraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc pure pure c
+  hextraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc pure pure c
 
 
 -- | Decode a closure corresponding to the given 'ClosurePtr'

@@ -55,7 +55,7 @@ censusClosureType = closureCensusBy go
     go :: ClosurePtr -> SizedClosure
        -> DebugM (Maybe (Text, CensusStats))
     go _ s = do
-      d <- quintraverse pure pure pure dereferenceConDesc pure pure s
+      d <- hextraverse pure pure pure dereferenceConDesc pure pure s
       let siz :: Size
           siz = dcSize d
           v =  mkCS siz
@@ -120,9 +120,9 @@ census2LevelClosureType cps = snd <$> runStateT (traceFromM funcs cps) Map.empty
                -> (StateT CensusByClosureType DebugM) ()
                -> (StateT CensusByClosureType DebugM) ()
     closAccum _ s k = do
-      s' <- lift $ quintraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure s
+      s' <- lift $ hextraverse pure dereferenceSRT dereferencePapPayload dereferenceConDesc (bitraverse dereferenceSRT pure <=< dereferenceStack) pure s
       pts <- lift $ mapM dereferenceClosure (allClosures (noSize s'))
-      pts' <- lift $ mapM (quintraverse pure pure pure dereferenceConDesc pure pure) pts
+      pts' <- lift $ mapM (hextraverse pure pure pure dereferenceConDesc pure pure) pts
 
 
       modify' (go s' pts')
@@ -148,7 +148,7 @@ parCensus bs cs =  do
     clos :: ClosurePtr -> SizedClosure -> ()
               -> DebugM ((), MMap.MonoidalMap Text CensusStats, DebugM () -> DebugM ())
     clos _cp sc () = do
-      d <- quintraverse pure dereferenceConDesc pure pure sc
+      d <- hextraverse pure dereferenceConDesc pure pure sc
       let s :: Size
           s = dcSize sc
           v =  mkCS s

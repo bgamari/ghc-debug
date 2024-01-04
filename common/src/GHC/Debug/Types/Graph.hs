@@ -170,7 +170,7 @@ generalBuildHeapGraph deref limit hg addBoxes = do
                 -- get into an infinite loop with cycles in the heap.
                 rec modify' (insertHeapGraph cp (HeapGraphEntry cp c' e))
                     -- Add the resulting closure below to the map (above):
-                    DCS e c' <- quintraverse pure (traverse new_add) (traverse new_add) pure (bitraverse (traverse new_add) new_add) new_add c
+                    DCS e c' <- hextraverse pure (traverse new_add) (traverse new_add) pure (bitraverse (traverse new_add) new_add) new_add c
                 return (Just cp)
 
 -- | Pretty-prints a HeapGraph. The resulting string contains newlines. Example

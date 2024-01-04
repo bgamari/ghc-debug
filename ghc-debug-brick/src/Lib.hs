@@ -95,6 +95,7 @@ module Lib
   , HG.PapHI
   , HG.SrtHI
   , HG.HeapGraphIndex
+  , ProfHeaderWord
     --
   ) where
 
@@ -137,7 +138,7 @@ initialTraversal e = run e $ do
     rs <- request RequestRoots
     let derefFuncM cPtr = do
           c <- GD.dereferenceClosure cPtr
-          quintraverse pure GD.dereferenceSRT GD.dereferencePapPayload GD.dereferenceConDesc (bitraverse GD.dereferenceSRT pure <=< GD.dereferenceStack) pure c
+          hextraverse pure GD.dereferenceSRT GD.dereferencePapPayload GD.dereferenceConDesc (bitraverse GD.dereferenceSRT pure <=< GD.dereferenceStack) pure c
     hg <- case rs of
       [] -> error "Empty roots"
       (x:xs) -> HG.multiBuildHeapGraph derefFuncM Nothing (x :| xs)
@@ -312,9 +313,9 @@ dereferencePtr :: Debuggee -> Ptr -> IO (DebugClosure CCSPtr SrtCont PayloadCont
 dereferencePtr dbg (CP cp) = run dbg (Closure <$> pure cp <*> GD.dereferenceClosure cp)
 dereferencePtr dbg (SP sc) = run dbg (Stack <$> pure sc <*> GD.dereferenceStack sc)
 
-instance Quintraversable DebugClosure where
-  quintraverse p f g h i j (Closure cp c) = Closure cp <$> quintraverse p f g h i j c
-  quintraverse _ p _ _ _ h (Stack sp s) = Stack sp <$> bitraverse p h s
+instance Hextraversable DebugClosure where
+  hextraverse p f g h i j (Closure cp c) = Closure cp <$> hextraverse p f g h i j c
+  hextraverse _ p _ _ _ h (Stack sp s) = Stack sp <$> bitraverse p h s
 
 closureShowAddress :: DebugClosure ccs srt p cd s c -> String
 closureShowAddress (Closure c _) = show c
@@ -372,7 +373,7 @@ closureReferences e (Stack _ stack) = run e $ do
             closures
             -}
 closureReferences e (Closure _ closure) = run e $ do
-  closure' <- quintraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
+  closure' <- hextraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
   let refPtrs = closureReferencesAndLabels (unDCS closure')
   forM refPtrs $ \(label, ptr) -> case ptr of
     Left cPtr -> do
@@ -413,13 +414,13 @@ fillConstrDesc :: Debuggee
                -> DebugClosure ccs srt pap ConstrDescCont s c
                -> IO (DebugClosure ccs srt pap ConstrDesc s c)
 fillConstrDesc e closure = do
-  run e $ GD.quintraverse pure pure pure GD.dereferenceConDesc pure pure closure
+  run e $ GD.hextraverse pure pure pure GD.dereferenceConDesc pure pure closure
 
 -- | Pretty print a closure
 closurePretty :: Debuggee -> DebugClosure CCSPtr InfoTablePtr PayloadCont ConstrDesc s ClosurePtr ->  IO String
 closurePretty _ (Stack _ frames) = return $ (show (length frames) ++ " frames")
 closurePretty dbg (Closure _ closure) = run dbg $  do
-  closure' <- quintraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
+  closure' <- hextraverse pure GD.dereferenceSRT GD.dereferencePapPayload pure pure pure closure
   return $ HG.ppClosure
     (\_ refPtr -> show refPtr)
     0

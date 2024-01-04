@@ -62,6 +62,7 @@ module GHC.Debug.Types.Ptr( -- * InfoTables
                           , blockMaxSize
                           , CCSPtr(..)
                           , CCPtr(..)
+                          , RetainerSetPtr(..)
 
                           -- * Other utility
                           , arrWordsBS
@@ -103,6 +104,11 @@ readInfoTablePtr ('0':'x':s) = case readHex s of
     [(res, "")] -> Just (InfoTablePtr res)
     _ -> Nothing
 readInfoTablePtr _ = Nothing
+
+newtype RetainerSetPtr = RetainerSetPtr Word64
+                   deriving (Eq, Ord)
+                   deriving newtype (Hashable)
+                   deriving (Show, Binary) via ClosurePtr
 
 newtype CCSPtr = CCSPtr Word64
                    deriving (Eq, Ord)

@@ -136,7 +136,7 @@ workerThread n k worker_active ref go oc = DebugM $ do
               sc <- dereferenceClosure cp
               (a', s, cont) <- closTrace k cp sc a
               unsafeLiftIO $ modifyIORef' ref (s <>)
-              cont (() <$ quintraverse goCCS (gosrt r a') (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
+              cont (() <$ hextraverse goCCS (gosrt r a') (gop r a') gocd (gos r a') (goc r . ClosurePtrWithInfo a') sc)
 
     goc r c@(ClosurePtrWithInfo _i cp) =
       let mkey = getMBlockKey cp
