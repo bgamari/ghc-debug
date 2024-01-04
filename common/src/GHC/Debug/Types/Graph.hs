@@ -350,6 +350,7 @@ ppClosure showBox prec c = case c of
     WeakClosure {} -> "_wk" -- TODO
     TVarClosure {} -> "_tvar" -- TODO
     MutPrimClosure {} -> "_mutPrim" -- TODO
+    PrimClosure {} -> "_prim" -- TODO
     UnsupportedClosure {info} -> (show info)
 
 

@@ -135,6 +135,15 @@ decodeMutPrim ver (infot, _) (_, rc) = decodeFromBS rc $ do
   dat <- replicateM kdat (fromIntegral <$> getWord64le)
   return $ (MutPrimClosure infot prof pts dat)
 
+decodePrim :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
+decodePrim ver (infot, _) (_, rc) = decodeFromBS rc $ do
+  prof <- decodeClosureHeader ver
+  let kptrs = fromIntegral (ptrs (decodedTable infot))
+      kdat = fromIntegral (nptrs (decodedTable infot))
+  pts <- replicateM kptrs getClosurePtr
+  dat <- replicateM kdat (fromIntegral <$> getWord64le)
+  return $ (PrimClosure infot prof pts dat)
+
 decodeTrecChunk :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodeTrecChunk ver (infot, _) (_, rc) = decodeFromBS rc $ do
   prof <- decodeClosureHeader ver
@@ -334,6 +343,7 @@ decodeClosure ver i@(itb, _) c
       AP -> decodeAPClosure ver i c
       TVAR -> decodeTVarClosure ver i c
       MUT_PRIM -> decodeMutPrim ver i c
+      PRIM -> decodePrim ver i c
       TREC_CHUNK -> decodeTrecChunk ver i c
       BLOCKING_QUEUE -> decodeBlockingQueue ver i c
       TSO -> decodeTSO ver i c

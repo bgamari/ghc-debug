@@ -483,6 +483,7 @@ closureReferencesAndLabels closure = case closure of
                       ]
   TVarClosure {..} -> [("val", Left current_value)]
   MutPrimClosure {..} -> withArgLables ptrArgs
+  PrimClosure{..} -> withArgLables ptrArgs
   ConstrClosure {..} -> withFieldLables ptrArgs
   ThunkClosure {..} -> [ ("SRT", Left cp) | Just cp <- [getSrt srt]]
                         ++ withArgLables ptrArgs

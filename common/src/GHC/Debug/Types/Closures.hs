@@ -257,6 +257,7 @@ instance Hextraversable (DebugClosureWithExtra x) where
   hextraverse f g h i j k (DCS x v) = DCS x <$> hextraverse f g h i j k v
 
 
+
 data StgInfoTableWithPtr = StgInfoTableWithPtr {
                               tableId :: InfoTablePtr
                             , decodedTable :: StgInfoTable
@@ -516,6 +517,13 @@ data DebugClosure ccs srt pap string s b
     , dataArgs :: ![Word]
     }
 
+  | PrimClosure
+    { info :: !StgInfoTableWithPtr
+    , profHeader :: Maybe (ProfHeader ccs)
+    , ptrArgs :: ![b]
+    , dataArgs :: ![Word]
+    }
+
     -----------------------------------------------------------
     -- Anything else
 
@@ -730,5 +738,6 @@ instance Hextraversable DebugClosure where
         TVarClosure a1 <$> (traverse . traverse) fccs ph <*> g a2 <*> g a3 <*> pure a4
       TRecChunkClosure a1 ph a2 a3 a4 -> TRecChunkClosure a1 <$> (traverse . traverse) fccs ph <*> g a2 <*>  pure a3 <*> traverse (traverse g) a4
       MutPrimClosure a1 ph a2 a3 -> MutPrimClosure a1 <$> (traverse . traverse) fccs ph <*> traverse g a2 <*> pure a3
+      PrimClosure a1 ph a2 a3 -> PrimClosure a1 <$> (traverse . traverse) fccs ph <*> traverse g a2 <*> pure a3
       OtherClosure a1 ph bs ws -> OtherClosure a1 <$> (traverse . traverse) fccs ph <*> traverse g bs <*> pure ws
       UnsupportedClosure i ph -> UnsupportedClosure i <$> (traverse . traverse) fccs ph
