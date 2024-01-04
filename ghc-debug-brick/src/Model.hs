@@ -6,6 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Model
   ( module Model
@@ -20,6 +21,8 @@ import Data.Time
 import System.Directory
 import System.FilePath
 import Data.Text(Text, pack)
+import qualified Data.Text as T
+import Text.Read
 
 import Brick.Forms
 import Brick.BChan
@@ -106,7 +109,7 @@ data InfoInfo = InfoInfo
   , _sourceLocation :: Maybe SourceInformation
   , _closureType :: Maybe Text
   , _constructor :: Maybe Text
-  , _era :: !(Maybe Word64)
+  , _profHeaderInfo :: !(Maybe ProfHeaderWord)
   }
 
 data ClosureDetails = ClosureDetails
@@ -145,6 +148,24 @@ data FooterInputMode = FAddress
                      | FDumpArrWords
                      | FSetResultSize
                      | FRetainerAddress
+                     | FFilterEras
+                     | FFindEra
+                     deriving Show
+
+saveCommand :: FooterInputMode -> Bool
+saveCommand FAddress = True
+saveCommand FSearch = True
+saveCommand FInfoTable = True
+saveCommand FProfile = True
+saveCommand FRetainer = True
+saveCommand FRetainerExact = True
+saveCommand FSnapshot = True
+saveCommand FRetainerArrWords = True
+saveCommand FDumpArrWords = True
+saveCommand FRetainerAddress = True
+saveCommand FFindEra = True
+saveCommand FSetResultSize = False
+saveCommand FFilterEras = False
 
 data Command = Command { commandDescription :: Text
                        , commandKey :: Maybe Vty.Event
@@ -172,6 +193,8 @@ formatFooterMode FDumpArrWords = "dump payload to file: "
 formatFooterMode FSetResultSize = "search result limit (0 for infinity): "
 formatFooterMode FRetainerAddress = "address (0x..): "
 formatFooterMode FSnapshot = "snapshot name: "
+formatFooterMode FFilterEras = "Era range (<era>/<start-era>-<end-era>): "
+formatFooterMode FFindEra = "Era range (<era>/<start-era>-<end-era>): "
 
 data ConnectedMode
   -- | Debuggee is running
@@ -197,13 +220,38 @@ data OperationalState = OperationalState
     -- ^ Tree corresponding to SavedAndGCRoots mode
     , _event_chan :: BChan Event
     , _resultSize :: Maybe Int
+    , _eraRange :: Maybe EraRange
+    , _previousCommand :: Maybe (FooterInputMode, Form Text () Name)
     }
+
+parseEraRange :: Text -> Maybe EraRange
+parseEraRange range = case T.splitOn "-" range of
+  [nstr] -> case readMaybe (T.unpack nstr) of
+    Just n -> Just $ EraRange n n
+    Nothing -> Nothing
+  [start,end] -> case (T.unpack start, T.unpack end) of
+    ("", "") -> Just $ EraRange 0 maxBound
+    ("", readMaybe -> Just e) -> Just $ EraRange 0 e
+    (readMaybe -> Just s, "") -> Just $ EraRange s maxBound
+    (readMaybe -> Just s, readMaybe -> Just e) -> Just $ EraRange s e
+    _ -> Nothing
+  _ -> Nothing
+
+showEraRange :: Maybe EraRange -> String
+showEraRange Nothing = "[0,∞)"
+showEraRange (Just (EraRange s e))
+  | s == e = show s
+  | otherwise = "[" ++ show s ++ "," ++ go e
+  where
+    go n
+      | n == maxBound = "∞)"
+      | otherwise = show n ++ "]"
 
 osSize :: OperationalState -> Int
 osSize os = fromMaybe (Prelude.length (getIOTreeRoots $ _treeSavedAndGCRoots os)) $ treeLength (_treeMode os)
 
 pauseModeTree :: (forall a . (a -> Widget Name) -> IOTree a Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _) = case mode of
+pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _ _ _) = case mode of
   SavedAndGCRoots render -> k render roots
   Retainer render r -> k render r
   Searched render r -> k render r

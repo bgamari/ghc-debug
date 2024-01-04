@@ -1,7 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainersOfInfoTable, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack', findRetainersOfArrWords) where
+module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainersOfInfoTable, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack', findRetainersOfArrWords, EraRange(..), findRetainersOfEra) where
 
 import GHC.Debug.Client
 import Control.Monad.State
@@ -11,22 +11,41 @@ import Control.Monad
 
 import qualified Data.Set as Set
 import Control.Monad.RWS
+import Data.Word
 
 addOne :: [ClosurePtr] -> (Maybe Int, [[ClosurePtr]]) -> (Maybe Int, [[ClosurePtr]])
 addOne _ (Just 0, cp) = (Just 0, cp)
 addOne cp (n, cps)    = (subtract 1 <$> n, cp:cps)
 
+data EraRange
+  = EraRange { startEra :: Word64, endEra :: Word64} -- inclusive
+  deriving (Eq, Ord, Show)
+
+inEraRange :: Word64 -> Maybe EraRange -> Bool
+inEraRange _ Nothing = True
+inEraRange n (Just (EraRange s e)) = s <= n && n <= e
+
+profHeaderInEraRange :: Maybe (ProfHeader a) -> Maybe EraRange -> Bool
+profHeaderInEraRange Nothing _ = True
+profHeaderInEraRange (Just ph) eras
+  = case hp ph of
+      EraWord w -> w `inEraRange` eras
+      _ -> True -- Don't filter if no era profiling
+
 findRetainersOf :: Maybe Int
+                -> Maybe EraRange
                 -> [ClosurePtr]
                 -> [ClosurePtr]
                 -> DebugM [[ClosurePtr]]
-findRetainersOf limit cps bads = findRetainers limit cps (\cp _ -> return (cp `Set.member` bad_set))
+findRetainersOf limit eras cps bads = findRetainers limit eras cps (\cp _ -> return (cp `Set.member` bad_set))
   where
     bad_set = Set.fromList bads
 
-findRetainersOfConstructor :: Maybe Int -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
-findRetainersOfConstructor limit rroots con_name =
-  findRetainers limit rroots go
+findRetainersOfConstructor :: Maybe Int
+                           -> Maybe EraRange
+                           -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
+findRetainersOfConstructor limit eras rroots con_name =
+  findRetainers limit eras rroots go
   where
     go _ sc =
       case noSize sc of
@@ -35,9 +54,12 @@ findRetainersOfConstructor limit rroots con_name =
           return $ cname == con_name
         _ -> return $ False
 
-findRetainersOfConstructorExact :: Maybe Int -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
-findRetainersOfConstructorExact limit rroots clos_name =
-  findRetainers limit rroots go
+findRetainersOfConstructorExact
+  :: Maybe Int
+  -> Maybe EraRange
+  -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
+findRetainersOfConstructorExact limit eras rroots clos_name =
+  findRetainers limit eras rroots go
   where
     go _ sc = do
       loc <- getSourceInfo (tableId (info (noSize sc)))
@@ -47,18 +69,33 @@ findRetainersOfConstructorExact limit rroots clos_name =
 
           return $ (infoName cur_loc) == clos_name
 
-findRetainersOfArrWords :: Maybe Int -> [ClosurePtr] -> Word -> DebugM [[ClosurePtr]]
-findRetainersOfArrWords limit rroots lim =
-  findRetainers limit rroots go
+findRetainersOfEra
+  :: Maybe Int
+  -> EraRange
+  -> [ClosurePtr] -> DebugM [[ClosurePtr]]
+findRetainersOfEra limit eras rroots =
+  findRetainers limit (Just eras) rroots go
+  where
+    go _ _ = return True
+
+findRetainersOfArrWords
+  :: Maybe Int
+  -> Maybe EraRange
+  -> [ClosurePtr] -> Word -> DebugM [[ClosurePtr]]
+findRetainersOfArrWords limit eras rroots lim =
+  findRetainers limit eras rroots go
   where
     go _ sc = do
       case noSize sc of
         ArrWordsClosure {..} -> return $ bytes >= lim
         _ -> return False
 
-findRetainersOfInfoTable :: Maybe Int -> [ClosurePtr] -> InfoTablePtr -> DebugM [[ClosurePtr]]
-findRetainersOfInfoTable limit rroots info_ptr =
-  findRetainers limit rroots go
+findRetainersOfInfoTable
+  :: Maybe Int
+  -> Maybe EraRange
+  -> [ClosurePtr] -> InfoTablePtr -> DebugM [[ClosurePtr]]
+findRetainersOfInfoTable limit eras rroots info_ptr =
+  findRetainers limit eras rroots go
   where
     go _ sc = return $ tableId (info (noSize sc)) == info_ptr
 
@@ -66,8 +103,10 @@ findRetainersOfInfoTable limit rroots info_ptr =
 -- Note: This function can be quite slow! The first argument is a limit to
 -- how many paths to find. You should normally set this to a small number
 -- such as 10.
-findRetainers :: Maybe Int -> [ClosurePtr] -> (ClosurePtr -> SizedClosure -> DebugM Bool) -> DebugM [[ClosurePtr]]
-findRetainers limit rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM funcs rroots) [] (limit, [])
+findRetainers :: Maybe Int
+  -> Maybe EraRange
+  -> [ClosurePtr] -> (ClosurePtr -> SizedClosure -> DebugM Bool) -> DebugM [[ClosurePtr]]
+findRetainers limit eras rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM funcs rroots) [] (limit, [])
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
@@ -86,7 +125,7 @@ findRetainers limit rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM fun
     closAccum _ (noSize -> WeakClosure {}) _ = return ()
     closAccum cp sc k = do
       b <- lift $ p cp sc
-      if b
+      if (b && (profHeader $ noSize sc) `profHeaderInEraRange` eras)
         then do
           ctx <- ask
           modify' (addOne (cp: ctx))

@@ -71,6 +71,7 @@ module Lib
   , retainersOfConstructorExact
   , retainersOfArrWords
   , retainersOfInfoTable
+  , retainersOfEra
 
   -- * Counting
   , arrWordsAnalysis
@@ -97,6 +98,7 @@ module Lib
   , HG.HeapGraphIndex
   , ProfHeaderWord
     --
+  , EraRange(..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -109,6 +111,7 @@ import qualified GHC.Debug.Client.Monad as GD
 import qualified GHC.Debug.Client.Query as GD
 import qualified GHC.Debug.Profile as GD
 import qualified GHC.Debug.Retainers as GD
+import           GHC.Debug.Retainers (EraRange(..))
 import qualified GHC.Debug.Snapshot as GD
 import qualified GHC.Debug.Strings as GD
 import qualified GHC.Debug.Types.Graph as HG
@@ -234,39 +237,46 @@ snapshot dbg fp = do
   createDirectoryIfMissing True dir
   GD.run dbg $ GD.snapshot (dir </> fp)
 
-retainersOfAddress :: Maybe Int -> Maybe [ClosurePtr] -> Debuggee -> [ClosurePtr] -> IO [[Closure]]
-retainersOfAddress n mroots dbg address = do
+retainersOfAddress :: Maybe Int -> Maybe EraRange -> Maybe [ClosurePtr] -> Debuggee -> [ClosurePtr] -> IO [[Closure]]
+retainersOfAddress n eras mroots dbg address = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots
-    stack <- GD.findRetainersOf n roots address
+    stack <- GD.findRetainersOf n eras roots address
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfConstructor :: Maybe Int -> Maybe [ClosurePtr] -> Debuggee -> String -> IO [[Closure]]
-retainersOfConstructor n mroots dbg con_name = do
+retainersOfConstructor :: Maybe Int -> Maybe EraRange -> Maybe [ClosurePtr] -> Debuggee -> String -> IO [[Closure]]
+retainersOfConstructor n eras mroots dbg con_name = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots
-    stack <- GD.findRetainersOfConstructor n roots con_name
+    stack <- GD.findRetainersOfConstructor n eras roots con_name
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfConstructorExact :: Maybe Int -> Debuggee -> String -> IO [[Closure]]
-retainersOfConstructorExact n dbg con_name = do
+retainersOfConstructorExact :: Maybe Int -> Maybe EraRange -> Debuggee -> String -> IO [[Closure]]
+retainersOfConstructorExact n eras dbg con_name = do
   run dbg $ do
     roots <- GD.gcRoots
-    stack <- GD.findRetainersOfConstructorExact n roots con_name
+    stack <- GD.findRetainersOfConstructorExact n eras roots con_name
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfArrWords :: Maybe Int -> Debuggee -> Word -> IO [[Closure]]
-retainersOfArrWords n dbg lim = do
+retainersOfEra :: Maybe Int -> Debuggee -> EraRange -> IO [[Closure]]
+retainersOfEra n dbg eras = do
   run dbg $ do
     roots <- GD.gcRoots
-    stack <- GD.findRetainersOfArrWords n roots lim
+    stack <- GD.findRetainersOfEra n eras roots
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
-retainersOfInfoTable :: Maybe Int -> Maybe [ClosurePtr] -> Debuggee -> InfoTablePtr -> IO [[Closure]]
-retainersOfInfoTable n mroots dbg info_ptr = do
+retainersOfArrWords :: Maybe Int -> Maybe EraRange -> Debuggee -> Word -> IO [[Closure]]
+retainersOfArrWords n eras dbg lim = do
+  run dbg $ do
+    roots <- GD.gcRoots
+    stack <- GD.findRetainersOfArrWords n eras roots lim
+    traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
+
+retainersOfInfoTable :: Maybe Int -> Maybe EraRange -> Maybe [ClosurePtr] -> Debuggee -> InfoTablePtr -> IO [[Closure]]
+retainersOfInfoTable n eras mroots dbg info_ptr = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots
-    stack <- GD.findRetainersOfInfoTable n roots info_ptr
+    stack <- GD.findRetainersOfInfoTable n eras roots info_ptr
     traverse (\cs -> zipWith Closure cs <$> (GD.dereferenceClosures cs)) stack
 
 arrWordsAnalysis :: Maybe [ClosurePtr] -> Debuggee -> IO (Map.Map BS.ByteString (Set.Set ClosurePtr))
