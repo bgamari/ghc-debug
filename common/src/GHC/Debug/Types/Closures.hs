@@ -72,12 +72,6 @@ module GHC.Debug.Types.Closures (
     ) where
 
 import Prelude -- See note [Why do we import Prelude here?]
--- TODO: Support profiling
---import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
--- import GHC.Exts.Heap.InfoTable
--- import qualified GHC.Exts.Heap as GHC
--- import GHC.Exts.Heap.ProfInfo.Types as ProfTypes
-
 
 import Data.Functor.Identity
 import Data.Int

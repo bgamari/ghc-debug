@@ -23,12 +23,6 @@ import qualified Data.ByteString.Internal as BSI
 import Data.ByteString.Short.Internal (ShortByteString(..), toShort)
 import qualified Data.ByteString.Lazy as BSL
 
--- import GHC.Exts.Heap (GenClosure)
--- import GHC.Exts.Heap hiding (GenClosure(..), Closure)
--- import qualified GHC.Exts.Heap.InfoTable as Itbl
--- import qualified GHC.Exts.Heap.InfoTableProf as ItblProf
--- import GHC.Exts.Heap.FFIClosures
-
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Version
 import GHC.Debug.Types.Closures
@@ -86,8 +80,14 @@ decodeHeader mode hp = case mode of
   OtherProfiling -> OtherHeader hp
   -- TODO handle 32 bit
   RetainerProfiling -> RetainerHeader (testBit hp 0) (RetainerSetPtr $ clearBit hp 0)
-  LDVProfiling -> LDVWord (testBit hp 60) (fromIntegral ((hp .&. 0x0FFFFFFFC0000000) `shiftR` 30)) (fromIntegral (hp .&. 0x000000003FFFFFFF))
+  LDVProfiling -> LDVWord (testBit hp 60) (fromIntegral ((hp .&. _LDV_CREATE_MASK) `shiftR` _LDV_SHIFT)) (fromIntegral (hp .&. _LDV_LAST_MASK))
   EraProfiling -> EraWord hp
+
+_LDV_CREATE_MASK, _LDV_LAST_MASK :: Word64
+_LDV_CREATE_MASK = 0x0FFFFFFFC0000000
+_LDV_LAST_MASK = 0x000000003FFFFFFF
+_LDV_SHIFT :: Int
+_LDV_SHIFT = 30
 
 decodePAPClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure
 decodePAPClosure ver (infot, _) (_, rc) = decodeFromBS rc $ do
@@ -327,8 +327,7 @@ decodeClosure :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, 
 decodeClosure ver i@(itb, _) c
   -- MP: It was far easier to implement the decoding of these closures in
   -- ghc-heap using binary rather than patching GHC and going through that
-  -- dance. I think in the future it's better to do this for all the
-  -- closures... it's simpler and probably much faster.
+  -- dance.
   = case tipe (decodedTable itb) of
       ARR_WORDS -> decodeArrWords ver i c
       PAP -> decodePAPClosure ver i c
@@ -459,7 +458,76 @@ decodeInfoTable ver@Version{..} (RawInfoTable itbl) =
         StgInfoTable
         { ptrs = ptrs
         , nptrs = nptrs
-        , tipe = toEnum (fromIntegral tipe)
+        , tipe = decodeInfoTableType tipe
         , srtlen = srtlen
         }
+
+decodeInfoTableType :: Word32 -> ClosureType
+decodeInfoTableType i = case i of
+  0 -> INVALID_OBJECT
+  1 -> CONSTR
+  2 -> CONSTR_1_0
+  3 -> CONSTR_0_1
+  4 -> CONSTR_2_0
+  5 -> CONSTR_1_1
+  6 -> CONSTR_0_2
+  7 -> CONSTR_NOCAF
+  8 -> FUN
+  9 -> FUN_1_0
+  10 -> FUN_0_1
+  11 -> FUN_2_0
+  12 -> FUN_1_1
+  13 -> FUN_0_2
+  14 -> FUN_STATIC
+  15 -> THUNK
+  16 -> THUNK_1_0
+  17 -> THUNK_0_1
+  18 -> THUNK_2_0
+  19 -> THUNK_1_1
+  20 -> THUNK_0_2
+  21 -> THUNK_STATIC
+  22 -> THUNK_SELECTOR
+  23 -> BCO
+  24 -> AP
+  25 -> PAP
+  26 -> AP_STACK
+  27 -> IND
+  28 -> IND_STATIC
+  29 -> RET_BCO
+  30 -> RET_SMALL
+  31 -> RET_BIG
+  32 -> RET_FUN
+  33 -> UPDATE_FRAME
+  34 -> CATCH_FRAME
+  35 -> UNDERFLOW_FRAME
+  36 -> STOP_FRAME
+  37 -> BLOCKING_QUEUE
+  38 -> BLACKHOLE
+  39 -> MVAR_CLEAN
+  40 -> MVAR_DIRTY
+  41 -> TVAR
+  42 -> ARR_WORDS
+  43 -> MUT_ARR_PTRS_CLEAN
+  44 -> MUT_ARR_PTRS_DIRTY
+  45 -> MUT_ARR_PTRS_FROZEN_DIRTY
+  46 -> MUT_ARR_PTRS_FROZEN_CLEAN
+  47 -> MUT_VAR_CLEAN
+  48 -> MUT_VAR_DIRTY
+  49 -> WEAK
+  50 -> PRIM
+  51 -> MUT_PRIM
+  52 -> TSO
+  53 -> STACK
+  54 -> TREC_CHUNK
+  55 -> ATOMICALLY_FRAME
+  56 -> CATCH_RETRY_FRAME
+  57 -> CATCH_STM_FRAME
+  58 -> WHITEHOLE
+  59 -> SMALL_MUT_ARR_PTRS_CLEAN
+  60 -> SMALL_MUT_ARR_PTRS_DIRTY
+  61 -> SMALL_MUT_ARR_PTRS_FROZEN_DIRTY
+  62 -> SMALL_MUT_ARR_PTRS_FROZEN_CLEAN
+  63 -> COMPACT_NFDATA
+  64 -> CONTINUATION
+  65 -> N_CLOSURE_TYPES
 

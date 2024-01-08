@@ -408,6 +408,8 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
           if (RtsFlags.ProfFlags.doHeapProfile == 0) {
             ver_payload2 = 1;
 #if defined(PROFILING)
+          // newer versions of GHC have doingRetainerProfiling(), doingLDVProfilingFunctions etc.
+          // but we don't use them because they aren't exported in GHCs <= 9.8.
           } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_RETAINER || RtsFlags.ProfFlags.retainerSelector != NULL) {
             ver_payload2 = 2;
           } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_LDV || RtsFlags.ProfFlags.bioSelector != NULL) {
