@@ -13,52 +13,18 @@ module GHC.Debug.Decode ( decodeClosure
                         , decodeInfoTable
                         ) where
 
-import GHC.Ptr (plusPtr, castPtr)
-import GHC.Exts hiding (closureSize#) -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
+ -- (Addr#, unsafeCoerce#, Any, Word#, ByteArray#)
 import GHC.Word
-import GHC.IO.Unsafe
-import Foreign.Storable
 
-import qualified Data.ByteString.Internal as BSI
-import Data.ByteString.Short.Internal (ShortByteString(..), toShort)
 import qualified Data.ByteString.Lazy as BSL
 
 import GHC.Debug.Types.Ptr
 import GHC.Debug.Types.Version
 import GHC.Debug.Types.Closures
-import Foreign.Marshal.Alloc    (allocaBytes)
-import Foreign.ForeignPtr       (withForeignPtr)
 import Data.Binary.Get as B
 import Data.Binary
 import Control.Monad
-import Data.Void
-import Control.DeepSeq
-import Foreign.Marshal.Utils (copyBytes)
-import Data.Functor
 import Data.Bits
-
-import qualified Data.ByteString as B
-
-foreign import prim "unpackClosurePtrzh" unpackClosurePtr# ::
-              Addr# -> (# ByteArray# #)
-
-foreign import prim "closureSizezh" closureSize# ::
-              Addr# -> (# Word# #)
-
--- | Allow access directly to the chunk of memory used by a bytestring
-allocate :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
-allocate = allocateByCopy
-
-
--- | Allocate a bytestring directly into memory and return a pointer to the
--- allocated buffer
-allocateByCopy :: BSI.ByteString -> (Ptr a -> IO a) -> IO a
-allocateByCopy (BSI.PS fp o l) action =
- allocaBytes l $ \buf ->
-   withForeignPtr fp $ \p -> do
-     --print (fp, o, l)
-     copyBytes buf (p `plusPtr` o) (fromIntegral l)
-     action (castPtr buf)
 
 decodeClosureHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
 decodeClosureHeader ver = do
@@ -251,10 +217,10 @@ ceilIntDiv :: Integral a => a -> a -> a
 ceilIntDiv a b = (a + b - 1) `div` b
 
 tsoVersionChanged :: Version -> Bool
-tsoVersionChanged (Version maj min _ _) = (maj > 905) || (maj == 905 && min >= 20220925)
+tsoVersionChanged (Version majv minv _ _) = (majv > 905) || (majv == 905 && minv >= 20220925)
 
 weakNotNull :: Version -> Bool
-weakNotNull (Version maj min _ _) = (maj > 904) || (maj == 904 && min >= 2)
+weakNotNull (Version majv minv _ _) = (majv > 904) || (majv == 904 && minv >= 2)
 
 decodeTSO :: Version
           -> (StgInfoTableWithPtr, RawInfoTable)
