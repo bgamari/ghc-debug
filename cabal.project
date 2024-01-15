@@ -3,3 +3,5 @@ packages: common, stub, client, test, dyepack-test, ghc-debug-brick, convention
 -- If you see a Cmm lexical error, then comment out this line
 -- debug-info: 3
 
+allow-newer: bitwise:base
+

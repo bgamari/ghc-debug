@@ -26,7 +26,8 @@ executable ghc-debug-brick
                      , filepath
                      , microlens-platform
                      , text
-                     , vty < 6
+                     , vty-crossplatform
+                     , vty >= 6
                      , time
                      , deepseq
                      , microlens
