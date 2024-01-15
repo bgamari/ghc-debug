@@ -31,6 +31,7 @@ import Data.Ord (comparing)
 import qualified Data.Ord as Ord
 import qualified Data.Sequence as Seq
 import qualified Graphics.Vty as Vty
+import qualified Graphics.Vty.CrossPlatform as Vty
 import Graphics.Vty.Input.Events (Key(..))
 import Lens.Micro.Platform
 import System.Directory

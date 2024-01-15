@@ -37,7 +37,7 @@ library
                        dom-lt ^>= 0.2,
                        unordered-containers ^>= 0.2,
                        ghc-debug-convention == 0.5.0.0,
-                       deepseq ^>= 1.4
+                       deepseq >= 1.4
 
   hs-source-dirs:      src
   cmm-sources:         cbits/GhcDebug.cmm
