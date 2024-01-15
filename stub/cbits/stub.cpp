@@ -220,7 +220,7 @@ static StgStablePtr rts_saved_closure = NULL;
 
 
 extern "C"
-void pause_mutator(Response &resp) {
+pid_t pause_mutator() {
   trace("pausing mutator\n");
   pid_t pid;
   if (use_fork){
@@ -235,13 +235,13 @@ void pause_mutator(Response &resp) {
         r_poll_pause_resp->finish(RESP_OKAY);
     }
     paused = true;
-    resp.finish(RESP_OKAY);
   }
   else {
     int status = 0;
     waitpid(pid,&status,0);
     use_fork = false;
   }
+  return pid;
 }
 
 extern "C"
@@ -441,7 +441,10 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             resp.finish(RESP_ALREADY_PAUSED);
         } else {
             trace("fork?: %s\n", use_fork ? "yes" : "no");
-            pause_mutator(resp);
+            if(pause_mutator() == 0) {
+                // only respond in the child
+                resp.finish(RESP_OKAY);
+            }
         }
         break;
 
