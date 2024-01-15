@@ -20,6 +20,11 @@ flag trace
   Default:     False
   Manual:      True
 
+flag eras
+  Description: Enable eras
+  Default:     False
+  Manual:      True
+
 library
   exposed-modules:     GHC.Debug.Stub
   hs-source-dirs:      src
@@ -35,4 +40,6 @@ library
   cpp-options: -DTHREADED_RTS
   if flag(trace)
     cxx-options: -DTRACE
+  if flag(eras)
+    cxx-options: -DGHC_SUPPORTS_ERAS
 

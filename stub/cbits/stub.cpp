@@ -414,7 +414,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
             ver_payload2 = 2;
           } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_LDV || RtsFlags.ProfFlags.bioSelector != NULL) {
             ver_payload2 = 3;
-#if MIN_VERSION_GLASGOW_HASKELL(9,9,0,0)
+#if defined(GHC_SUPPORTS_ERAS)
           } else if (RtsFlags.ProfFlags.doHeapProfile == HEAP_BY_ERA || RtsFlags.ProfFlags.eraSelector != NULL) {
             ver_payload2 = 4;
 #endif
