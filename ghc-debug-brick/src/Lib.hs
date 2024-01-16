@@ -97,7 +97,7 @@ module Lib
   , EraRange(..)
   , GD.profHeaderInEraRange
   , tipe
-  , Filter(..)
+  , ClosureFilter(..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty(..))
@@ -110,7 +110,7 @@ import qualified GHC.Debug.Client.Monad as GD
 import qualified GHC.Debug.Client.Query as GD
 import qualified GHC.Debug.Profile as GD
 import qualified GHC.Debug.Retainers as GD
-import           GHC.Debug.Retainers (EraRange(..), Filter(..))
+import           GHC.Debug.Retainers (EraRange(..), ClosureFilter(..))
 import qualified GHC.Debug.Snapshot as GD
 import qualified GHC.Debug.Strings as GD
 import qualified GHC.Debug.Types.Graph as HG
@@ -236,7 +236,7 @@ snapshot dbg fp = do
   createDirectoryIfMissing True dir
   GD.run dbg $ GD.snapshot (dir </> fp)
 
-retainersOf :: Maybe Int -> Filter -> Maybe [ClosurePtr] -> Debuggee -> IO [[Closure]]
+retainersOf :: Maybe Int -> ClosureFilter -> Maybe [ClosurePtr] -> Debuggee -> IO [[Closure]]
 retainersOf n filter mroots dbg = do
   run dbg $ do
     roots <- maybe GD.gcRoots return mroots

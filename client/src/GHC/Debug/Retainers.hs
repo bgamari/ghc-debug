@@ -15,7 +15,7 @@ module GHC.Debug.Retainers
   , findRetainersOfArrWords
   , EraRange(..)
   , profHeaderInEraRange
-  , Filter(..)
+  , ClosureFilter(..)
   , findRetainersOfEra) where
 
 import Prelude hiding (filter)
@@ -49,7 +49,7 @@ profHeaderInEraRange (Just ph) eras
       EraWord w -> w `inEraRange` eras
       _ -> True -- Don't filter if no era profiling
 
-data Filter
+data ClosureFilter
  = ConstructorDescFilter (ConstrDesc -> Bool)
  | InfoFilter (StgInfoTable -> Bool)
  | InfoPtrFilter (InfoTablePtr -> Bool)
@@ -57,15 +57,15 @@ data Filter
  | SizeFilter (Size -> Bool)
  | ProfHeaderFilter (Maybe ProfHeaderWithPtr -> Bool)
  | AddressFilter (ClosurePtr -> Bool)
- | ParentFilter Int Filter
- | SomeParentFilter (Maybe Int) Filter
- | AllParentFilter (Maybe Int) Filter
- | AndFilter Filter Filter
- | OrFilter Filter Filter
- | NotFilter Filter
+ | ParentFilter Int ClosureFilter
+ | SomeParentFilter (Maybe Int) ClosureFilter
+ | AllParentFilter (Maybe Int) ClosureFilter
+ | AndFilter ClosureFilter ClosureFilter
+ | OrFilter ClosureFilter ClosureFilter
+ | NotFilter ClosureFilter
  | PureFilter Bool
 
-matchesFilter :: Filter -> ClosurePtr -> SizedClosure -> [ClosurePtr] -> DebugM Bool
+matchesFilter :: ClosureFilter -> ClosurePtr -> SizedClosure -> [ClosurePtr] -> DebugM Bool
 matchesFilter filter ptr sc parents = case filter of
   ConstructorDescFilter p -> case noSize sc of
     ConstrClosure _ _ _ _ cd -> do
@@ -164,7 +164,7 @@ findRetainersOfInfoTable limit rroots info_ptr =
 -- how many paths to find. You should normally set this to a small number
 -- such as 10.
 findRetainers :: Maybe Int
-  -> Filter
+  -> ClosureFilter
   -> [ClosurePtr] -> DebugM [[ClosurePtr]]
 findRetainers limit filter rroots = (\(_, r, _) -> snd r) <$> runRWST (traceFromM funcs rroots) [] (limit, [])
   where

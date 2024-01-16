@@ -176,7 +176,6 @@ renderInfoInfo :: InfoInfo -> [Widget Name]
 renderInfoInfo info' =
   maybe [] renderSourceInformation (_sourceLocation info')
     ++ profHeaderInfo
-    ++ [labelled "type" $ vLimit 1 (str $ show $ _closureType info')]
     -- TODO these aren't actually implemented yet
     -- , txt $ "Type             "
     --       <> fromMaybe "" (_closureType =<< cd)
@@ -210,10 +209,10 @@ labelled lbl w =
 renderUIFilter :: UIFilter -> Widget Name
 renderUIFilter (UIAddressFilter x)     = labelled "Closure address" (str (show x))
 renderUIFilter (UIInfoAddressFilter x) = labelled "Info table address" (str (show x))
-renderUIFilter (UIConstructorFilter x) = labelled "Constructor name" (str (show x))
-renderUIFilter (UIInfoNameFilter x)    = labelled "Constructor name (exact)" (str (show x))
+renderUIFilter (UIConstructorFilter x) = labelled "Constructor name" (str x)
+renderUIFilter (UIInfoNameFilter x)    = labelled "Constructor name (exact)" (str x)
 renderUIFilter (UIEraFilter  x)        = labelled "Era range" (str (showEraRange x))
-renderUIFilter (UISizeFilter x)        = labelled "Size (lower bound)" (str (show x))
+renderUIFilter (UISizeFilter x)        = labelled "Size (lower bound)" (str (show $ getSize x))
 renderUIFilter (UIClosureTypeFilter x) = labelled "Closure type" (str (show x))
 
 
@@ -655,24 +654,6 @@ commandPickerMode =
     (list CommandPicker_List commandList 1)
     commandList
 
-filterPicker :: OverlayMode
-filterPicker =
-  CommandPicker
-    (newForm [(\w -> forceAttr inputAttr w) @@= editTextField id Overlay (Just 1)] "")
-    (list FilterPicker_List filterList 1)
-    filterList
-
-filterList :: Seq.Seq Command
-filterList =
-  [ Command "Address" Nothing (const $ modify $ footerMode .~ footerInput (FAddress False))
-  , Command "Info Table Ptr" Nothing (const $ modify $ footerMode .~ footerInput (FInfoTable False))
-  , Command "Constructor name" Nothing (const $ modify $ footerMode .~ footerInput (FRetainer False))
-  , Command "Closure name" Nothing (const $ modify $ footerMode .~ footerInput (FRetainerExact False))
-  , Command "Era" Nothing (const $ modify $ footerMode .~ footerInput (FFilterEras False))
-  , Command "Closure size" Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureSize)
-  , Command "Closure type" Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureType)
-  ]
-
 savedAndGCRoots :: TreeMode
 savedAndGCRoots = SavedAndGCRoots renderClosureDetails
 
@@ -681,8 +662,6 @@ commandList :: Seq.Seq Command
 commandList =
   [ mkCommand "Show key bindings" (Vty.EvKey (KChar '?') [])
             (modify $ keybindingsMode .~ KeybindingsShown)
-  , Command "Add filter" Nothing
-            (const $ modify $ keybindingsMode .~ filterPicker)
   , Command "Clear filters" Nothing
             (const $ modify $ clearFilters)
   , mkCommand "Saved/GC Roots" (Vty.EvKey (KChar 's') [Vty.MCtrl])
@@ -690,17 +669,17 @@ commandList =
   , Command "Search" (Just $ Vty.EvKey (KChar 'c') [Vty.MCtrl])
              searchWithCurrentFilters
   , mkCommand "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FAddress True))
+            (modify $ footerMode .~ footerInput (FClosureAddress True))
   , mkCommand "Find Info Table" (Vty.EvKey (KChar 'i') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FInfoTable True))
+            (modify $ footerMode .~ footerInput (FInfoTableAddress True))
   , mkCommand "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FProfile)
   , mkCommand "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FRetainer True))
+            (modify $ footerMode .~ footerInput (FConstructorName True))
   , mkCommand "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FRetainerExact True))
+            (modify $ footerMode .~ footerInput (FClosureName True))
   , mkCommand "Find Retainers of large ARR_WORDS" (Vty.EvKey (KChar 'g') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FRetainerArrWords True))
+            (modify $ footerMode .~ footerInput (FArrWordsSize True))
   , mkCommand "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FDumpArrWords)
   , mkCommand "Set search limit (default 100)" (Vty.EvKey (KChar 'l') [Vty.MCtrl])
@@ -710,6 +689,13 @@ commandList =
   , Command "ARR_WORDS Count" Nothing arrWordsAction
   , Command "Filter eras" Nothing
             (\_ -> modify $ footerMode .~ footerInput (FFilterEras True))
+  , Command "Add filter for address"          Nothing (const $ modify $ footerMode .~ footerInput (FClosureAddress False))
+  , Command "Add filter for info table ptr"   Nothing (const $ modify $ footerMode .~ footerInput (FInfoTableAddress False))
+  , Command "Add filter for constructor name" Nothing (const $ modify $ footerMode .~ footerInput (FConstructorName False))
+  , Command "Add filter for closure name"     Nothing (const $ modify $ footerMode .~ footerInput (FClosureName False))
+  , Command "Add filter for era"              Nothing (const $ modify $ footerMode .~ footerInput (FFilterEras False))
+  , Command "Add filter for closure size"     Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureSize)
+  , Command "Add filter for closure type"     Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureType)
   ]
 
 
@@ -817,11 +803,11 @@ dispatchFooterInput :: Debuggee
                     -> FooterInputMode
                     -> Form Text () Name
                     -> EventM n OperationalState ()
-dispatchFooterInput dbg (FAddress run) form = filterOrRun dbg form run readClosurePtr (pure . UIAddressFilter)
-dispatchFooterInput dbg (FInfoTable run) form = filterOrRun dbg form run readInfoTablePtr (pure . UIInfoAddressFilter)
-dispatchFooterInput dbg (FRetainer run) form = filterOrRun dbg form run Just (pure . UIConstructorFilter)
-dispatchFooterInput dbg (FRetainerExact run) form = filterOrRun dbg form run Just (pure . UIInfoNameFilter)
-dispatchFooterInput dbg (FRetainerArrWords run) form = filterOrRun dbg form run readMaybe (\size -> [UIClosureTypeFilter Debug.ARR_WORDS, UISizeFilter size])
+dispatchFooterInput dbg (FClosureAddress run) form = filterOrRun dbg form run readClosurePtr (pure . UIAddressFilter)
+dispatchFooterInput dbg (FInfoTableAddress run) form = filterOrRun dbg form run readInfoTablePtr (pure . UIInfoAddressFilter)
+dispatchFooterInput dbg (FConstructorName run) form = filterOrRun dbg form run Just (pure . UIConstructorFilter)
+dispatchFooterInput dbg (FClosureName run) form = filterOrRun dbg form run Just (pure . UIInfoNameFilter)
+dispatchFooterInput dbg (FArrWordsSize run) form = filterOrRun dbg form run readMaybe (\size -> [UIClosureTypeFilter Debug.ARR_WORDS, UISizeFilter size])
 dispatchFooterInput dbg (FFilterEras run) form = filterOrRun dbg form run (parseEraRange . T.pack) (pure . UIEraFilter)
 dispatchFooterInput dbg FFilterClosureSize form = filterOrRun dbg form False readMaybe (pure . UISizeFilter)
 dispatchFooterInput dbg FFilterClosureType form = filterOrRun dbg form False readMaybe (pure . UIClosureTypeFilter)

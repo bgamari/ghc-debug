@@ -137,11 +137,11 @@ isFocusedFooter :: FooterMode -> Bool
 isFocusedFooter (FooterInput {}) = True
 isFocusedFooter _ = False
 
-data FooterInputMode = FAddress Bool
-                     | FInfoTable Bool
-                     | FRetainer Bool
-                     | FRetainerExact Bool
-                     | FRetainerArrWords Bool
+data FooterInputMode = FClosureAddress Bool
+                     | FInfoTableAddress Bool
+                     | FConstructorName Bool
+                     | FClosureName Bool
+                     | FArrWordsSize Bool
                      | FFilterEras Bool
                      | FFilterClosureType
                      | FFilterClosureSize
@@ -166,11 +166,11 @@ data OverlayMode = KeybindingsShown
 
 
 formatFooterMode :: FooterInputMode -> Text
-formatFooterMode (FAddress _) = "address (0x..): "
-formatFooterMode (FInfoTable _) = "info table pointer (0x..): "
-formatFooterMode (FRetainer _) = "constructor name: "
-formatFooterMode (FRetainerExact _) = "closure name: "
-formatFooterMode (FRetainerArrWords _) = "size (bytes): "
+formatFooterMode (FClosureAddress _) = "address (0x..): "
+formatFooterMode (FInfoTableAddress _) = "info table pointer (0x..): "
+formatFooterMode (FConstructorName _) = "constructor name: "
+formatFooterMode (FClosureName _) = "closure name: "
+formatFooterMode (FArrWordsSize _) = "size (bytes): "
 formatFooterMode (FFilterEras _) = "era range (<era>/<start-era>-<end-era>): "
 formatFooterMode FDumpArrWords = "dump payload to file: "
 formatFooterMode FSetResultSize = "search result limit (0 for infinity): "
@@ -224,10 +224,10 @@ data UIFilter =
   | UISizeFilter Size
   | UIClosureTypeFilter ClosureType
 
-uiFiltersToFilter :: [UIFilter] -> Filter
+uiFiltersToFilter :: [UIFilter] -> ClosureFilter
 uiFiltersToFilter = foldr AndFilter (PureFilter True) . map uiFilterToFilter
 
-uiFilterToFilter :: UIFilter -> Filter
+uiFilterToFilter :: UIFilter -> ClosureFilter
 uiFilterToFilter (UIAddressFilter x)     = AddressFilter (== x)
 uiFilterToFilter (UIInfoAddressFilter x) = InfoPtrFilter (== x)
 uiFilterToFilter (UIConstructorFilter x) = ConstructorDescFilter ((== x) . name)
