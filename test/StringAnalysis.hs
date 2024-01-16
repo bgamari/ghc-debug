@@ -78,7 +78,7 @@ string_prog e = do
         print cools
         stacks <- run e $ do
           roots <- gcRoots
-          rets <- findRetainersOf (Just (S.size cools)) Nothing roots (S.toList cools)
+          rets <- findRetainersOf (Just (S.size cools)) roots (S.toList cools)
           rets' <- traverse (\c -> (show (head c),) <$> (addLocationToStack' c)) rets
           return rets'
         displayRetainerStack' stacks

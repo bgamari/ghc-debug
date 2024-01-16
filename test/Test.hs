@@ -331,7 +331,7 @@ analyseFragmentation interval e = loop
         let small_blocks = S.fromList (Map.keys (Map.filter is_small mbb_census2))
         let pred cp = applyBlockMask cp `S.member` small_blocks
         cen <- censusClosureTypeF (not . pred) rs
-        rets <- findRetainers (Just 10) rs (\cp _ -> return $ pred cp)
+        rets <- findRetainers (Just 10) (AddressFilter pred) rs
         rets' <- traverse addLocationToStack rets
         let bads = findBadPtrs mb_census
         -- Print how many objects there are in the badly fragmented blocks
@@ -1074,125 +1074,46 @@ p52 e = forever $ do
   resume e
   threadDelay 100_000
 
-modIface rroots = findRetainers (Just 100) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "HomeModInfo"
-        _ -> return $ False
+modIface rroots = findRetainersOfConstructor (Just 100) rroots "HomeModInfo" 
 
-tyConApp rroots = findRetainers (Just 100) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure _ _ ps _ cd -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "TyConApp"
-        _ -> return $ False
+tyConApp rroots = findRetainersOfConstructor (Just 100) rroots "TyConApp"
 
-typeEnv rroots = findRetainers (Just 300) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure _ _ ps _ cd -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "TypeEnv"
-        _ -> return $ False
+typeEnv rroots = findRetainersOfConstructor (Just 300) rroots "TypeEnv"
 
-tcModResult rroots = findRetainers (Just 10) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "TcModuleResult"
-        _ -> return $ False
+tcModResult rroots = findRetainersOfConstructor (Just 10) rroots "TcModuleResult"
 
-tcGblEnv rroots = findRetainers (Just 10) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "TcGblEnv"
-        _ -> return $ False
+tcGblEnv rroots = findRetainersOfConstructor (Just 10) rroots "TcGblEnv"
 
-moduleCon rroots = findRetainers (Just 100) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "Module"
-        _ -> return $ False
+moduleCon rroots = findRetainersOfConstructor (Just 100) rroots "Module"
 
-splitEnv rroots = findRetainers (Just 10) rroots go
-  where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == "MkSplitUniqSupply"
-        _ -> return $ False
+splitEnv rroots = findRetainersOfConstructor (Just 10) rroots "MkSplitUniqSupply"
 
-dmaps rroots = findRetainers (Just 10) rroots go
+dmaps rroots = findRetainers (Just 10) (ConstructorDescFilter go) rroots
   where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _  mname cname <- dereferenceConDesc cd
-          return $ mname == "Data.Dependent.Map.Internal" && (cname == "Tip" || cname == "Bin")
-        _ -> return $ False
+    go (ConstrDesc _  mname cname) = mname == "Data.Dependent.Map.Internal" && (cname == "Tip" || cname == "Bin")
 
-roleContext rroots = findRetainers (Just 2) rroots go
+roleContext rroots = findRetainers (Just 2) (ConstructorDescFilter go) rroots
   where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _  mname cname <- dereferenceConDesc cd
-          return $ mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "RebuildableSchemaCache")
-        _ -> return $ False
+    go (ConstrDesc _  mname cname) = mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "RebuildableSchemaCache")
 
-buildOutputs rroots = findRetainers (Just 2) rroots go
+buildOutputs rroots = findRetainers (Just 2) (ConstructorDescFilter go) rroots
   where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _  mname cname <- dereferenceConDesc cd
-          return $ mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "BuildOutputs")
-        _ -> return $ False
+    go (ConstrDesc _  mname cname) = mname == "Hasura.RQL.DDL.Schema.Cache.Common" && (cname == "BuildOutputs")
 
-hashTuples rroots = findRetainers (Just 100) rroots go
+hashTuples rroots = findRetainers (Just 100) (AndFilter (ConstructorDescFilter go) (InfoSourceFilter go1)) rroots
   where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _  mname cname <- dereferenceConDesc cd
-          loc <- getSourceLoc sc
-          return $ (cname == "(,)" && ((infoLabel <$> loc) == Just "pruneDanglingDependents"))
-        _ -> return $ False
+    go (ConstrDesc _  mname cname) = cname == "(,)"
+    go1 loc = infoLabel loc == "pruneDanglingDependents"
 
-enumTuples rroots = findRetainers (Just 100) rroots go
+enumTuples rroots = findRetainers (Just 100) (AndFilter (ConstructorDescFilter go) (InfoSourceFilter go1)) rroots
   where
-    go cp sc =
-      case noSize sc of
-        ConstrClosure{constrDesc = cd} -> do
-          ConstrDesc _  mname cname <- dereferenceConDesc cd
-          loc <- getSourceLoc sc
---          return $ (cname == "(,)" && ((infoLabel <$> loc) == Just "tableSelectColumnsEnum"))
-          return $ (cname == "InputFieldsParser" && ((infoLabel <$> loc) == Just "orderByExp"))
-        _ -> return $ False
+    go (ConstrDesc _  mname cname) = cname == "InputFieldsParser"
+    go1 loc = infoLabel loc == "orderByExp"
 
-thunks_f rroots = findRetainers (Just 100) rroots go
+thunks_f rroots = findRetainers (Just 100) (AndFilter (InfoFilter go) (InfoSourceFilter go1)) rroots
   where
-    go cp sc =
-      case noSize sc of
-        ThunkClosure {} -> do
-          loc <- getSourceLoc sc
-          return $ (((infoName <$> loc) == Just "f_info"))
-        _ -> return $ False
+    go tab = tipe tab `elem` [THUNK .. THUNK_STATIC]
+    go1 loc = infoName loc == "f_info"
 
 findTcModResult rroots = execStateT (traceFromM funcs rroots) []
   where

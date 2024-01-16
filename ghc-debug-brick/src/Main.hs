@@ -687,7 +687,7 @@ commandList =
   , mkCommand "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSnapshot)
   , Command "ARR_WORDS Count" Nothing arrWordsAction
-  , Command "Filter eras" Nothing
+  , Command "Find closures by era" Nothing
             (\_ -> modify $ footerMode .~ footerInput (FFilterEras True))
   , Command "Add filter for address"          Nothing (const $ modify $ footerMode .~ footerInput (FClosureAddress False))
   , Command "Add filter for info table ptr"   Nothing (const $ modify $ footerMode .~ footerInput (FInfoTableAddress False))
