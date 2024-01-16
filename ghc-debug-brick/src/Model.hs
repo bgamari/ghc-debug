@@ -137,35 +137,19 @@ isFocusedFooter :: FooterMode -> Bool
 isFocusedFooter (FooterInput {}) = True
 isFocusedFooter _ = False
 
-data FooterInputMode = FAddress
-                     | FSearch
-                     | FInfoTable
+data FooterInputMode = FAddress Bool
+                     | FInfoTable Bool
+                     | FRetainer Bool
+                     | FRetainerExact Bool
+                     | FRetainerArrWords Bool
+                     | FFilterEras Bool
+                     | FFilterClosureType
+                     | FFilterClosureSize
                      | FProfile
-                     | FRetainer
-                     | FRetainerExact
                      | FSnapshot
-                     | FRetainerArrWords
                      | FDumpArrWords
                      | FSetResultSize
-                     | FRetainerAddress
-                     | FFilterEras
-                     | FFindEra
                      deriving Show
-
-saveCommand :: FooterInputMode -> Bool
-saveCommand FAddress = True
-saveCommand FSearch = True
-saveCommand FInfoTable = True
-saveCommand FProfile = True
-saveCommand FRetainer = True
-saveCommand FRetainerExact = True
-saveCommand FSnapshot = True
-saveCommand FRetainerArrWords = True
-saveCommand FDumpArrWords = True
-saveCommand FRetainerAddress = True
-saveCommand FFindEra = True
-saveCommand FSetResultSize = False
-saveCommand FFilterEras = False
 
 data Command = Command { commandDescription :: Text
                        , commandKey :: Maybe Vty.Event
@@ -177,24 +161,23 @@ mkCommand desc key dispatch = Command desc (Just key) (\_ -> dispatch)
 
 data OverlayMode = KeybindingsShown
                  -- TODO: Abstract the "CommandPicker" into it's own module
-                 | CommandPicker (Form Text () Name) (GenericList Name Seq Command)
+                 | CommandPicker (Form Text () Name) (GenericList Name Seq Command) (Seq Command)
                  | NoOverlay
 
 
 formatFooterMode :: FooterInputMode -> Text
-formatFooterMode FAddress = "address (0x..): "
-formatFooterMode FSearch = "search: "
-formatFooterMode FInfoTable = "info table pointer (0x..): "
-formatFooterMode FProfile = "filename: "
-formatFooterMode FRetainer = "constructor name: "
-formatFooterMode FRetainerExact = "closure name: "
-formatFooterMode FRetainerArrWords = "size (bytes): "
+formatFooterMode (FAddress _) = "address (0x..): "
+formatFooterMode (FInfoTable _) = "info table pointer (0x..): "
+formatFooterMode (FRetainer _) = "constructor name: "
+formatFooterMode (FRetainerExact _) = "closure name: "
+formatFooterMode (FRetainerArrWords _) = "size (bytes): "
+formatFooterMode (FFilterEras _) = "era range (<era>/<start-era>-<end-era>): "
 formatFooterMode FDumpArrWords = "dump payload to file: "
 formatFooterMode FSetResultSize = "search result limit (0 for infinity): "
-formatFooterMode FRetainerAddress = "address (0x..): "
+formatFooterMode FFilterClosureSize = "closure size (bytes): "
+formatFooterMode FFilterClosureType = "closure type: "
 formatFooterMode FSnapshot = "snapshot name: "
-formatFooterMode FFilterEras = "Era range (<era>/<start-era>-<end-era>): "
-formatFooterMode FFindEra = "Era range (<era>/<start-era>-<end-era>): "
+formatFooterMode FProfile = "filename: "
 
 data ConnectedMode
   -- | Debuggee is running
@@ -220,9 +203,38 @@ data OperationalState = OperationalState
     -- ^ Tree corresponding to SavedAndGCRoots mode
     , _event_chan :: BChan Event
     , _resultSize :: Maybe Int
-    , _eraRange :: Maybe EraRange
-    , _previousCommand :: Maybe (FooterInputMode, Form Text () Name)
+    , _filters :: [UIFilter]
     }
+
+clearFilters :: OperationalState -> OperationalState
+clearFilters os = os { _filters = [] }
+
+setFilters :: [UIFilter] -> OperationalState -> OperationalState
+setFilters fs os = os {_filters = fs}
+
+addFilters :: [UIFilter] -> OperationalState -> OperationalState
+addFilters fs os = os {_filters = fs ++ _filters os}
+
+data UIFilter =
+    UIAddressFilter ClosurePtr
+  | UIInfoAddressFilter InfoTablePtr
+  | UIConstructorFilter String
+  | UIInfoNameFilter String
+  | UIEraFilter EraRange
+  | UISizeFilter Size
+  | UIClosureTypeFilter ClosureType
+
+uiFiltersToFilter :: [UIFilter] -> Filter
+uiFiltersToFilter = foldr AndFilter (PureFilter True) . map uiFilterToFilter
+
+uiFilterToFilter :: UIFilter -> Filter
+uiFilterToFilter (UIAddressFilter x)     = AddressFilter (== x)
+uiFilterToFilter (UIInfoAddressFilter x) = InfoPtrFilter (== x)
+uiFilterToFilter (UIConstructorFilter x) = ConstructorDescFilter ((== x) . name)
+uiFilterToFilter (UIInfoNameFilter x)    = InfoSourceFilter ((== x) . infoName)
+uiFilterToFilter (UIEraFilter  x)        = ProfHeaderFilter (`profHeaderInEraRange` (Just x))
+uiFilterToFilter (UISizeFilter x)        = SizeFilter (>= x)
+uiFilterToFilter (UIClosureTypeFilter x)        = InfoFilter ((== x) . tipe)
 
 parseEraRange :: Text -> Maybe EraRange
 parseEraRange range = case T.splitOn "-" range of
@@ -237,9 +249,8 @@ parseEraRange range = case T.splitOn "-" range of
     _ -> Nothing
   _ -> Nothing
 
-showEraRange :: Maybe EraRange -> String
-showEraRange Nothing = "[0,∞)"
-showEraRange (Just (EraRange s e))
+showEraRange :: EraRange -> String
+showEraRange (EraRange s e)
   | s == e = show s
   | otherwise = "[" ++ show s ++ "," ++ go e
   where
@@ -251,7 +262,7 @@ osSize :: OperationalState -> Int
 osSize os = fromMaybe (Prelude.length (getIOTreeRoots $ _treeSavedAndGCRoots os)) $ treeLength (_treeMode os)
 
 pauseModeTree :: (forall a . (a -> Widget Name) -> IOTree a Name -> r) -> OperationalState -> r
-pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _ _ _) = case mode of
+pauseModeTree k (OperationalState _ mode _kb _footer _from roots _ _ _) = case mode of
   SavedAndGCRoots render -> k render roots
   Retainer render r -> k render r
   Searched render r -> k render r

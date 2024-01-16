@@ -1,13 +1,30 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 -- | Functions for computing retainers
-module GHC.Debug.Retainers(findRetainersOf, findRetainersOfConstructor, findRetainersOfConstructorExact, findRetainersOfInfoTable, findRetainers, addLocationToStack, displayRetainerStack, addLocationToStack', displayRetainerStack', findRetainersOfArrWords, EraRange(..), findRetainersOfEra) where
+module GHC.Debug.Retainers
+  ( findRetainers
+  , findRetainersOf
+  , findRetainersOfConstructor
+  , findRetainersOfConstructorExact
+  , findRetainersOfInfoTable
+  , findRetainers
+  , addLocationToStack
+  , displayRetainerStack
+  , addLocationToStack'
+  , displayRetainerStack'
+  , findRetainersOfArrWords
+  , EraRange(..)
+  , profHeaderInEraRange
+  , Filter(..)
+  , findRetainersOfEra) where
 
+import Prelude hiding (filter)
 import GHC.Debug.Client
 import Control.Monad.State
 import GHC.Debug.Trace
 import GHC.Debug.Types.Graph
 import Control.Monad
+import Control.Monad.Extra
 
 import qualified Data.Set as Set
 import Control.Monad.RWS
@@ -32,81 +49,124 @@ profHeaderInEraRange (Just ph) eras
       EraWord w -> w `inEraRange` eras
       _ -> True -- Don't filter if no era profiling
 
+data Filter
+ = ConstructorDescFilter (ConstrDesc -> Bool)
+ | InfoFilter (StgInfoTable -> Bool)
+ | InfoPtrFilter (InfoTablePtr -> Bool)
+ | InfoSourceFilter (SourceInformation -> Bool)
+ | SizeFilter (Size -> Bool)
+ | ProfHeaderFilter (Maybe ProfHeaderWithPtr -> Bool)
+ | AddressFilter (ClosurePtr -> Bool)
+ | ParentFilter Int Filter
+ | SomeParentFilter (Maybe Int) Filter
+ | AllParentFilter (Maybe Int) Filter
+ | AndFilter Filter Filter
+ | OrFilter Filter Filter
+ | NotFilter Filter
+ | PureFilter Bool
+
+matchesFilter :: Filter -> ClosurePtr -> SizedClosure -> [ClosurePtr] -> DebugM Bool
+matchesFilter filter ptr sc parents = case filter of
+  ConstructorDescFilter p -> case noSize sc of
+    ConstrClosure _ _ _ _ cd -> do
+      cd' <- dereferenceConDesc cd
+      return $ p cd'
+    _ -> pure False
+  InfoFilter p -> pure $ p (decodedTable (info (noSize sc)))
+  InfoPtrFilter p -> pure $ p (tableId (info (noSize sc)))
+  InfoSourceFilter p -> do
+    loc <- getSourceInfo (tableId (info (noSize sc)))
+    case loc of
+      Nothing -> return False
+      Just cur_loc -> pure $ p cur_loc
+  SizeFilter p -> pure $ p (dcSize sc)
+  ProfHeaderFilter p -> pure $ p (profHeader $ noSize sc)
+  AddressFilter p -> pure $ p ptr
+  ParentFilter idx f -> case drop idx parents of
+    [] -> pure False
+    (p:rest) -> do
+      sc_p <- dereferenceClosure p
+      matchesFilter f p sc_p rest
+  SomeParentFilter within f -> do
+    let to_consider = foldr (\x xs -> (x, map fst xs) : xs) []
+                    $ maybe parents (`take` parents) within
+    flip anyM to_consider $ \(cur,parents_cur) -> do
+      sc_cur <- dereferenceClosure cur
+      matchesFilter f cur sc_cur parents_cur
+  AllParentFilter within f -> do
+    let to_consider = foldr (\x xs -> (x, map fst xs) : xs) []
+                    $ maybe parents (`take` parents) within
+    flip allM to_consider $ \(cur,parents_cur) -> do
+      sc_cur <- dereferenceClosure cur
+      matchesFilter f cur sc_cur parents_cur
+  AndFilter f1 f2 -> do
+    r1 <- matchesFilter f1 ptr sc parents
+    case r1 of
+      False -> pure False
+      True -> matchesFilter f2 ptr sc parents
+  OrFilter f1 f2 -> do
+    r1 <- matchesFilter f1 ptr sc parents
+    case r1 of
+      True -> pure True
+      False -> matchesFilter f2 ptr sc parents
+  NotFilter f1  -> do
+    r1 <- matchesFilter f1 ptr sc parents
+    pure (not r1)
+  PureFilter b -> pure b
+
 findRetainersOf :: Maybe Int
-                -> Maybe EraRange
                 -> [ClosurePtr]
                 -> [ClosurePtr]
                 -> DebugM [[ClosurePtr]]
-findRetainersOf limit eras cps bads = findRetainers limit eras cps (\cp _ -> return (cp `Set.member` bad_set))
+findRetainersOf limit cps bads =
+  findRetainers limit (AddressFilter (`Set.member` bad_set)) cps
   where
     bad_set = Set.fromList bads
 
 findRetainersOfConstructor :: Maybe Int
-                           -> Maybe EraRange
                            -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
-findRetainersOfConstructor limit eras rroots con_name =
-  findRetainers limit eras rroots go
-  where
-    go _ sc =
-      case noSize sc of
-        ConstrClosure _ _ _ _ cd -> do
-          ConstrDesc _ _  cname <- dereferenceConDesc cd
-          return $ cname == con_name
-        _ -> return $ False
+findRetainersOfConstructor limit rroots con_name =
+  findRetainers limit (ConstructorDescFilter ((== con_name) . name)) rroots
 
 findRetainersOfConstructorExact
   :: Maybe Int
-  -> Maybe EraRange
   -> [ClosurePtr] -> String -> DebugM [[ClosurePtr]]
-findRetainersOfConstructorExact limit eras rroots clos_name =
-  findRetainers limit eras rroots go
-  where
-    go _ sc = do
-      loc <- getSourceInfo (tableId (info (noSize sc)))
-      case loc of
-        Nothing -> return False
-        Just cur_loc ->
-
-          return $ (infoName cur_loc) == clos_name
+findRetainersOfConstructorExact limit rroots clos_name =
+  findRetainers limit (InfoSourceFilter ((== clos_name) . infoName)) rroots
 
 findRetainersOfEra
   :: Maybe Int
   -> EraRange
   -> [ClosurePtr] -> DebugM [[ClosurePtr]]
 findRetainersOfEra limit eras rroots =
-  findRetainers limit (Just eras) rroots go
+  findRetainers limit filter rroots
   where
-    go _ _ = return True
+    filter = ProfHeaderFilter (`profHeaderInEraRange` (Just eras))
 
 findRetainersOfArrWords
   :: Maybe Int
-  -> Maybe EraRange
-  -> [ClosurePtr] -> Word -> DebugM [[ClosurePtr]]
-findRetainersOfArrWords limit eras rroots lim =
-  findRetainers limit eras rroots go
+  -> [ClosurePtr] -> Size -> DebugM [[ClosurePtr]]
+findRetainersOfArrWords limit rroots lim =
+  findRetainers limit filter rroots
   where
-    go _ sc = do
-      case noSize sc of
-        ArrWordsClosure {..} -> return $ bytes >= lim
-        _ -> return False
+    -- TODO : this is the size of the entire closure, not the size of the ArrWords
+    filter = AndFilter (InfoFilter ((== ARR_WORDS) . tipe))
+                       (SizeFilter (>= lim))
 
 findRetainersOfInfoTable
   :: Maybe Int
-  -> Maybe EraRange
   -> [ClosurePtr] -> InfoTablePtr -> DebugM [[ClosurePtr]]
-findRetainersOfInfoTable limit eras rroots info_ptr =
-  findRetainers limit eras rroots go
-  where
-    go _ sc = return $ tableId (info (noSize sc)) == info_ptr
+findRetainersOfInfoTable limit rroots info_ptr =
+  findRetainers limit (InfoPtrFilter (== info_ptr)) rroots
 
 -- | From the given roots, find any path to one of the given pointers.
 -- Note: This function can be quite slow! The first argument is a limit to
 -- how many paths to find. You should normally set this to a small number
 -- such as 10.
 findRetainers :: Maybe Int
-  -> Maybe EraRange
-  -> [ClosurePtr] -> (ClosurePtr -> SizedClosure -> DebugM Bool) -> DebugM [[ClosurePtr]]
-findRetainers limit eras rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFromM funcs rroots) [] (limit, [])
+  -> Filter
+  -> [ClosurePtr] -> DebugM [[ClosurePtr]]
+findRetainers limit filter rroots = (\(_, r, _) -> snd r) <$> runRWST (traceFromM funcs rroots) [] (limit, [])
   where
     funcs = TraceFunctions {
                papTrace = const (return ())
@@ -124,19 +184,17 @@ findRetainers limit eras rroots p = (\(_, r, _) -> snd r) <$> runRWST (traceFrom
                -> RWST [ClosurePtr] () (Maybe Int, [[ClosurePtr]]) DebugM ()
     closAccum _ (noSize -> WeakClosure {}) _ = return ()
     closAccum cp sc k = do
-      b <- lift $ p cp sc
-      if (b && (profHeader $ noSize sc) `profHeaderInEraRange` eras)
-        then do
-          ctx <- ask
-          modify' (addOne (cp: ctx))
-          local (cp:) k
-          -- Don't call k, there might be more paths to the pointer but we
-          -- probably just care about this first one.
-        else do
-          (lim, _) <- get
-          case lim of
-            Just 0 -> return ()
-            _ -> local (cp:) k
+      ctx <- ask
+      b <- lift $ matchesFilter filter cp sc ctx
+      if b
+      then do
+        modify' (addOne (cp: ctx))
+        local (cp:) k
+      else do
+        (lim, _) <- get
+        case lim of
+          Just 0 -> return ()
+          _ -> local (cp:) k
 
 addLocationToStack :: [ClosurePtr] -> DebugM [(SizedClosureP, Maybe SourceInformation)]
 addLocationToStack r = do

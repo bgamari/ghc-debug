@@ -20,7 +20,7 @@ import Brick
 import Brick.BChan
 import Brick.Forms
 import Brick.Widgets.Border
-import Brick.Widgets.Center (centerLayer, hCenter)
+import Brick.Widgets.Center (centerLayer, hCenter, vCenter)
 import Brick.Widgets.List
 import Control.Applicative
 import Control.Monad (forever, forM, when)
@@ -95,13 +95,15 @@ myAppDraw (AppState majorState' _) =
         , withAttr menuAttr $ vLimit 1 $ hBox [txt "(p): Pause | (ESC): Exit", fill ' ']
         ]]
 
-      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ _ _ _ _ _)) -> let
-        in kbOverlay kbmode $ [mainBorder ("ghc-debug - Paused - " <> socketName socket) $ vBox
+      (PausedMode os@(OperationalState _ treeMode' kbmode fmode _ _ _ _ filters)) -> let
+        in kbOverlay kbmode
+          $ [mainBorder ("ghc-debug - Paused - " <> socketName socket) $ vBox
           [ -- Current closure details
-              joinBorders $ borderWithLabel (txt "Closure Details") $
-              vLimit 9 $
-              pauseModeTree (\r io -> maybe emptyWidget r (ioTreeSelection io)) os
-              <=> fill ' '
+              joinBorders $ (borderWithLabel (txt "Closure Details") $
+              (vLimit 9 $
+                pauseModeTree (\r io -> maybe emptyWidget r (ioTreeSelection io)) os
+                <=> fill ' '))
+              <+> (filterWindow filters)
           , -- Tree
             joinBorders $ borderWithLabel
               (txt $ case treeMode' of
@@ -110,15 +112,18 @@ myAppDraw (AppState majorState' _) =
                 Searched {} -> "Search Results"
               )
               (pauseModeTree (\_ -> renderIOTree) os)
-          , footer (osSize os) (_resultSize os) (_eraRange os) fmode
+          , footer (osSize os) (_resultSize os) fmode
           ]]
 
   where
 
   kbOverlay :: OverlayMode -> [Widget Name] -> [Widget Name]
   kbOverlay KeybindingsShown ws = centerLayer kbWindow : ws
-  kbOverlay (CommandPicker inp cmd_list) ws  = centerLayer (cpWindow inp cmd_list) : ws
+  kbOverlay (CommandPicker inp cmd_list _) ws  = centerLayer (cpWindow inp cmd_list) : ws
   kbOverlay NoOverlay ws = ws
+
+  filterWindow [] = emptyWidget
+  filterWindow xs = borderWithLabel (txt "Filters") $ hLimit 50 $ vBox $ map renderUIFilter xs
 
   cpWindow :: Form Text () Name -> GenericList Name Seq.Seq Command -> Widget Name
   cpWindow input cmd_list = hLimit (actual_width + 2) $ vLimit (length commandList + 4) $
@@ -202,6 +207,15 @@ labelled :: Text -> Widget Name -> Widget Name
 labelled lbl w =
   hLimit 17 (txtLabel lbl <+> vLimit 1 (fill ' ')) <+> w <+> vLimit 1 (fill ' ')
 
+renderUIFilter :: UIFilter -> Widget Name
+renderUIFilter (UIAddressFilter x)     = labelled "Closure address" (str (show x))
+renderUIFilter (UIInfoAddressFilter x) = labelled "Info table address" (str (show x))
+renderUIFilter (UIConstructorFilter x) = labelled "Constructor name" (str (show x))
+renderUIFilter (UIInfoNameFilter x)    = labelled "Constructor name (exact)" (str (show x))
+renderUIFilter (UIEraFilter  x)        = labelled "Era range" (str (showEraRange x))
+renderUIFilter (UISizeFilter x)        = labelled "Size (lower bound)" (str (show x))
+renderUIFilter (UIClosureTypeFilter x) = labelled "Closure type" (str (show x))
+
 
 renderClosureDetails :: ClosureDetails -> Widget Name
 renderClosureDetails (cd@(ClosureDetails {})) =
@@ -218,14 +232,13 @@ renderClosureDetails (cd@(ClosureDetails {})) =
 renderClosureDetails ((LabelNode n)) = txt n
 renderClosureDetails ((InfoDetails info')) = vLimit 8 $ vBox $ renderInfoInfo info'
 
-footer :: Int -> Maybe Int -> Maybe EraRange -> FooterMode -> Widget Name
-footer n m eras mode = vLimit 1 $
+footer :: Int -> Maybe Int -> FooterMode -> Widget Name
+footer n m mode = vLimit 1 $
  case mode of
    FooterMessage t -> withAttr menuAttr $ hBox [txt t, fill ' ']
    FooterInfo -> withAttr menuAttr $ hBox $ [padRight Max $ txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (?): full keybindings"]
                                          ++ [padLeft (Pad 1) $ txt $
-                                                  (T.pack $ "eras:" ++ showEraRange eras  ++ " | ")
-                                               <> (T.pack (show n) <> " items/" <> maybe "∞" (T.pack . show) m <> " max")]
+                                               (T.pack (show n) <> " items/" <> maybe "∞" (T.pack . show) m <> " max")]
    FooterInput _im form -> renderForm form
 
 footerInput :: FooterInputMode -> FooterMode
@@ -338,8 +351,7 @@ myAppHandleEvent brickEvent = do
                                             rootsTree
                                             eventChan
                                             (Just 100)
-                                            Nothing
-                                            Nothing))
+                                            []))
 
 
 
@@ -592,7 +604,7 @@ handleMain dbg e = do
           case e of
             VtyEvent (Vty.EvKey _ _) -> put $ os & keybindingsMode .~ NoOverlay
             _ -> put os
-        CommandPicker form cmd_list -> do
+        CommandPicker form cmd_list orig_cmds -> do
           -- Overlapping commands are up/down so handle those just via list, otherwise both
           let handle_form = nestEventM' form (handleFormEvent (() <$ e))
               handle_list =
@@ -602,12 +614,12 @@ handleMain dbg e = do
               k form' cmd_list' =
                 if (formState form /= formState form') then do
                     let filter_string = formState form'
-                        new_elems = Seq.filter (\cmd -> T.toLower filter_string `T.isInfixOf` T.toLower (commandDescription cmd )) commandList
+                        new_elems = Seq.filter (\cmd -> T.toLower filter_string `T.isInfixOf` T.toLower (commandDescription cmd )) orig_cmds
                         cmd_list'' = cmd_list' & listElementsL .~ new_elems
                                            & listSelectedL .~ if Seq.null new_elems then Nothing else Just 0
-                    modify $ keybindingsMode .~ (CommandPicker form' cmd_list'')
+                    modify $ keybindingsMode .~ (CommandPicker form' cmd_list'' orig_cmds)
                   else
-                    modify $ keybindingsMode .~ (CommandPicker form' cmd_list')
+                    modify $ keybindingsMode .~ (CommandPicker form' cmd_list' orig_cmds)
 
 
           case e of
@@ -641,7 +653,25 @@ commandPickerMode =
   CommandPicker
     (newForm [(\w -> forceAttr inputAttr w) @@= editTextField id Overlay (Just 1)] "")
     (list CommandPicker_List commandList 1)
+    commandList
 
+filterPicker :: OverlayMode
+filterPicker =
+  CommandPicker
+    (newForm [(\w -> forceAttr inputAttr w) @@= editTextField id Overlay (Just 1)] "")
+    (list FilterPicker_List filterList 1)
+    filterList
+
+filterList :: Seq.Seq Command
+filterList =
+  [ Command "Address" Nothing (const $ modify $ footerMode .~ footerInput (FAddress False))
+  , Command "Info Table Ptr" Nothing (const $ modify $ footerMode .~ footerInput (FInfoTable False))
+  , Command "Constructor name" Nothing (const $ modify $ footerMode .~ footerInput (FRetainer False))
+  , Command "Closure name" Nothing (const $ modify $ footerMode .~ footerInput (FRetainerExact False))
+  , Command "Era" Nothing (const $ modify $ footerMode .~ footerInput (FFilterEras False))
+  , Command "Closure size" Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureSize)
+  , Command "Closure type" Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureType)
+  ]
 
 savedAndGCRoots :: TreeMode
 savedAndGCRoots = SavedAndGCRoots renderClosureDetails
@@ -651,44 +681,36 @@ commandList :: Seq.Seq Command
 commandList =
   [ mkCommand "Show key bindings" (Vty.EvKey (KChar '?') [])
             (modify $ keybindingsMode .~ KeybindingsShown)
+  , Command "Add filter" Nothing
+            (const $ modify $ keybindingsMode .~ filterPicker)
+  , Command "Clear filters" Nothing
+            (const $ modify $ clearFilters)
   , mkCommand "Saved/GC Roots" (Vty.EvKey (KChar 's') [Vty.MCtrl])
             (modify $ treeMode .~ savedAndGCRoots)
-  , mkCommand "Find Closures (Exact)" (Vty.EvKey (KChar 'c') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FSearch)
+  , Command "Search" (Just $ Vty.EvKey (KChar 'c') [Vty.MCtrl])
+             searchWithCurrentFilters
   , mkCommand "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FAddress)
+            (modify $ footerMode .~ footerInput (FAddress True))
   , mkCommand "Find Info Table" (Vty.EvKey (KChar 'i') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FInfoTable)
+            (modify $ footerMode .~ footerInput (FInfoTable True))
   , mkCommand "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FProfile)
   , mkCommand "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FRetainer)
+            (modify $ footerMode .~ footerInput (FRetainer True))
   , mkCommand "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FRetainerExact)
+            (modify $ footerMode .~ footerInput (FRetainerExact True))
   , mkCommand "Find Retainers of large ARR_WORDS" (Vty.EvKey (KChar 'g') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput FRetainerArrWords)
+            (modify $ footerMode .~ footerInput (FRetainerArrWords True))
   , mkCommand "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FDumpArrWords)
   , mkCommand "Set search limit (default 100)" (Vty.EvKey (KChar 'l') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSetResultSize)
   , mkCommand "Take Snapshot" (Vty.EvKey (KChar 'x') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FSnapshot)
-  , Command "Find Retainers (Address)" Nothing
-            (\_ -> modify $ footerMode .~ footerInput FRetainerAddress)
-  , Command "Find Retainers of closures with era" Nothing
-            (\_ -> modify $ footerMode .~ footerInput FFindEra)
   , Command "ARR_WORDS Count" Nothing arrWordsAction
   , Command "Filter eras" Nothing
-            (\_ -> modify $ footerMode .~ footerInput FFilterEras)
-  , Command "Refresh" (Just (Vty.EvKey (KFun 5) []))
-            (\dbg -> do
-              os <- get
-              case _previousCommand os of
-                Nothing -> pure ()
-                Just (com, inp) -> do
-                  dispatchFooterInput dbg com inp
-              )
-   ]
+            (\_ -> modify $ footerMode .~ footerInput (FFilterEras True))
+  ]
 
 
 findCommand :: Vty.Event -> Maybe Command
@@ -699,7 +721,7 @@ findCommand event = do
 handleMainWindowEvent :: Debuggee
                       -> Handler () OperationalState
 handleMainWindowEvent dbg brickEvent = do
-      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _ _ _ _) <- get
+      os@(OperationalState _ treeMode' _kbMode _footerMode _curRoots rootsTree _ _ _) <- get
       case brickEvent of
         VtyEvent (Vty.EvKey (KChar 'p') [Vty.MCtrl]) ->
           put $ os & keybindingsMode .~ commandPickerMode
@@ -729,10 +751,7 @@ inputFooterHandler :: Debuggee
 inputFooterHandler dbg m form _k re@(VtyEvent e) =
   case e of
     Vty.EvKey KEsc [] -> modify resetFooter
-    Vty.EvKey KEnter [] -> do
-      when (saveCommand m) $
-        modify (\os -> os & (previousCommand .~ Just (m,form)))
-      dispatchFooterInput dbg m form
+    Vty.EvKey KEnter [] -> dispatchFooterInput dbg m form
     _ -> do
       zoom (lens (const form) (\ os form' -> set footerMode (FooterInput m form') os)) (handleFormEvent re)
 inputFooterHandler _ _ _ k re = k re
@@ -771,92 +790,44 @@ arrWordsAction dbg = do
         )
 
 
+searchWithCurrentFilters :: Debuggee -> EventM n OperationalState ()
+searchWithCurrentFilters dbg = do
+  os <- get
+  let filter = uiFiltersToFilter (_filters os)
+  asyncAction "Searching for closures" os (liftIO $ retainersOf (_resultSize os) filter Nothing dbg) $ \cps -> do
+    let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
+    res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
+    let tree = mkRetainerTree dbg res
+    put (os & resetFooter
+            & treeMode .~ Retainer renderClosureDetails tree
+        )
+
+filterOrRun :: Debuggee -> Form Text () Name -> Bool -> (String -> Maybe a) -> (a -> [UIFilter]) -> EventM n OperationalState ()
+filterOrRun dbg form run parse createFilter = do
+  case parse (T.unpack (formState form)) of
+    Just x
+      | run -> do
+        modify $ setFilters (createFilter x)
+        searchWithCurrentFilters dbg
+      | otherwise -> modify $ (resetFooter . addFilters (createFilter x))
+    Nothing -> modify resetFooter
+
 -- | What happens when we press enter in footer input mode
 dispatchFooterInput :: Debuggee
                     -> FooterInputMode
                     -> Form Text () Name
                     -> EventM n OperationalState ()
-dispatchFooterInput dbg FSearch form = do
-   os <- get
-   asyncAction "Searching for closures" os (map head <$> (liftIO $ retainersOfConstructor (_resultSize os) (_eraRange os) Nothing dbg (T.unpack (formState form)))) $ \cps -> do
-     let cps' = (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-     res <- liftIO $ mapM (completeClosureDetails dbg) cps'
-     let tree = mkIOTree dbg res getChildren renderInlineClosureDesc id
-     put (os & resetFooter
-             & treeMode .~ Searched renderClosureDetails tree
-         )
-dispatchFooterInput dbg FAddress form = do
-   os <- get
-   let address = T.unpack (formState form)
-   case readClosurePtr address of
-    Just cp -> do
-      asyncAction "Finding address" os (map head <$> (liftIO $ retainersOfAddress (_resultSize os) (_eraRange os) Nothing dbg [cp])) $ \cps -> do
-        let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
-        res <- liftIO $ mapM (completeClosureDetails dbg) cps'
-        let tree = mkIOTree dbg res getChildren renderInlineClosureDesc id
-        put (os & resetFooter
-                & treeMode .~ Searched renderClosureDetails tree
-            )
-    Nothing -> put (os & resetFooter)
-
-dispatchFooterInput dbg FInfoTable form = do
-   os <- get
-   let address = T.unpack (formState form)
-   case readInfoTablePtr address of
-    Just info_ptr -> do
-      mb_src <- liftIO $ infoSourceLocation dbg info_ptr
-      asyncAction ("Finding info table " <> T.pack (show info_ptr ++ maybe "" ((" " ++) . show) mb_src)) os (map head <$> (liftIO $ retainersOfInfoTable (_resultSize os) (_eraRange os) Nothing dbg info_ptr)) $ \cps -> do
-        let cps' = (zipWith (\n cp' -> (T.pack (show n),cp')) [0 :: Int ..]) cps
-        res <- liftIO $ mapM (completeClosureDetails dbg) cps'
-        let tree = mkIOTree dbg res getChildren renderInlineClosureDesc id
-        put (os & resetFooter
-                & treeMode .~ Searched renderClosureDetails tree
-            )
-    Nothing -> put (os & resetFooter)
-
+dispatchFooterInput dbg (FAddress run) form = filterOrRun dbg form run readClosurePtr (pure . UIAddressFilter)
+dispatchFooterInput dbg (FInfoTable run) form = filterOrRun dbg form run readInfoTablePtr (pure . UIInfoAddressFilter)
+dispatchFooterInput dbg (FRetainer run) form = filterOrRun dbg form run Just (pure . UIConstructorFilter)
+dispatchFooterInput dbg (FRetainerExact run) form = filterOrRun dbg form run Just (pure . UIInfoNameFilter)
+dispatchFooterInput dbg (FRetainerArrWords run) form = filterOrRun dbg form run readMaybe (\size -> [UIClosureTypeFilter Debug.ARR_WORDS, UISizeFilter size])
+dispatchFooterInput dbg (FFilterEras run) form = filterOrRun dbg form run (parseEraRange . T.pack) (pure . UIEraFilter)
+dispatchFooterInput dbg FFilterClosureSize form = filterOrRun dbg form False readMaybe (pure . UISizeFilter)
+dispatchFooterInput dbg FFilterClosureType form = filterOrRun dbg form False readMaybe (pure . UIClosureTypeFilter)
 dispatchFooterInput dbg FProfile form = do
    os <- get
    asyncAction_ "Writing profile" os $ profile dbg (T.unpack (formState form))
-dispatchFooterInput dbg FRetainer form = do
-   os <- get
-   let roots = mapMaybe go (map snd (currentRoots (view rootsFrom os)))
-       go (CP p) = Just p
-       go (SP _)   = Nothing
-   asyncAction "Finding retainers" os (retainersOfConstructor (_resultSize os) (_eraRange os) (Just roots) dbg (T.unpack (formState form))) $ \cps -> do
-      let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-      res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
-      let tree = mkRetainerTree dbg res
-      put (os & resetFooter
-              & treeMode .~ Retainer renderClosureDetails tree)
-dispatchFooterInput dbg FFindEra form = do
-   os <- get
-   case parseEraRange (formState form) of
-    Nothing -> pure ()
-    Just r -> asyncAction "Finding eras" os (retainersOfEra (_resultSize os) dbg r) $ \cps -> do
-      let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-      res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
-      let tree = mkRetainerTree dbg res
-      put (os & resetFooter
-              & treeMode .~ Retainer renderClosureDetails tree)
-
-dispatchFooterInput dbg FRetainerExact form = do
-   os <- get
-   asyncAction "Finding exact retainers" os (retainersOfConstructorExact (_resultSize os) (_eraRange os) dbg (T.unpack (formState form))) $ \cps -> do
-    let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-    res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
-    let tree = mkRetainerTree dbg res
-    put (os & resetFooter
-            & treeMode .~ Retainer renderClosureDetails tree)
-dispatchFooterInput dbg FRetainerArrWords form = do
-   os <- get
-   case readMaybe  $ T.unpack (formState form) of
-     Nothing -> pure ()
-     Just size -> asyncAction "Finding ArrWords retainers" os (retainersOfArrWords (_resultSize os) (_eraRange os) dbg size) $ \cps -> do
-       let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-       res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
-       let tree = mkRetainerTree dbg res
-       put (os & resetFooter
-               & treeMode .~ Retainer renderClosureDetails tree)
 dispatchFooterInput _ FDumpArrWords form = do
    os <- get
    let act node = asyncAction_ "dumping ARR_WORDS payload" os $
@@ -868,8 +839,6 @@ dispatchFooterInput _ FDumpArrWords form = do
       Retainer _ iotree -> act (ioTreeSelection iotree)
       SavedAndGCRoots _ -> act (ioTreeSelection (view treeSavedAndGCRoots os))
       Searched {} -> put (os & footerMessage "Dump for search mode not implemented yet")
-
-
 dispatchFooterInput _ FSetResultSize form = do
    os <- get
    asyncAction "setting result size" os (pure ()) $ \() -> case readMaybe $ T.unpack (formState form) of
@@ -877,23 +846,6 @@ dispatchFooterInput _ FSetResultSize form = do
        | n <= 0 -> put (os & resultSize .~ Nothing)
        | otherwise -> put (os & resultSize .~ (Just n))
      Nothing -> pure ()
-dispatchFooterInput _ FFilterEras form = do
-   os <- get
-   asyncAction "setting era range" os (pure ()) $ \() -> case parseEraRange (formState form) of
-     Just r -> put (os & eraRange .~ (Just r))
-     Nothing -> pure ()
-dispatchFooterInput dbg FRetainerAddress form = do
-   os <- get
-   let address = T.unpack (formState form)
-   case readClosurePtr address of
-    Just cp -> do
-     asyncAction "Finding address retainers" os (retainersOfAddress (view resultSize os) (_eraRange os) Nothing dbg [cp]) $ \cps -> do
-      let cps' = map (zipWith (\n cp -> (T.pack (show n),cp)) [0 :: Int ..]) cps
-      res <- liftIO $ mapM (mapM (completeClosureDetails dbg)) cps'
-      let tree = mkRetainerTree dbg res
-      put (os & resetFooter
-              & treeMode .~ Retainer renderClosureDetails tree)
-    Nothing -> put (os & resetFooter)
 dispatchFooterInput dbg FSnapshot form = do
    os <- get
    asyncAction_ "Taking snapshot" os $ snapshot dbg (T.unpack (formState form))

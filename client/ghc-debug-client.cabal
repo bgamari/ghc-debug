@@ -59,6 +59,7 @@ library
                        language-dot ^>= 0.1,
                        ghc-prim >= 0.8 && <0.12,
                        stm ^>= 2.5,
+                       extra,
                        bytestring,
                        contra-tracer
 

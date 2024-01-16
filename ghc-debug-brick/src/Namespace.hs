@@ -13,6 +13,7 @@ data Name
   | Connected_Paused_ClosureDetails
   | Connected_Paused_ClosureTree
   | CommandPicker_List
+  | FilterPicker_List
   | Overlay
   | Footer
   deriving (Eq, Ord, Show)

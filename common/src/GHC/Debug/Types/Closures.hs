@@ -159,7 +159,7 @@ data ClosureType
     | COMPACT_NFDATA
     | CONTINUATION
     | N_CLOSURE_TYPES
- deriving (Enum, Eq, Ord, Show, Generic)
+ deriving (Enum, Eq, Ord, Show, Generic, Read)
 
 type HalfWord = Word32 -- TODO support 32 bit
 
@@ -236,7 +236,7 @@ data DebugClosureWithExtra x ccs srt pap string s b
 newtype Size = Size { getSize :: Int }
   deriving stock (Show, Generic)
   deriving (Semigroup, Monoid) via (Sum Int)
-  deriving newtype (Num, Ord, Eq)
+  deriving newtype (Num, Ord, Eq, Read)
 
 newtype InclusiveSize = InclusiveSize { getInclusiveSize :: Int }
   deriving stock (Show, Generic)
