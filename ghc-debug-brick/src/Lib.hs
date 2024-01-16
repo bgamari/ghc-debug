@@ -441,7 +441,7 @@ closurePretty dbg (Closure _ closure) = run dbg $  do
 --
 
 closureReferencesAndLabels :: Monad m => (pointer -> m a) -> (stack -> m a) -> (ccs -> m a) -> GD.DebugClosure ccs (GenSrtPayload pointer) PapPayload string stack pointer -> m [(String, a)]
-closureReferencesAndLabels pointer stack fccs closure = sequence . map sequence $ case closure of
+closureReferencesAndLabels pointer stack fccs closure = sequence . map sequence $ [("CCS", fccs (ccs ph)) | Just ph <- pure (profHeader closure)] ++ case closure of
   TSOClosure {..} ->
     [ ("Thread label", pointer lbl) | Just lbl <- pure threadLabel ] ++
     [ ("Stack", pointer tsoStack)
@@ -463,9 +463,8 @@ closureReferencesAndLabels pointer stack fccs closure = sequence . map sequence 
   TVarClosure {..} -> [("val", pointer current_value)]
   MutPrimClosure {..} -> withArgLables ptrArgs
   PrimClosure{..} -> withArgLables ptrArgs
-  ConstrClosure {..} -> [("CCS", fccs (ccs ph)) | Just ph <- pure profHeader] ++ withFieldLables ptrArgs
-  ThunkClosure {..} ->  [("CCS", fccs (ccs ph)) | Just ph <- pure profHeader]
-                     ++ [("SRT", pointer cp) | Just cp <- [getSrt srt]]
+  ConstrClosure {..} -> withFieldLables ptrArgs
+  ThunkClosure {..} ->  [("SRT", pointer cp) | Just cp <- [getSrt srt]]
                      ++ withArgLables ptrArgs
   SelectorClosure {..} -> [("Selectee", pointer selectee)]
   IndClosure {..} -> [("Indirectee", pointer indirectee)]
@@ -486,8 +485,7 @@ closureReferencesAndLabels pointer stack fccs closure = sequence . map sequence 
                       , ("Value", pointer value)
                       ]
   FunClosure {..} ->
-       [("CCS", fccs (ccs ph)) | Just ph <- pure profHeader]
-    ++ [ ("SRT", pointer cp) | Just cp <- [getSrt srt]]
+       [ ("SRT", pointer cp) | Just cp <- [getSrt srt]]
     ++ withArgLables ptrArgs
   BlockingQueueClosure {..} -> [ ("Link", pointer link)
                                 , ("Black Hole", pointer blackHole)
