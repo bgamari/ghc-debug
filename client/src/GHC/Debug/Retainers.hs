@@ -24,7 +24,6 @@ import Control.Monad.State
 import GHC.Debug.Trace
 import GHC.Debug.Types.Graph
 import Control.Monad
-import Control.Monad.Extra
 
 import qualified Data.Set as Set
 import Control.Monad.RWS
@@ -57,9 +56,6 @@ data ClosureFilter
  | SizeFilter (Size -> Bool)
  | ProfHeaderFilter (Maybe ProfHeaderWithPtr -> Bool)
  | AddressFilter (ClosurePtr -> Bool)
- | ParentFilter Int ClosureFilter
- | SomeParentFilter (Maybe Int) ClosureFilter
- | AllParentFilter (Maybe Int) ClosureFilter
  | AndFilter ClosureFilter ClosureFilter
  | OrFilter ClosureFilter ClosureFilter
  | NotFilter ClosureFilter
@@ -82,23 +78,6 @@ matchesFilter filter ptr sc parents = case filter of
   SizeFilter p -> pure $ p (dcSize sc)
   ProfHeaderFilter p -> pure $ p (profHeader $ noSize sc)
   AddressFilter p -> pure $ p ptr
-  ParentFilter idx f -> case drop idx parents of
-    [] -> pure False
-    (p:rest) -> do
-      sc_p <- dereferenceClosure p
-      matchesFilter f p sc_p rest
-  SomeParentFilter within f -> do
-    let to_consider = foldr (\x xs -> (x, map fst xs) : xs) []
-                    $ maybe parents (`take` parents) within
-    flip anyM to_consider $ \(cur,parents_cur) -> do
-      sc_cur <- dereferenceClosure cur
-      matchesFilter f cur sc_cur parents_cur
-  AllParentFilter within f -> do
-    let to_consider = foldr (\x xs -> (x, map fst xs) : xs) []
-                    $ maybe parents (`take` parents) within
-    flip allM to_consider $ \(cur,parents_cur) -> do
-      sc_cur <- dereferenceClosure cur
-      matchesFilter f cur sc_cur parents_cur
   AndFilter f1 f2 -> do
     r1 <- matchesFilter f1 ptr sc parents
     case r1 of
