@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Model
   ( module Model
@@ -137,14 +138,14 @@ isFocusedFooter :: FooterMode -> Bool
 isFocusedFooter (FooterInput {}) = True
 isFocusedFooter _ = False
 
-data FooterInputMode = FClosureAddress Bool
-                     | FInfoTableAddress Bool
-                     | FConstructorName Bool
-                     | FClosureName Bool
-                     | FArrWordsSize Bool
-                     | FFilterEras Bool
-                     | FFilterClosureType
-                     | FFilterClosureSize
+data FooterInputMode = FClosureAddress {runNow :: Bool, invert :: Bool}
+                     | FInfoTableAddress {runNow :: Bool, invert :: Bool}
+                     | FConstructorName {runNow :: Bool, invert :: Bool}
+                     | FClosureName {runNow :: Bool, invert :: Bool}
+                     | FArrWordsSize
+                     | FFilterEras {runNow :: Bool, invert :: Bool}
+                     | FFilterClosureType {invert :: Bool}
+                     | FFilterClosureSize {invert :: Bool}
                      | FProfile
                      | FSnapshot
                      | FDumpArrWords
@@ -165,17 +166,27 @@ data OverlayMode = KeybindingsShown
                  | NoOverlay
 
 
+invertInput :: FooterInputMode -> FooterInputMode
+invertInput x@FClosureAddress{invert} = x{invert = not invert}
+invertInput x@FInfoTableAddress{invert} = x{invert = not invert}
+invertInput x@FConstructorName{invert} = x{invert = not invert}
+invertInput x@FClosureName{invert} = x{invert = not invert}
+invertInput x@FFilterEras{invert} = x{invert = not invert}
+invertInput x@FFilterClosureSize{invert} = x{invert = not invert}
+invertInput x@FFilterClosureType{invert} = x{invert = not invert}
+invertInput x = x
+
 formatFooterMode :: FooterInputMode -> Text
-formatFooterMode (FClosureAddress _) = "address (0x..): "
-formatFooterMode (FInfoTableAddress _) = "info table pointer (0x..): "
-formatFooterMode (FConstructorName _) = "constructor name: "
-formatFooterMode (FClosureName _) = "closure name: "
-formatFooterMode (FArrWordsSize _) = "size (bytes): "
-formatFooterMode (FFilterEras _) = "era range (<era>/<start-era>-<end-era>): "
+formatFooterMode FClosureAddress{invert} = (if invert then "!" else "") <> "address (0x..): "
+formatFooterMode FInfoTableAddress{invert} = (if invert then "!" else "") <> "info table pointer (0x..): "
+formatFooterMode FConstructorName{invert} = (if invert then "!" else "") <> "constructor name: "
+formatFooterMode FClosureName{invert} = (if invert then "!" else "") <> "closure name: "
+formatFooterMode FFilterEras{invert} = (if invert then "!" else "") <> "era range (<era>/<start-era>-<end-era>): "
+formatFooterMode FFilterClosureSize{invert} = (if invert then "!" else "") <> "closure size (bytes): "
+formatFooterMode FFilterClosureType{invert} = (if invert then "!" else "") <> "closure type: "
+formatFooterMode FArrWordsSize = "size (bytes)>= "
 formatFooterMode FDumpArrWords = "dump payload to file: "
 formatFooterMode FSetResultSize = "search result limit (0 for infinity): "
-formatFooterMode FFilterClosureSize = "closure size (bytes): "
-formatFooterMode FFilterClosureType = "closure type: "
 formatFooterMode FSnapshot = "snapshot name: "
 formatFooterMode FProfile = "filename: "
 
@@ -216,25 +227,30 @@ addFilters :: [UIFilter] -> OperationalState -> OperationalState
 addFilters fs os = os {_filters = fs ++ _filters os}
 
 data UIFilter =
-    UIAddressFilter ClosurePtr
-  | UIInfoAddressFilter InfoTablePtr
-  | UIConstructorFilter String
-  | UIInfoNameFilter String
-  | UIEraFilter EraRange
-  | UISizeFilter Size
-  | UIClosureTypeFilter ClosureType
+    UIAddressFilter Bool ClosurePtr
+  | UIInfoAddressFilter Bool InfoTablePtr
+  | UIConstructorFilter Bool String
+  | UIInfoNameFilter Bool String
+  | UIEraFilter Bool EraRange
+  | UISizeFilter Bool Size
+  | UIClosureTypeFilter Bool ClosureType
 
 uiFiltersToFilter :: [UIFilter] -> ClosureFilter
 uiFiltersToFilter = foldr AndFilter (PureFilter True) . map uiFilterToFilter
 
 uiFilterToFilter :: UIFilter -> ClosureFilter
-uiFilterToFilter (UIAddressFilter x)     = AddressFilter (== x)
-uiFilterToFilter (UIInfoAddressFilter x) = InfoPtrFilter (== x)
-uiFilterToFilter (UIConstructorFilter x) = ConstructorDescFilter ((== x) . name)
-uiFilterToFilter (UIInfoNameFilter x)    = InfoSourceFilter ((== x) . infoName)
-uiFilterToFilter (UIEraFilter  x)        = ProfHeaderFilter (`profHeaderInEraRange` (Just x))
-uiFilterToFilter (UISizeFilter x)        = SizeFilter (>= x)
-uiFilterToFilter (UIClosureTypeFilter x)        = InfoFilter ((== x) . tipe)
+uiFilterToFilter (UIAddressFilter invert x)     = AddressFilter (xor invert . (== x))
+uiFilterToFilter (UIInfoAddressFilter invert x) = InfoPtrFilter (xor invert . (== x))
+uiFilterToFilter (UIConstructorFilter invert x) = ConstructorDescFilter (xor invert . (== x) . name)
+uiFilterToFilter (UIInfoNameFilter invert x)    = InfoSourceFilter (xor invert . (== x) . infoName)
+uiFilterToFilter (UIEraFilter  invert x)        = ProfHeaderFilter (xor invert . (`profHeaderInEraRange` (Just x)))
+uiFilterToFilter (UISizeFilter invert x)        = SizeFilter (xor invert . (>= x))
+uiFilterToFilter (UIClosureTypeFilter invert x) = InfoFilter (xor invert . (== x) . tipe)
+
+xor :: Bool -> Bool -> Bool
+xor False False = False
+xor True True = False
+xor _ _ = True
 
 parseEraRange :: Text -> Maybe EraRange
 parseEraRange range = case T.splitOn "-" range of

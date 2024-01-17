@@ -37,6 +37,7 @@ import Graphics.Vty.Input.Events (Key(..))
 import Lens.Micro.Platform
 import System.Directory
 import System.FilePath
+import Data.Bool
 import Data.Text (Text, pack)
 import qualified Data.Text as T
 import qualified Data.Map as M
@@ -207,13 +208,13 @@ labelled lbl w =
   hLimit 17 (txtLabel lbl <+> vLimit 1 (fill ' ')) <+> w <+> vLimit 1 (fill ' ')
 
 renderUIFilter :: UIFilter -> Widget Name
-renderUIFilter (UIAddressFilter x)     = labelled "Closure address" (str (show x))
-renderUIFilter (UIInfoAddressFilter x) = labelled "Info table address" (str (show x))
-renderUIFilter (UIConstructorFilter x) = labelled "Constructor name" (str x)
-renderUIFilter (UIInfoNameFilter x)    = labelled "Constructor name (exact)" (str x)
-renderUIFilter (UIEraFilter  x)        = labelled "Era range" (str (showEraRange x))
-renderUIFilter (UISizeFilter x)        = labelled "Size (lower bound)" (str (show $ getSize x))
-renderUIFilter (UIClosureTypeFilter x) = labelled "Closure type" (str (show x))
+renderUIFilter (UIAddressFilter invert x)     = labelled (bool "" "!" invert <> "Closure address") (str (show x))
+renderUIFilter (UIInfoAddressFilter invert x) = labelled (bool "" "!" invert <> "Info table address") (str (show x))
+renderUIFilter (UIConstructorFilter invert x) = labelled (bool "" "!" invert <> "Constructor name") (str x)
+renderUIFilter (UIInfoNameFilter invert x)    = labelled (bool "" "!" invert <> "Constructor name (exact)") (str x)
+renderUIFilter (UIEraFilter invert  x)        = labelled (bool "" "!" invert <> "Era range") (str (showEraRange x))
+renderUIFilter (UISizeFilter invert x)        = labelled (bool "" "!" invert <> "Size (lower bound)") (str (show $ getSize x))
+renderUIFilter (UIClosureTypeFilter invert x) = labelled (bool "" "!" invert <> "Closure type") (str (show x))
 
 
 renderClosureDetails :: ClosureDetails -> Widget Name
@@ -669,17 +670,17 @@ commandList =
   , Command "Search" (Just $ Vty.EvKey (KChar 'c') [Vty.MCtrl])
              searchWithCurrentFilters
   , mkCommand "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FClosureAddress True))
+            (modify $ footerMode .~ footerInput (FClosureAddress True False))
   , mkCommand "Find Info Table" (Vty.EvKey (KChar 'i') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FInfoTableAddress True))
+            (modify $ footerMode .~ footerInput (FInfoTableAddress True False))
   , mkCommand "Write Profile" (Vty.EvKey (KChar 'w') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FProfile)
   , mkCommand "Find Retainers" (Vty.EvKey (KChar 'f') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FConstructorName True))
+            (modify $ footerMode .~ footerInput (FConstructorName True False))
   , mkCommand "Find Retainers (Exact)" (Vty.EvKey (KChar 'e') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FClosureName True))
+            (modify $ footerMode .~ footerInput (FClosureName True False))
   , mkCommand "Find Retainers of large ARR_WORDS" (Vty.EvKey (KChar 'g') [Vty.MCtrl])
-            (modify $ footerMode .~ footerInput (FArrWordsSize True))
+            (modify $ footerMode .~ footerInput FArrWordsSize)
   , mkCommand "Dump ARR_WORDS payload" (Vty.EvKey (KChar 'd') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput FDumpArrWords)
   , mkCommand "Set search limit (default 100)" (Vty.EvKey (KChar 'l') [Vty.MCtrl])
@@ -688,14 +689,14 @@ commandList =
             (modify $ footerMode .~ footerInput FSnapshot)
   , Command "ARR_WORDS Count" Nothing arrWordsAction
   , Command "Find closures by era" Nothing
-            (\_ -> modify $ footerMode .~ footerInput (FFilterEras True))
-  , Command "Add filter for address"          Nothing (const $ modify $ footerMode .~ footerInput (FClosureAddress False))
-  , Command "Add filter for info table ptr"   Nothing (const $ modify $ footerMode .~ footerInput (FInfoTableAddress False))
-  , Command "Add filter for constructor name" Nothing (const $ modify $ footerMode .~ footerInput (FConstructorName False))
-  , Command "Add filter for closure name"     Nothing (const $ modify $ footerMode .~ footerInput (FClosureName False))
-  , Command "Add filter for era"              Nothing (const $ modify $ footerMode .~ footerInput (FFilterEras False))
-  , Command "Add filter for closure size"     Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureSize)
-  , Command "Add filter for closure type"     Nothing (const $ modify $ footerMode .~ footerInput FFilterClosureType)
+            (\_ -> modify $ footerMode .~ footerInput (FFilterEras True False))
+  , Command "Add filter for address"          Nothing (const $ modify $ footerMode .~ footerInput (FClosureAddress False False))
+  , Command "Add filter for info table ptr"   Nothing (const $ modify $ footerMode .~ footerInput (FInfoTableAddress False False))
+  , Command "Add filter for constructor name" Nothing (const $ modify $ footerMode .~ footerInput (FConstructorName False False))
+  , Command "Add filter for closure name"     Nothing (const $ modify $ footerMode .~ footerInput (FClosureName False False))
+  , Command "Add filter for era"              Nothing (const $ modify $ footerMode .~ footerInput (FFilterEras False False))
+  , Command "Add filter for closure size"     Nothing (const $ modify $ footerMode .~ footerInput (FFilterClosureSize False))
+  , Command "Add filter for closure type"     Nothing (const $ modify $ footerMode .~ footerInput (FFilterClosureType False))
   ]
 
 
@@ -738,6 +739,9 @@ inputFooterHandler dbg m form _k re@(VtyEvent e) =
   case e of
     Vty.EvKey KEsc [] -> modify resetFooter
     Vty.EvKey KEnter [] -> dispatchFooterInput dbg m form
+    Vty.EvKey (KChar 'n') [Vty.MCtrl] ->
+      let m' = invertInput m in
+      modify (footerMode .~ (FooterInput m' (updateFormState (formState form) $ footerInputForm m')))
     _ -> do
       zoom (lens (const form) (\ os form' -> set footerMode (FooterInput m form') os)) (handleFormEvent re)
 inputFooterHandler _ _ _ k re = k re
@@ -803,14 +807,14 @@ dispatchFooterInput :: Debuggee
                     -> FooterInputMode
                     -> Form Text () Name
                     -> EventM n OperationalState ()
-dispatchFooterInput dbg (FClosureAddress run) form = filterOrRun dbg form run readClosurePtr (pure . UIAddressFilter)
-dispatchFooterInput dbg (FInfoTableAddress run) form = filterOrRun dbg form run readInfoTablePtr (pure . UIInfoAddressFilter)
-dispatchFooterInput dbg (FConstructorName run) form = filterOrRun dbg form run Just (pure . UIConstructorFilter)
-dispatchFooterInput dbg (FClosureName run) form = filterOrRun dbg form run Just (pure . UIInfoNameFilter)
-dispatchFooterInput dbg (FArrWordsSize run) form = filterOrRun dbg form run readMaybe (\size -> [UIClosureTypeFilter Debug.ARR_WORDS, UISizeFilter size])
-dispatchFooterInput dbg (FFilterEras run) form = filterOrRun dbg form run (parseEraRange . T.pack) (pure . UIEraFilter)
-dispatchFooterInput dbg FFilterClosureSize form = filterOrRun dbg form False readMaybe (pure . UISizeFilter)
-dispatchFooterInput dbg FFilterClosureType form = filterOrRun dbg form False readMaybe (pure . UIClosureTypeFilter)
+dispatchFooterInput dbg (FClosureAddress run invert) form   = filterOrRun dbg form run readClosurePtr (pure . UIAddressFilter invert)
+dispatchFooterInput dbg (FInfoTableAddress run invert) form = filterOrRun dbg form run readInfoTablePtr (pure . UIInfoAddressFilter invert)
+dispatchFooterInput dbg (FConstructorName run invert) form  = filterOrRun dbg form run Just (pure . UIConstructorFilter invert)
+dispatchFooterInput dbg (FClosureName run invert) form      = filterOrRun dbg form run Just (pure . UIInfoNameFilter invert)
+dispatchFooterInput dbg FArrWordsSize form                  = filterOrRun dbg form True readMaybe (\size -> [UIClosureTypeFilter False Debug.ARR_WORDS, UISizeFilter False size])
+dispatchFooterInput dbg (FFilterEras run invert) form       = filterOrRun dbg form run (parseEraRange . T.pack) (pure . UIEraFilter invert)
+dispatchFooterInput dbg (FFilterClosureSize invert) form = filterOrRun dbg form False readMaybe (pure . UISizeFilter invert)
+dispatchFooterInput dbg (FFilterClosureType invert) form = filterOrRun dbg form False readMaybe (pure . UIClosureTypeFilter invert)
 dispatchFooterInput dbg FProfile form = do
    os <- get
    asyncAction_ "Writing profile" os $ profile dbg (T.unpack (formState form))
