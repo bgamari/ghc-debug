@@ -143,7 +143,8 @@ myAppDraw (AppState majorState' _) =
     [ ("Resume", Just (Vty.EvKey (Vty.KChar 'r') [Vty.MCtrl]))
     , ("Parent", Just (Vty.EvKey KLeft []))
     , ("Child", Just (Vty.EvKey KRight []))
-    , ("Command Picker", Just (Vty.EvKey (Vty.KChar 'p') [Vty.MCtrl]))]
+    , ("Command Picker", Just (Vty.EvKey (Vty.KChar 'p') [Vty.MCtrl]))
+    , ("Invert Filter", Just (Vty.EvKey (Vty.KChar 'n') [Vty.MCtrl]))]
     ++ [(commandDescription cmd, commandKey cmd) | cmd <- F.toList commandList ]
     ++ [ ("Exit", Just (Vty.EvKey KEsc [])) ]
 
@@ -236,7 +237,7 @@ footer :: Int -> Maybe Int -> FooterMode -> Widget Name
 footer n m mode = vLimit 1 $
  case mode of
    FooterMessage t -> withAttr menuAttr $ hBox [txt t, fill ' ']
-   FooterInfo -> withAttr menuAttr $ hBox $ [padRight Max $ txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (?): full keybindings"]
+   FooterInfo -> withAttr menuAttr $ hBox $ [padRight Max $ txt "(↑↓): select item | (→): expand | (←): collapse | (^p): command picker | (^n): invert filter | (?): full keybindings"]
                                          ++ [padLeft (Pad 1) $ txt $
                                                (T.pack (show n) <> " items/" <> maybe "∞" (T.pack . show) m <> " max")]
    FooterInput _im form -> renderForm form
