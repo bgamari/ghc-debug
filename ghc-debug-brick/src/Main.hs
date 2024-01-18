@@ -667,7 +667,7 @@ commandList =
             (const $ modify $ clearFilters)
   , mkCommand "Saved/GC Roots" (Vty.EvKey (KChar 's') [Vty.MCtrl])
             (modify $ treeMode .~ savedAndGCRoots)
-  , Command "Search" (Just $ Vty.EvKey (KChar 'c') [Vty.MCtrl])
+  , Command "Search with current filters" (Just $ Vty.EvKey (KChar 'c') [Vty.MCtrl])
              searchWithCurrentFilters
   , mkCommand "Find Address" (Vty.EvKey (KChar 'a') [Vty.MCtrl])
             (modify $ footerMode .~ footerInput (FClosureAddress True False))
