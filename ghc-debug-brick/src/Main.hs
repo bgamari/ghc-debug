@@ -424,14 +424,8 @@ mkIOTree debuggee' cs getChildren renderNode sort = ioTree Connected_Paused_Clos
         -- rendering the row
         (\state selected ctx depth closureDesc ->
           let
-            -- colorId = _era $ _info closureDesc
-            colorEra = {- case colorId of
-              _ -> -} id
-              -- Nothing -> id
-              -- Just i -> modifyDefAttr (flip Vty.withBackColor (era_colors !! (1 + (fromIntegral $ abs i) `mod` (length era_colors - 1))))
             body =
               (if selected then visible . highlighted else id) $
-                colorEra $
                 hBox $
                 renderNode closureDesc
           in
