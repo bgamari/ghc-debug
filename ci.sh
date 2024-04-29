@@ -16,6 +16,8 @@ source $GHCUP_INSTALL_BASE_PREFIX/.ghcup/env || source ~/.bashrc
 ghcup --version
 which ghcup | grep foobarbaz
 
+ghcup config add-release-channel https://raw.githubusercontent.com/haskell/ghcup-metadata/master/ghcup-prereleases-0.0.8.yaml
+
 ghcup --metadata-caching=0 -v install ghc --set $VERSION
 ghcup --metadata-caching=0 -v install cabal
 
