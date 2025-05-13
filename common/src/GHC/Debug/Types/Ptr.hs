@@ -323,14 +323,16 @@ rawBlockAddr (RawBlock addr _ _) = addr
 -- due to how BS.drop is implemented via pointer arithmetic.
 extractFromBlock :: ClosurePtr
                 -> RawBlock
-                -> RawClosure
+                -> Either String RawClosure
 extractFromBlock cp (RawBlock bp _ b) =
 --  Calling closureSize doesn't work as the info table addresses are bogus
 --  clos_size_w <- withForeignPtr fp' (\p -> return $ closureSize (ptrToBox p))
 --  let clos_size = clos_size_w * 8
     --traceShow (fp, offset, cp, bp,o, l)
     --traceShow ("FP", fp `plusForeignPtr` offset)
-    RawClosure (BS.drop offset b)
+    if BS.length b <= offset
+      then Left ("extractFromBlock: " ++ unwords ["offset", show offset, "cp", show cp, "bp", show bp, "block_len", show (BS.length b)])
+      else Right (RawClosure (BS.drop offset b))
     where
       offset = fromIntegral (subtractBlockPtr cp bp)
 

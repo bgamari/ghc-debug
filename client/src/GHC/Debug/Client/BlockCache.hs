@@ -61,17 +61,24 @@ instance Hashable (BlockCacheRequest a) where
   hashWithSalt s PopulateBlockCache  = s `hashWithSalt` (2 :: Int)
 
 handleBlockReq :: Tracer IO String -> (forall a . Request a -> IO a) -> IORef BlockCache -> BlockCacheRequest resp -> IO resp
-handleBlockReq _ do_req ref (LookupClosure cp) = do
+handleBlockReq tracer do_req ref (LookupClosure cp) = do
   bc <- readIORef ref
   let mrb = lookupClosure cp bc
-  rb <- case mrb of
-               Nothing -> do
-                  rb <- do_req (RequestBlock cp)
-                  atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
-                  return rb
-               Just rb -> do
-                 return rb
-  return (extractFromBlock cp rb)
+  let fallback = do
+        rb <- do_req (RequestBlock cp)
+        atomicModifyIORef' ref (\bc' -> (addBlock rb bc', ()))
+        case extractFromBlock cp rb of
+          Left err -> error err
+          Right r  -> return r
+  case mrb of
+    Nothing -> fallback
+    Just rb -> do
+      case extractFromBlock cp rb of
+        Left err -> do
+          traceWith tracer $ "Block found, but extracting failed:" ++ err
+          fallback
+        Right rc ->
+          return rc
 handleBlockReq tracer do_req ref PopulateBlockCache = do
   blocks <- do_req RequestAllBlocks
 --  mapM_ (\rb -> print ("NEW", rawBlockAddr rb)) blocks
