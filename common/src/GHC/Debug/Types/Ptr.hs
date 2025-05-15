@@ -344,7 +344,7 @@ getInfoTblPtr :: HasCallStack => RawClosure -> InfoTablePtr
 getInfoTblPtr (RawClosure bs) = runGet_ (isolate 8 get) (BSL.fromStrict bs)
 
 -- | A bitmap that records whether each field of a stack frame is a pointer.
-newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show)
+newtype PtrBitmap = PtrBitmap (A.Array Int Bool) deriving (Show, Ord, Eq)
 
 traversePtrBitmap :: Monad m => (Bool -> m a) -> PtrBitmap -> m [a]
 traversePtrBitmap f (PtrBitmap arr) = mapM f (A.elems arr)

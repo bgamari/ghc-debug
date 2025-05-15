@@ -29,6 +29,8 @@ import Control.Monad
 import Data.Bits
 import Data.Functor
 import GHC.Debug.Types (getCCS, getIndexTable)
+import qualified Data.Array as A
+import GHC.Stack
 
 decodeClosureHeader :: Version -> Get (Maybe ProfHeaderWithPtr)
 decodeClosureHeader ver = do
@@ -169,7 +171,7 @@ decodeStack ver (infot, _) (cp, rc) = decodeFromBS rc $ do
             st_marking
             (StackCont st_sp raw_stack))
 
-decodeFromBS :: RawClosure -> Get (DebugClosure ccs srt pap string s b)
+decodeFromBS :: HasCallStack => RawClosure -> Get (DebugClosure ccs srt pap string s b)
                            -> DebugClosureWithExtra Size ccs srt pap string s b
 decodeFromBS (RawClosure rc) parser =
   case runGetOrFail parser (BSL.fromStrict rc) of
@@ -423,8 +425,22 @@ decodeBCO ver (infot, _) (_, rc) = decodeFromBS rc $ do
   bcoptrs <- getClosurePtr
   arity <- getWord32le
   size <- getWord32le
-  bitmap <- replicateM (fromIntegral size) (fromIntegral <$> getWord64le) -- TODO getWord?
+  bitmap <- decodePtrBitmap
   pure (BCOClosure infot prof instrs literals bcoptrs arity size bitmap)
+
+  where
+    unpackWord64 :: Word64 -> [Bool]
+    unpackWord64 w = [ testBit w i | i <- [0..63] ]
+
+    decodePtrBitmap :: Get PtrBitmap
+    decodePtrBitmap = do
+      size <- getWord64le
+      let nWords = fromIntegral ((size + 63) `div` 64)
+      bm_words <- replicateM nWords getWord64le
+      let bits = take (fromIntegral size) (concatMap unpackWord64 bm_words)
+          arr  = A.listArray (0, length bits - 1) bits
+      return (PtrBitmap arr)
+
 
 
 decodeThunkSelector :: Version -> (StgInfoTableWithPtr, RawInfoTable) -> (ClosurePtr, RawClosure) ->  SizedClosure

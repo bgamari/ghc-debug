@@ -388,7 +388,7 @@ data DebugClosure ccs srt pap string s b
                                         --   of byte code objects
         , arity      :: !HalfWord       -- ^ The arity of this BCO
         , size       :: !HalfWord       -- ^ The size of this BCO in words
-        , bitmap     :: ![Word]         -- ^ An StgLargeBitmap describing the
+        , bitmap     :: !PtrBitmap      -- ^ An StgLargeBitmap describing the
                                         --   pointerhood of its args/free vars
         }
 
