@@ -762,7 +762,7 @@ static int handle_command(Socket& sock, const char *buf, uint32_t cmd_len) {
 
           //  Using the function just produces garbage.. no idea why
           write_string(resp, ip.table_name);
-#if MIN_VERSION_GLASGOW_HASKELL(9,11,0,0)
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,2,0)
           // In 9.10, GHC changed the closure_desc to uint32_t.
           // To maintain the previous behaviour, we format the id as its string
           // representation. For example, the number 10 is represented as the
