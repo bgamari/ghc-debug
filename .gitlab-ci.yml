@@ -7,10 +7,10 @@ workflow:
 ci:
   parallel:
       matrix:
-        - VERSION: "9.8.1"
-        - VERSION: "9.6.4"
-        - VERSION: "9.4.8"
-        - VERSION: "9.2.8"
+        - VERSION: "9.12.2"
+        - VERSION: "9.10.2"
+        - VERSION: "9.8.4"
+        - VERSION: "9.6.7"
   tags:
     - x86_64-linux
   script:
