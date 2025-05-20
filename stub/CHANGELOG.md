@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-stub
 
+## 0.7.0.0 -- 2025-05-20
+
+* Compatability with 9.10 and 9.12
+
 ## 0.6.0.0 -- 2024-04-10
 
 * Add requests for decoding cost centres and other profiling info

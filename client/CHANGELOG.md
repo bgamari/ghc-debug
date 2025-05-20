@@ -1,5 +1,9 @@
 # Revision history for ghc-debug-client
 
+## 0.7.0.0 -- 2025-05-20
+
+* Relax version bounds
+
 ## 0.6.0.0 -- 2024-04-10
 
 * Properly handle exceptions in parralel traversals

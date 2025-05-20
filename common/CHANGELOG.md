@@ -1,5 +1,10 @@
 # Revision history for ghc-debug-common
 
+## 0.7.0.0 -- 2025-05-20
+
+* Fix decoding of BCO bitmap field (fixes a runtime crash in projects which use Template Haskell)
+* Fix build with 9.10 and 9.12
+
 ## 0.6.0.0 -- 2024-04-10
 
 * Support for decoding profiled RTS

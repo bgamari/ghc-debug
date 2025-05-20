@@ -1,5 +1,9 @@
 # Revision history for convention
 
+## 0.7.0.0 -- 2025-05-20
+
+* No changes.
+
 ## 0.6.0.0 -- 2024-04-10
 
 * Allow newer version of filepath library

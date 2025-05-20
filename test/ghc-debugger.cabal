@@ -1,5 +1,5 @@
 name:                ghc-debugger
-version:             0.6.0.0
+version:             0.7.0.0
 -- synopsis:
 -- description:
 homepage:            https://github.com/bgamari/ghc-debug
@@ -52,8 +52,8 @@ test-suite system-test
     , tasty
     , tasty-hspec
     , process
-    , ghc-debug-client == 0.6.0.0
-    , ghc-debug-common == 0.6.0.0
+    , ghc-debug-client == 0.7.0.0
+    , ghc-debug-common == 0.7.0.0
     , directory
     , async
     , extra
